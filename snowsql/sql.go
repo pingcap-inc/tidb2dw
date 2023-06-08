@@ -1,0 +1,175 @@
+package snowsql
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+
+	"github.com/pingcap/tidb/dumpling/export"
+	"golang.org/x/exp/slices"
+)
+
+func GenCreateStageForSnapshotLoad(stageName, s3WorkspaceURL string) (string, error) {
+	return fmt.Sprintf(`
+CREATE OR REPLACE STAGE "%s"
+STORAGE_INTEGRATION = my_s3
+URL = '%s'
+FILE_FORMAT = (type = 'CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"');
+	`, stageName, s3WorkspaceURL), nil
+}
+
+func GenDropStage(stageName string) (string, error) {
+	return fmt.Sprintf(`
+DROP STAGE "%s";
+	`, stageName), nil
+}
+
+func GenLoadSnapshotFromStage(targetTable, stageName, fileName string) (string, error) {
+	// TODO: Load more data?
+	return fmt.Sprintf(`
+COPY INTO "%s"
+FROM '@"%s"%s'
+ON_ERROR = CONTINUE;
+	`, targetTable, stageName, fileName), nil
+}
+
+func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) (string, error) {
+	query := fmt.Sprintf("SHOW COLUMNS FROM `%s`.`%s`", sourceDatabase, sourceTable) // FIXME: Escape
+	rows, err := sourceTiDBConn.QueryContext(context.Background(), query)
+	if err != nil {
+		return "", err
+	}
+	// TODO: Confirm with generated column, sequence.
+	results, err := export.GetSpecifiedColumnValuesAndClose(rows, "FIELD", "TYPE")
+	if err != nil {
+		return "", err
+	}
+
+	snowflakeFieldNames := make([]string, 0)
+	snowflakeFieldTypes := make([]string, 0)
+
+	// Ref: https://docs.snowflake.com/en/sql-reference/intro-summary-data-types
+	for _, oneRow := range results {
+		fieldName, tp := oneRow[0], oneRow[1]
+		snowflakeFieldNames = append(snowflakeFieldNames, fmt.Sprintf(`"%s"`, fieldName)) // FIXME: Escape
+		tpParts := strings.SplitN(tp, "(", 2)
+		tpBase := tpParts[0]
+		switch tpBase {
+		case "bit":
+			// TODO
+			return "", fmt.Errorf("unsupported field type %s", tp)
+		case "text":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "TEXT")
+		case "date":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "DATE")
+		case "datetime":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "DATETIME")
+		case "unspecified":
+			return "", fmt.Errorf("unsupported field type %s", tp)
+		case "decimal":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "DECIMAL")
+		case "double":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "DOUBLE")
+		case "enum":
+			return "", fmt.Errorf("unsupported field type %s", tp)
+		case "float":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "FLOAT")
+		case "geometry":
+			return "", fmt.Errorf("unsupported field type %s", tp)
+		case "mediumint":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "INT")
+		case "json":
+			return "", fmt.Errorf("unsupported field type %s", tp)
+		case "int":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "INT")
+		case "bigint":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "BIGINT")
+		case "longtext":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "TEXT")
+		case "longblob":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "TEXT")
+		case "mediumtext":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "TEXT")
+		case "mediumblob":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "TEXT")
+		case "null":
+			return "", fmt.Errorf("unsupported field type %s", tp)
+		case "set":
+			return "", fmt.Errorf("unsupported field type %s", tp)
+		case "smallint":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "SMALLINT")
+		case "char":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "VARCHAR")
+		case "binary":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "VARBINARY")
+		case "time":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "TIME")
+		case "timestamp":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "TIMESTAMP")
+		case "tinyint":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "TINYINT")
+		case "tinytext":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "TEXT")
+		case "tinyblob":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "TEXT")
+		case "varchar":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "VARCHAR")
+		case "varbinary":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "VARBINARY")
+		case "var_string":
+			snowflakeFieldTypes = append(snowflakeFieldTypes, "VARCHAR")
+		case "year":
+			return "", fmt.Errorf("unsupported field type %s", tp)
+		default:
+			return "", fmt.Errorf("unknown field type %s", tp)
+		}
+	}
+
+	indexQuery := fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", sourceDatabase, sourceTable) // FIXME: Escape
+	indexRows, err := sourceTiDBConn.QueryContext(context.Background(), indexQuery)
+	if err != nil {
+		return "", err
+	}
+	indexResults, err := export.GetSpecifiedColumnValuesAndClose(indexRows, "KEY_NAME", "COLUMN_NAME", "SEQ_IN_INDEX")
+	if err != nil {
+		return "", err
+	}
+
+	snowflakePKColumns := make([]string, 0)
+	// Sort by key_name, seq_in_index
+	slices.SortFunc(indexResults, func(i, j []string) bool {
+		if i[0] == j[0] {
+			return i[2] < j[2] // Sort by seq_in_index
+		}
+		return i[0] < j[0] // Sort by key_name
+	})
+	for _, oneRow := range indexResults {
+		keyName, columnName := oneRow[0], oneRow[1]
+		if keyName == "PRIMARY" {
+			snowflakePKColumns = append(snowflakePKColumns, fmt.Sprintf(`"%s"`, columnName)) // FIXME: Escape
+		}
+	}
+
+	// TODO: Support unique key
+
+	sqlRows := make([]string, 0)
+	for i := 0; i < len(snowflakeFieldNames); i++ {
+		thisField := fmt.Sprintf("%s %s", snowflakeFieldNames[i], snowflakeFieldTypes[i])
+		sqlRows = append(sqlRows, thisField)
+	}
+	if len(snowflakePKColumns) > 0 {
+		sqlRows = append(sqlRows, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(snowflakePKColumns, ", ")))
+	}
+	// Add idents
+	for i := 0; i < len(sqlRows); i++ {
+		sqlRows[i] = fmt.Sprintf("    %s", sqlRows[i])
+	}
+
+	sql := []string{}
+	sql = append(sql, fmt.Sprintf(`CREATE OR REPLACE TABLE "%s" (`, sourceTable)) // TODO: Escape
+	sql = append(sql, strings.Join(sqlRows, ",\n"))
+	sql = append(sql, ")")
+
+	return strings.Join(sql, "\n"), nil
+}
