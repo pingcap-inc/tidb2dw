@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/pingcap/tidb/dumpling/export"
+	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"golang.org/x/exp/slices"
 )
 
@@ -172,4 +173,59 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	sql = append(sql, ")")
 
 	return strings.Join(sql, "\n"), nil
+}
+
+func GenMergeInto(tableDef cloudstorage.TableDefinition, fileFormat string) string {
+	selectStat := make([]string, 0)
+	selectStat = append(selectStat, `$1 AS "METADATA$FLAG"`)
+	for i, col := range tableDef.Columns {
+		selectStat = append(selectStat, fmt.Sprintf(`$%d AS "%s"`, i+4, col.Name))
+	}
+
+	onStat := make([]string, 0)
+	for _, col := range tableDef.Columns {
+		if col.IsPK == "true" {
+			onStat = append(onStat, fmt.Sprintf(`T."%s" = S."%s"`, col.Name, col.Name))
+		}
+	}
+
+	updateStat := make([]string, 0)
+	for _, col := range tableDef.Columns {
+		updateStat = append(updateStat, fmt.Sprintf(`"%s" = S."%s"`, col.Name, col.Name))
+	}
+
+	insertStat := make([]string, 0)
+	for _, col := range tableDef.Columns {
+		insertStat = append(insertStat, fmt.Sprintf(`"%s"`, col.Name))
+	}
+
+	valuesStat := make([]string, 0)
+	for _, col := range tableDef.Columns {
+		valuesStat = append(valuesStat, fmt.Sprintf(`S."%s"`, col.Name))
+	}
+
+	mergeQuery := fmt.Sprintf(
+		`MERGE INTO "%s" AS T USING 
+		(
+			SELECT
+				%s
+			FROM @"%s" (FILE_FORMAT => %s, PATTERN => '.*CDC[0-9]*.csv.*')
+		) AS S 
+		ON 
+		(
+			%s
+		)
+		WHEN MATCHED AND S.METADATA$FLAG = 'U' THEN UPDATE SET %s
+		WHEN MATCHED AND S.METADATA$FLAG = 'D' THEN DELETE
+		WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s);`,
+		tableDef.Table,
+		strings.Join(selectStat, ",\n"),
+		tableDef.Table,
+		fileFormat,
+		strings.Join(onStat, " AND "),
+		strings.Join(updateStat, ", "),
+		strings.Join(insertStat, ", "),
+		strings.Join(valuesStat, ", "))
+
+	return mergeQuery
 }
