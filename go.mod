@@ -12,7 +12,7 @@ require (
 	github.com/snowflakedb/gosnowflake v1.6.18
 	github.com/spf13/cobra v1.7.0
 	go.uber.org/zap v1.24.0
-	golang.org/x/exp v0.0.0-20230519143937-03e91628a987
+	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
 )
 
 require (
@@ -191,7 +191,7 @@ require (
 	github.com/pingcap/goleveldb v0.0.0-20191226122134-f82aafb29989 // indirect
 	github.com/pingcap/kvproto v0.0.0-20230530111525-e4919c190b46 // indirect
 	github.com/pingcap/sysutil v1.0.1-0.20230407040306-fb007c5aff21 // indirect
-	github.com/pingcap/tidb/parser v0.0.0-20230505070356-cb609bb39c80 // indirect
+	github.com/pingcap/tidb/parser v0.0.0-20230609033446-1061ed208c94 // indirect
 	github.com/pingcap/tiflow v0.0.0-20230607052141-d20d6d6667fc
 	github.com/pingcap/tipb v0.0.0-20230602100112-acb7942db1ca // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect

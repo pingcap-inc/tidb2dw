@@ -707,8 +707,8 @@ github.com/pingcap/tidb v1.1.0-beta.0.20230609033446-1061ed208c94/go.mod h1:+y4x
 github.com/pingcap/tidb-tools v7.0.0+incompatible h1:CHjAva2ON13HZAB0HRNI69fC/1AzfQBkzDE31Rh6NSg=
 github.com/pingcap/tidb-tools v7.0.0+incompatible/go.mod h1:XGdcy9+yqlDSEMTpOXnwf3hiTeqrV6MN/u1se9N8yIM=
 github.com/pingcap/tidb/parser v0.0.0-20221126021158-6b02a5d8ba7d/go.mod h1:ElJiub4lRy6UZDb+0JHDkGEdr6aOli+ykhyej7VCLoI=
-github.com/pingcap/tidb/parser v0.0.0-20230505070356-cb609bb39c80 h1:HBvVVneDewwoGfkTtuacVCDqMN9D6ciEbCg2L0J2ZkI=
-github.com/pingcap/tidb/parser v0.0.0-20230505070356-cb609bb39c80/go.mod h1:cjYHlmExmReRJXGvncysWwYJ1X1OGp9QfENrBFynd8A=
+github.com/pingcap/tidb/parser v0.0.0-20230609033446-1061ed208c94 h1:kNS6FpT1q/Qu3fFB46/EFhzrhL0Bon1M71E3JVYrO9w=
+github.com/pingcap/tidb/parser v0.0.0-20230609033446-1061ed208c94/go.mod h1:F6gt/zER0apYbw9dx1esEW1jlHTHmRi0qRk75yWH7ak=
 github.com/pingcap/tiflow v0.0.0-20230607052141-d20d6d6667fc h1:Qpe1cSnZOmDOn/7/px3CuTUosDfH3CkbSCqfjm0d5aE=
 github.com/pingcap/tiflow v0.0.0-20230607052141-d20d6d6667fc/go.mod h1:tR4JD+ZnhLDkCIyLHXOWP/FnNNLIS2RM25ewwAGe43g=
 github.com/pingcap/tipb v0.0.0-20230602100112-acb7942db1ca h1:J2HQyR5v1AcoBzx5/AYJW9XFSIl6si6YoC6yGI1W89c=
@@ -988,8 +988,8 @@ golang.org/x/exp v0.0.0-20200119233911-0405dc783f0a/go.mod h1:2RIsYlXP63K8oxa1u0
 golang.org/x/exp v0.0.0-20200207192155-f17229e696bd/go.mod h1:J/WKrq2StrnmMY6+EHIKF9dgMWnmCNThgcyBT1FY9mM=
 golang.org/x/exp v0.0.0-20200224162631-6cc2880d07d6/go.mod h1:3jZMyOhIsHpP37uCMkUooju7aAi5cS1Q23tOzKc+0MU=
 golang.org/x/exp v0.0.0-20200513190911-00229845015e/go.mod h1:4M0jN8W1tt0AVLNr8HDosyJCDCDuyL9N9+3m7wDWgKw=
-golang.org/x/exp v0.0.0-20230519143937-03e91628a987 h1:3xJIFvzUFbu4ls0BTBYcgbCGhA63eAOEMxIHugyXJqA=
-golang.org/x/exp v0.0.0-20230519143937-03e91628a987/go.mod h1:V1LtkGg67GoY2N1AnLN78QLrzxkLyJw7RJb1gzOOz9w=
+golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1 h1:k/i9J1pBpvlfR+9QsetwPyERsqu1GIbi967PQMq3Ivc=
+golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1/go.mod h1:V1LtkGg67GoY2N1AnLN78QLrzxkLyJw7RJb1gzOOz9w=
 golang.org/x/image v0.0.0-20180708004352-c73c2afc3b81/go.mod h1:ux5Hcp/YLpHSI86hEcLt0YII63i6oz57MZXIpbrjZUs=
 golang.org/x/image v0.0.0-20190227222117-0694c2d4d067/go.mod h1:kZ7UVZpmo3dzQBMxlp+ypCbDeSB+sBbTgSJuh5dn5js=
 golang.org/x/image v0.0.0-20190802002840-cff245a6509b/go.mod h1:FeLwcggjj3mMvU+oOTbSwawSJRM1uh48EjtB4UJZlP0=
