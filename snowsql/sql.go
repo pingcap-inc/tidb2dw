@@ -176,7 +176,7 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 }
 
 func GenMergeInto(tableDef cloudstorage.TableDefinition, fileFormat string) string {
-	selectStat := make([]string, 0)
+	selectStat := make([]string, 0, len(tableDef.Columns)+1)
 	selectStat = append(selectStat, `$1 AS "METADATA$FLAG"`)
 	for i, col := range tableDef.Columns {
 		selectStat = append(selectStat, fmt.Sprintf(`$%d AS "%s"`, i+4, col.Name))
@@ -189,17 +189,17 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, fileFormat string) stri
 		}
 	}
 
-	updateStat := make([]string, 0)
+	updateStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
 		updateStat = append(updateStat, fmt.Sprintf(`"%s" = S."%s"`, col.Name, col.Name))
 	}
 
-	insertStat := make([]string, 0)
+	insertStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
 		insertStat = append(insertStat, fmt.Sprintf(`"%s"`, col.Name))
 	}
 
-	valuesStat := make([]string, 0)
+	valuesStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
 		valuesStat = append(valuesStat, fmt.Sprintf(`S."%s"`, col.Name))
 	}

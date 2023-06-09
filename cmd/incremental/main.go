@@ -511,13 +511,25 @@ func createFileFormat() {
 	if err != nil {
 		log.Error("fail to connect to snowflake", zap.Error(err))
 	}
-	createFileFormatQuery := fmt.Sprintf(`CREATE OR REPLACE FILE FORMAT %s
+	createFileFormatQuery := fmt.Sprintf(`CREATE OR REPLACE FILE FORMAT "%s"
 		TYPE = CSV
 		SKIP_HEADER = 1
 		FIELD_OPTIONALLY_ENCLOSED_BY='"';`, incrementalFileFormatName)
 	_, err = db.Exec(createFileFormatQuery)
 	if err != nil {
 		log.Error("fail to create file format", zap.Error(err))
+	}
+}
+
+func DropFileFormat() {
+	db, err := sql.Open("snowflake", downstreamURIStr)
+	if err != nil {
+		log.Error("fail to connect to snowflake", zap.Error(err))
+	}
+	dropFileFormatQuery := fmt.Sprintf(`DROP FILE FORMAT IF EXISTS "%s";`, incrementalFileFormatName)
+	_, err = db.Exec(dropFileFormatQuery)
+	if err != nil {
+		log.Error("fail to drop file format", zap.Error(err))
 	}
 }
 
@@ -550,6 +562,7 @@ func main() {
 				db.Close()
 			}
 		}
+		DropFileFormat()
 		return 0
 	}
 

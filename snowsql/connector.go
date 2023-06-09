@@ -38,6 +38,14 @@ func NewSnowflakeConnector(uri string, tableDef cloudstorage.TableDefinition, fi
 		return nil, errors.Trace(err)
 	}
 
+	// ALTER SESSION SET ERROR_ON_NONDETERMINISTIC_MERGE=false;
+	// FIXME: This is a workaround for snowflake merge non-deterministic issue.
+	// But it will cause data inconsistency, remove this after cdc support merge dml or snowflake support deterministic merge
+	_, err = db.Exec(`ALTER SESSION SET ERROR_ON_NONDETERMINISTIC_MERGE=false;`)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
 	return &SnowflakeConnector{db, tableDef}, nil
 }
 
@@ -71,5 +79,12 @@ func (sc *SnowflakeConnector) MergeFile(uri *url.URL, filePath string, fileForma
 }
 
 func (sc *SnowflakeConnector) Close() {
+	// drop stage
+	dropStageQuery := fmt.Sprintf(`DROP STAGE IF EXISTS "%s";`, sc.tableDef.Table)
+	_, err := sc.db.Exec(dropStageQuery)
+	if err != nil {
+		log.Error("fail to drop stage", zap.Error(err))
+	}
+
 	sc.db.Close()
 }
