@@ -50,7 +50,6 @@ var (
 
 const (
 	defaultChangefeedName         = "storage-consumer"
-	defaultFlushWaitDuration      = 200 * time.Millisecond
 	fakePartitionNumForSchemaFile = -1
 	incrementalFileFormatName     = "INCREMENTAL_IO_CSV_FORMAT"
 )
@@ -282,10 +281,20 @@ func (c *consumer) syncExecDMLEvents(
 	fileIdx uint64,
 ) error {
 	filePath := key.GenerateDMLFilePath(fileIdx, c.fileExtension, fileIndexWidth)
-	tableID := c.tableIDGenerator.generateFakeTableID(
-		key.Schema, key.Table, key.PartitionNum)
+	exist, err := c.externalStorage.FileExists(ctx, filePath)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	// We will remove the file after flush complete, so if the program restarts,
+	// the file range will start from 1 again, but the file may not exist.
+	// So we just ignore the non-exist file.
+	if !exist {
+		log.Warn("file not exists", zap.String("path", filePath))
+		return nil
+	}
 
-	err := c.waitTableFlushComplete(ctx, tableID, filePath, tableDef)
+	tableID := c.tableIDGenerator.generateFakeTableID(key.Schema, key.Table, key.PartitionNum)
+	err = c.waitTableFlushComplete(ctx, tableID, filePath, tableDef)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -427,14 +436,18 @@ func (c *consumer) handleNewFiles(
 		return keys[i].Table < keys[j].Table
 	})
 
+	// TODO:
+	// 1. support handling ddl events.
+	// 2. support handling dml events of different tables concurrently.
+	// Note: dml events of the same table should be handled sequentially.
+	//       so we can not just pipeline this loop.
 	for _, key := range keys {
 		tableDef := c.mustGetTableDef(key.SchemaPathKey)
 		// if the key is a fake dml path key which is mainly used for
 		// sorting schema.json file before the dml files, then execute the ddl query.
 		if key.PartitionNum == fakePartitionNumForSchemaFile &&
 			len(key.Date) == 0 && len(tableDef.Query) > 0 {
-			log.Warn("Receive ddl event, but can not handle now, ignore", zap.String("ddl", tableDef.Query))
-			continue
+			return errors.Errorf("Receive ddl event, but can not handle now, ignore, ddl: %s", tableDef.Query)
 		}
 
 		fileRange := dmlFileMap[key]

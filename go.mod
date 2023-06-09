@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/pingcap/errors v0.11.5-0.20221009092201-b66cddb77c32
 	github.com/pingcap/log v1.1.1-0.20230317032135-a0d097d16e22
-	github.com/pingcap/tidb v1.1.0-beta.0.20230505070356-cb609bb39c80
+	github.com/pingcap/tidb v1.1.0-beta.0.20230609033446-1061ed208c94
 	github.com/snowflakedb/gosnowflake v1.6.18
 	github.com/spf13/cobra v1.7.0
 	go.uber.org/zap v1.24.0
@@ -193,7 +193,7 @@ require (
 	github.com/pingcap/sysutil v1.0.1-0.20230407040306-fb007c5aff21 // indirect
 	github.com/pingcap/tidb/parser v0.0.0-20230505070356-cb609bb39c80 // indirect
 	github.com/pingcap/tiflow v0.0.0-20230607052141-d20d6d6667fc
-	github.com/pingcap/tipb v0.0.0-20230523034258-1bbc3bbbd369 // indirect
+	github.com/pingcap/tipb v0.0.0-20230602100112-acb7942db1ca // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -249,11 +249,6 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-)
-
-replace (
-	github.com/pingcap/tidb => /DATA/disk1/qiuyang/projects/tidb
-	github.com/pingcap/tidb/parser => /DATA/disk1/qiuyang/projects/tidb/parser
 )
 
 // Replace from TiDB

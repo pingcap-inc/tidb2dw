@@ -56,7 +56,7 @@ func (sc *SnowflakeConnector) MergeFile(uri *url.URL, filePath string, fileForma
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Debug("merge stage into table", zap.String("query", mergeQuery))
+	log.Debug("merge staged file into table", zap.String("query", mergeQuery))
 
 	// remove file from stage
 	removeQuery := fmt.Sprintf(`REMOVE '@"%s"' pattern ='.*CDC[0-9]*.csv.*';`, sc.tableDef.Table)
