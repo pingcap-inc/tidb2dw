@@ -179,12 +179,14 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, fileFormat string) stri
 	selectStat := make([]string, 0, len(tableDef.Columns)+1)
 	selectStat = append(selectStat, `$1 AS "METADATA$FLAG"`)
 	for i, col := range tableDef.Columns {
-		selectStat = append(selectStat, fmt.Sprintf(`$%d AS "%s"`, i+4, col.Name))
+		selectStat = append(selectStat, fmt.Sprintf(`$%d AS "%s"`, i+5, col.Name))
 	}
 
+	pkColumn := make([]string, 0)
 	onStat := make([]string, 0)
 	for _, col := range tableDef.Columns {
 		if col.IsPK == "true" {
+			pkColumn = append(pkColumn, fmt.Sprintf(`"%s"`, col.Name))
 			onStat = append(onStat, fmt.Sprintf(`T."%s" = S."%s"`, col.Name, col.Name))
 		}
 	}
@@ -204,12 +206,14 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, fileFormat string) stri
 		valuesStat = append(valuesStat, fmt.Sprintf(`S."%s"`, col.Name))
 	}
 
+	// TODO: Remove QUALIFY row_number() after cdc support merge dml or snowflake support deterministic merge
 	mergeQuery := fmt.Sprintf(
 		`MERGE INTO "%s" AS T USING 
 		(
 			SELECT
 				%s
 			FROM @"%s" (FILE_FORMAT => %s, PATTERN => '.*CDC[0-9]*.csv.*')
+			QUALIFY row_number() over (partition by %s order by $4 desc) = 1;
 		) AS S 
 		ON 
 		(
@@ -217,11 +221,12 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, fileFormat string) stri
 		)
 		WHEN MATCHED AND S.METADATA$FLAG = 'U' THEN UPDATE SET %s
 		WHEN MATCHED AND S.METADATA$FLAG = 'D' THEN DELETE
-		WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s);`,
+		WHEN NOT MATCHED AND S.METADATA$FLAG != 'D' THEN INSERT (%s) VALUES (%s);`,
 		tableDef.Table,
 		strings.Join(selectStat, ",\n"),
 		tableDef.Table,
 		fileFormat,
+		strings.Join(pkColumn, ", "),
 		strings.Join(onStat, " AND "),
 		strings.Join(updateStat, ", "),
 		strings.Join(insertStat, ", "),
