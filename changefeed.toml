@@ -1,6 +1,6 @@
 # 指定该 Changefeed 在 Capture Server 中内存配额的上限。对于超额使用部分，
 # 会在运行中被 Go runtime 优先回收。默认值为 `1073741824`，即 1 GB。
-# memory-quota = 4294967296
+memory-quota = 4294967296
 
 # 指定配置文件中涉及的库名、表名是否为大小写敏感
 # 该配置会同时影响 filter 和 sink 相关配置，默认为 true

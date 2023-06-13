@@ -512,6 +512,8 @@ func createFileFormat() {
 		log.Error("fail to connect to snowflake", zap.Error(err))
 	}
 	createFileFormatQuery := fmt.Sprintf(`CREATE OR REPLACE FILE FORMAT "%s"
+		EMPTY_FIELD_AS_NULL	= FALSE 
+		NULL_IF=('\N')
 		TYPE = CSV
 		SKIP_HEADER = 1
 		FIELD_OPTIONALLY_ENCLOSED_BY='"';`, incrementalFileFormatName)
