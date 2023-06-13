@@ -213,7 +213,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, fileFormat string) stri
 			SELECT
 				%s
 			FROM @"%s" (FILE_FORMAT => %s, PATTERN => '.*CDC[0-9]*.csv.*')
-			QUALIFY row_number() over (partition by %s order by $4 desc) = 1;
+			QUALIFY row_number() over (partition by %s order by $4 desc) = 1
 		) AS S 
 		ON 
 		(
