@@ -38,14 +38,6 @@ func NewSnowflakeConnector(uri string, tableDef cloudstorage.TableDefinition, fi
 		return nil, errors.Trace(err)
 	}
 
-	// ALTER SESSION SET ERROR_ON_NONDETERMINISTIC_MERGE=false;
-	// FIXME: This is a workaround for snowflake merge non-deterministic issue.
-	// But it will cause data inconsistency, remove this after cdc support merge dml or snowflake support deterministic merge
-	_, err = db.Exec(`ALTER SESSION SET ERROR_ON_NONDETERMINISTIC_MERGE=false;`)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-
 	return &SnowflakeConnector{db, tableDef}, nil
 }
 
