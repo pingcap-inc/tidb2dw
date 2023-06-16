@@ -36,16 +36,17 @@ import (
 )
 
 var (
-	upstreamURIStr   string
-	upstreamURI      *url.URL
-	downstreamURIStr string
-	configFile       string
-	logFile          string
-	logLevel         string
-	flushInterval    time.Duration
-	fileIndexWidth   int
-	enableProfiling  bool
-	timezone         string
+	upstreamURIStr     string
+	upstreamURI        *url.URL
+	downstreamURIStr   string
+	configFile         string
+	logFile            string
+	logLevel           string
+	flushInterval      time.Duration
+	fileIndexWidth     int
+	enableProfiling    bool
+	timezone           string
+	storageIntegration string
 )
 
 const (
@@ -66,6 +67,7 @@ func init() {
 		config.DefaultFileIndexWidth, "file index width")
 	flag.BoolVar(&enableProfiling, "enable-profiling", false, "whether to enable profiling")
 	flag.StringVar(&timezone, "tz", "System", "Specify time zone of storage consumer")
+	flag.StringVar(&storageIntegration, "storage-integration", "", "Specify the storage integration name in Snowflake")
 	flag.Parse()
 
 	err := logutil.InitLogger(&logutil.Config{
@@ -259,7 +261,8 @@ func (c *consumer) waitTableFlushComplete(
 		db, err := snowsql.NewSnowflakeConnector(
 			downstreamURIStr,
 			tableDef,
-			incrementalFileFormatName,
+			upstreamURI,
+			storageIntegration,
 		)
 		if err != nil {
 			return errors.Trace(err)
@@ -267,7 +270,7 @@ func (c *consumer) waitTableFlushComplete(
 		c.snowflakeConnectorMap[tableID] = db
 	}
 
-	err := c.snowflakeConnectorMap[tableID].MergeFile(upstreamURI, filePath, incrementalFileFormatName)
+	err := c.snowflakeConnectorMap[tableID].MergeFile(upstreamURI, filePath)
 	if err != nil {
 		return errors.Trace(err)
 	}

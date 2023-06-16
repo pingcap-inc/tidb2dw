@@ -24,19 +24,20 @@ import (
 )
 
 type Config struct {
-	TiDBHost            string
-	TiDBPort            int
-	TiDBUser            string
-	TiDBPass            string
-	SnowflakeAccountId  string
-	SnowflakeWarehouse  string
-	SnowflakeUser       string
-	SnowflakePass       string
-	SnowflakeDatabase   string
-	SnowflakeSchema     string
-	TableFQN            string
-	SnapshotConcurrency int
-	S3StoragePath       string
+	TiDBHost                    string
+	TiDBPort                    int
+	TiDBUser                    string
+	TiDBPass                    string
+	SnowflakeAccountId          string
+	SnowflakeWarehouse          string
+	SnowflakeUser               string
+	SnowflakePass               string
+	SnowflakeDatabase           string
+	SnowflakeSchema             string
+	TableFQN                    string
+	SnapshotConcurrency         int
+	S3StoragePath               string
+	SnowflakeStorageIntegration string
 }
 
 var configFromCli Config
@@ -56,6 +57,7 @@ type ReplicateSession struct {
 	SourceTable    string
 
 	StorageWorkspacePath string
+	StorageIntegration   string
 }
 
 func NewReplicateSession(config *Config) (*ReplicateSession, error) {
@@ -64,6 +66,7 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 		Config: config,
 	}
 	sess.StorageWorkspacePath = fmt.Sprintf("%s/%s", config.S3StoragePath, sess.ID)
+	sess.StorageIntegration = config.SnowflakeStorageIntegration
 	{
 		parts := strings.SplitN(config.TableFQN, ".", 2)
 		if len(parts) != 2 {
@@ -256,13 +259,9 @@ func (sess *ReplicateSession) dumpPrepareTargetTable() error {
 
 func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	stageName := fmt.Sprintf("snapshot_stage_%s", sess.SourceTable)
-	sql, err := snowsql.GenCreateStageForSnapshotLoad(stageName, sess.StorageWorkspacePath)
-	if err != nil {
-		return errors.Trace(err)
-	}
-
+	sql := snowsql.GenCreateStage(stageName, sess.StorageWorkspacePath, sess.StorageIntegration)
 	log.Info("Creating stage for loading snapshot data", zap.String("stageName", stageName))
-	_, err = sess.SnowflakePool.Exec(sql)
+	_, err := sess.SnowflakePool.Exec(sql)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -292,7 +291,7 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 		return errors.Trace(err)
 	}
 	if len(result.Contents) == 0 {
-		return fmt.Errorf("No snapshot files found")
+		return errors.Errorf("No snapshot files found")
 	}
 
 	dumpedSnapshots := make([]string, 0, 1)
@@ -319,10 +318,7 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 		log.Info("Snapshot data load finished", zap.String("snapshot", dumpedSnapshot))
 	}
 
-	sql, err = snowsql.GenDropStage(stageName)
-	if err != nil {
-		return errors.Trace(err)
-	}
+	sql = snowsql.GenDropStage(stageName)
 	_, err = sess.SnowflakePool.Exec(sql)
 	if err != nil {
 		return errors.Trace(err)
@@ -365,6 +361,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&configFromCli.TableFQN, "table", "t", "", "")
 	rootCmd.Flags().IntVar(&configFromCli.SnapshotConcurrency, "snapshot-concurrency", 8, "")
 	rootCmd.Flags().StringVarP(&configFromCli.S3StoragePath, "storage", "s", "", "")
+	rootCmd.Flags().StringVar(&configFromCli.SnowflakeStorageIntegration, "snowflake.storage-integration", "", "")
 	rootCmd.MarkFlagRequired("storage")
 	rootCmd.MarkFlagRequired("table")
 }
