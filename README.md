@@ -11,7 +11,8 @@ AWS_SDK_LOAD_CONFIG=true ./bin/snapshot --storage s3://test/dump --table <databa
 ## replicate incremental data from TiDB to Snowflake
 
 > **Warning**
-> We do not support ddl replication yet. Any ddl operation may cause data loss.
+> We do not support ddl replication yet. Any ddl operation will cause the incremental replication stop. You need to manually run the DDL on target table and then restart the incremental replication.
+> Restart incremental replication without manually runing DDL on target table may cause data loss.
 
 ```bash
 # create a change feed
