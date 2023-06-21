@@ -175,7 +175,7 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	return strings.Join(sql, "\n"), nil
 }
 
-func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string) string {
+func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageName string) string {
 	selectStat := make([]string, 0, len(tableDef.Columns)+1)
 	selectStat = append(selectStat, `$1 AS "METADATA$FLAG"`)
 	for i, col := range tableDef.Columns {
@@ -212,7 +212,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string) string
 		(
 			SELECT
 				%s
-			FROM '@%s/%s'
+			FROM '@"%s"/%s'
 			QUALIFY row_number() over (partition by %s order by $4 desc) = 1
 		) AS S 
 		ON 
@@ -224,7 +224,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string) string
 		WHEN NOT MATCHED AND S.METADATA$FLAG != 'D' THEN INSERT (%s) VALUES (%s);`,
 		tableDef.Table,
 		strings.Join(selectStat, ",\n"),
-		tableDef.Table,
+		stageName,
 		filePath,
 		strings.Join(pkColumn, ", "),
 		strings.Join(onStat, " AND "),
