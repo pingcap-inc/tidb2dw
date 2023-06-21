@@ -36,7 +36,8 @@ func NewSnowflakeConnector(uri string, tableDef cloudstorage.TableDefinition, up
 
 	// create stage
 	stageName := fmt.Sprintf("cdc_stage_%s", tableDef.Table)
-	createStageQuery := GenCreateStage(stageName, upstreamURI.Path, storageIntegration)
+	stageUrl := fmt.Sprintf("%s://%s/%s", upstreamURI.Scheme, upstreamURI.Host, upstreamURI.Path)
+	createStageQuery := GenCreateStage(stageName, stageUrl, storageIntegration)
 	_, err = db.Exec(createStageQuery)
 	if err != nil {
 		return nil, errors.Trace(err)
