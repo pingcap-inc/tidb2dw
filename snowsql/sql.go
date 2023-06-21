@@ -11,19 +11,19 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func GenCreateStageForSnapshotLoad(stageName, s3WorkspaceURL string) (string, error) {
+func GenCreateStage(stageName, s3WorkspaceURL string, storageIntegration string) string {
 	return fmt.Sprintf(`
 CREATE OR REPLACE STAGE "%s"
-STORAGE_INTEGRATION = my_s3
+STORAGE_INTEGRATION = "%s"
 URL = '%s'
-FILE_FORMAT = (type = 'CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"');
-	`, stageName, s3WorkspaceURL), nil
+FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
+	`, stageName, storageIntegration, s3WorkspaceURL)
 }
 
-func GenDropStage(stageName string) (string, error) {
+func GenDropStage(stageName string) string {
 	return fmt.Sprintf(`
-DROP STAGE "%s";
-	`, stageName), nil
+DROP STAGE IF EXISTS "%s";
+	`, stageName)
 }
 
 func GenLoadSnapshotFromStage(targetTable, stageName, fileName string) (string, error) {
@@ -175,7 +175,7 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	return strings.Join(sql, "\n"), nil
 }
 
-func GenMergeInto(tableDef cloudstorage.TableDefinition, fileFormat string) string {
+func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string) string {
 	selectStat := make([]string, 0, len(tableDef.Columns)+1)
 	selectStat = append(selectStat, `$1 AS "METADATA$FLAG"`)
 	for i, col := range tableDef.Columns {
@@ -212,7 +212,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, fileFormat string) stri
 		(
 			SELECT
 				%s
-			FROM @"%s" (FILE_FORMAT => %s, PATTERN => '.*CDC[0-9]*.csv.*')
+			FROM '@%s/%s'
 			QUALIFY row_number() over (partition by %s order by $4 desc) = 1
 		) AS S 
 		ON 
@@ -225,7 +225,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, fileFormat string) stri
 		tableDef.Table,
 		strings.Join(selectStat, ",\n"),
 		tableDef.Table,
-		fileFormat,
+		filePath,
 		strings.Join(pkColumn, ", "),
 		strings.Join(onStat, " AND "),
 		strings.Join(updateStat, ", "),
