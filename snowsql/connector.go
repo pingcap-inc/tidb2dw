@@ -36,8 +36,14 @@ func NewSnowflakeConnector(uri string, tableDef cloudstorage.TableDefinition, up
 
 	// create stage
 	stageName := fmt.Sprintf("cdc_stage_%s", tableDef.Table)
-	stageUrl := fmt.Sprintf("%s://%s/%s", upstreamURI.Scheme, upstreamURI.Host, upstreamURI.Path)
-	_, err = db.Exec(CreateStageQuery, stageName, storageIntegration, stageUrl)
+	var createStageQuery string
+	if upstreamURI.Host == "" {
+		createStageQuery = GenCreateInternalStage(stageName)
+	} else {
+		stageUrl := fmt.Sprintf("%s://%s/%s", upstreamURI.Scheme, upstreamURI.Host, upstreamURI.Path)
+		createStageQuery = GenCreateExternalStage(stageName, stageUrl, storageIntegration)
+	}
+	_, err = db.Exec(createStageQuery)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -48,7 +54,7 @@ func NewSnowflakeConnector(uri string, tableDef cloudstorage.TableDefinition, up
 func (sc *SnowflakeConnector) MergeFile(uri *url.URL, filePath string) error {
 	if uri.Scheme == "file" {
 		// if the file is local, we need to upload it to stage first
-		putQuery := fmt.Sprintf(`PUT %s://%s/%s '@"%s"/%s';`, uri.Scheme, uri.Path, filePath, sc.stageName, filePath)
+		putQuery := fmt.Sprintf(`PUT file://%s/%s '@"%s"/%s';`, uri.Path, filePath, sc.stageName, filePath)
 		_, err := sc.db.Exec(putQuery)
 		if err != nil {
 			return errors.Trace(err)
@@ -80,7 +86,8 @@ func (sc *SnowflakeConnector) MergeFile(uri *url.URL, filePath string) error {
 
 func (sc *SnowflakeConnector) Close() {
 	// drop stage
-	_, err := sc.db.Exec(DropStageQuery, sc.stageName)
+	dropStageQuery := GenDropStage(sc.stageName)
+	_, err := sc.db.Exec(dropStageQuery)
 	if err != nil {
 		log.Error("fail to drop stage", zap.Error(err))
 	}

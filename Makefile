@@ -16,15 +16,12 @@ BUILD_CGO_ENABLED := 0
 ROOT_PATH := $(shell pwd)
 BUILD_BIN_PATH := $(ROOT_PATH)/bin
 
-build: incremental snapshot
+build: tidb2dw
 
-incremental:
-	CGO_ENABLED=$(BUILD_CGO_ENABLED) go build $(BUILD_FLAGS) -gcflags '$(GCFLAGS)' -ldflags '$(LDFLAGS)' -tags "$(BUILD_TAGS)" -o $(BUILD_BIN_PATH)/incremental cmd/incremental/main.go
+tidb2dw:
+	CGO_ENABLED=$(BUILD_CGO_ENABLED) go build $(BUILD_FLAGS) -gcflags '$(GCFLAGS)' -ldflags '$(LDFLAGS)' -tags "$(BUILD_TAGS)" -o $(BUILD_BIN_PATH)/tidb2dw main.go
 
-snapshot:
-	CGO_ENABLED=$(BUILD_CGO_ENABLED) go build $(BUILD_FLAGS) -gcflags '$(GCFLAGS)' -ldflags '$(LDFLAGS)' -tags "$(BUILD_TAGS)" -o $(BUILD_BIN_PATH)/snapshot cmd/snapshot/main.go
-
-.PHONY: build incremental snapshot
+.PHONY: build tidb2dw
 
 #### Clean up ####
 

@@ -1,4 +1,4 @@
-package main
+package snowflake
 
 import (
 	"context"
@@ -259,8 +259,9 @@ func (sess *ReplicateSession) dumpPrepareTargetTable() error {
 
 func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	stageName := fmt.Sprintf("snapshot_stage_%s", sess.SourceTable)
+	sql := snowsql.GenCreateExternalStage(stageName, sess.StorageWorkspacePath, sess.StorageIntegration)
 	log.Info("Creating stage for loading snapshot data", zap.String("stageName", stageName))
-	_, err := sess.SnowflakePool.Exec(snowsql.CreateStageQuery, stageName, sess.StorageIntegration, sess.StorageWorkspacePath)
+	_, err := sess.SnowflakePool.Exec(sql)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -304,14 +305,20 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 
 	for _, dumpedSnapshot := range dumpedSnapshots {
 		log.Info("Loading snapshot data", zap.String("snapshot", dumpedSnapshot))
-		_, err = sess.SnowflakePool.Exec(snowsql.LoadSnapshotFromStageQuery, sess.SourceTable, stageName, dumpedSnapshot)
+		sql = snowsql.GenLoadSnapshotFromStage(sess.SourceTable, stageName, dumpedSnapshot)
+		if err != nil {
+			return errors.Trace(err)
+		}
+		log.Debug("Executing SQL", zap.String("sql", sql))
+		_, err = sess.SnowflakePool.Exec(sql)
 		if err != nil {
 			return errors.Trace(err)
 		}
 		log.Info("Snapshot data load finished", zap.String("snapshot", dumpedSnapshot))
 	}
 
-	_, err = sess.SnowflakePool.Exec(snowsql.DropStageQuery, stageName)
+	sql = snowsql.GenDropStage(stageName)
+	_, err = sess.SnowflakePool.Exec(sql)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -319,10 +326,10 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	return nil
 }
 
-var (
-	rootCmd = &cobra.Command{
-		Use:   "tidb-snowflake",
-		Short: "A service to replicate from TiDB to Snowflake",
+func newSnapshotCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "snapshot",
+		Short: "Replicate snapshot from TiDB to Snowflake",
 		Run: func(_ *cobra.Command, _ []string) {
 			session, err := NewReplicateSession(&configFromCli)
 			if err != nil {
@@ -336,30 +343,24 @@ var (
 			}
 		},
 	}
-)
 
-func init() {
-	rootCmd.PersistentFlags().BoolP("help", "", false, "help for this command")
-	rootCmd.Flags().StringVarP(&configFromCli.TiDBHost, "host", "h", "127.0.0.1", "")
-	rootCmd.Flags().IntVarP(&configFromCli.TiDBPort, "port", "P", 4000, "")
-	rootCmd.Flags().StringVarP(&configFromCli.TiDBUser, "user", "u", "root", "")
-	rootCmd.Flags().StringVarP(&configFromCli.TiDBPass, "pass", "p", "", "")
-	rootCmd.Flags().StringVar(&configFromCli.SnowflakeAccountId, "snowflake.account-id", "", "")
-	rootCmd.Flags().StringVar(&configFromCli.SnowflakeWarehouse, "snowflake.warehouse", "COMPUTE_WH", "")
-	rootCmd.Flags().StringVar(&configFromCli.SnowflakeUser, "snowflake.user", "", "")
-	rootCmd.Flags().StringVar(&configFromCli.SnowflakePass, "snowflake.pass", "", "")
-	rootCmd.Flags().StringVar(&configFromCli.SnowflakeDatabase, "snowflake.database", "", "")
-	rootCmd.Flags().StringVar(&configFromCli.SnowflakeSchema, "snowflake.schema", "", "")
-	rootCmd.Flags().StringVarP(&configFromCli.TableFQN, "table", "t", "", "")
-	rootCmd.Flags().IntVar(&configFromCli.SnapshotConcurrency, "snapshot-concurrency", 8, "")
-	rootCmd.Flags().StringVarP(&configFromCli.S3StoragePath, "storage", "s", "", "")
-	rootCmd.Flags().StringVar(&configFromCli.SnowflakeStorageIntegration, "snowflake.storage-integration", "", "")
-	rootCmd.MarkFlagRequired("storage")
-	rootCmd.MarkFlagRequired("table")
-}
+	cmd.PersistentFlags().BoolP("help", "", false, "help for this command")
+	cmd.Flags().StringVarP(&configFromCli.TiDBHost, "host", "h", "127.0.0.1", "")
+	cmd.Flags().IntVarP(&configFromCli.TiDBPort, "port", "P", 4000, "")
+	cmd.Flags().StringVarP(&configFromCli.TiDBUser, "user", "u", "root", "")
+	cmd.Flags().StringVarP(&configFromCli.TiDBPass, "pass", "p", "", "")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeAccountId, "snowflake.account-id", "", "")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeWarehouse, "snowflake.warehouse", "COMPUTE_WH", "")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeUser, "snowflake.user", "", "")
+	cmd.Flags().StringVar(&configFromCli.SnowflakePass, "snowflake.pass", "", "")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeDatabase, "snowflake.database", "", "")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeSchema, "snowflake.schema", "", "")
+	cmd.Flags().StringVarP(&configFromCli.TableFQN, "table", "t", "", "")
+	cmd.Flags().IntVar(&configFromCli.SnapshotConcurrency, "snapshot-concurrency", 8, "")
+	cmd.Flags().StringVarP(&configFromCli.S3StoragePath, "storage", "s", "", "")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeStorageIntegration, "snowflake.storage-integration", "", "")
+	cmd.MarkFlagRequired("storage")
+	cmd.MarkFlagRequired("table")
 
-func main() {
-	if err := rootCmd.Execute(); err != nil {
-		panic(err)
-	}
+	return cmd
 }

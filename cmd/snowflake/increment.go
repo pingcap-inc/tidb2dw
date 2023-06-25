@@ -1,10 +1,8 @@
-package main
+package snowflake
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -31,7 +29,7 @@ import (
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"github.com/pingcap/tiflow/pkg/sink/codec/common"
 	putil "github.com/pingcap/tiflow/pkg/util"
-	"github.com/pingcap/tiflow/pkg/version"
+	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
@@ -54,42 +52,6 @@ const (
 	fakePartitionNumForSchemaFile = -1
 	incrementalFileFormatName     = "INCREMENTAL_IO_CSV_FORMAT"
 )
-
-func init() {
-	version.LogVersionInfo("storage consumer")
-	flag.StringVar(&upstreamURIStr, "upstream-uri", "", "storage uri")
-	flag.StringVar(&downstreamURIStr, "downstream-uri", "", "downstream sink uri")
-	flag.StringVar(&configFile, "config", "", "changefeed configuration file")
-	flag.StringVar(&logFile, "log-file", "", "log file path")
-	flag.StringVar(&logLevel, "log-level", "info", "log level")
-	flag.DurationVar(&flushInterval, "flush-interval", 10*time.Second, "flush interval")
-	flag.IntVar(&fileIndexWidth, "file-index-width",
-		config.DefaultFileIndexWidth, "file index width")
-	flag.BoolVar(&enableProfiling, "enable-profiling", false, "whether to enable profiling")
-	flag.StringVar(&timezone, "tz", "System", "Specify time zone of storage consumer")
-	flag.StringVar(&storageIntegration, "storage-integration", "", "Specify the storage integration name in Snowflake")
-	flag.Parse()
-
-	err := logutil.InitLogger(&logutil.Config{
-		Level: logLevel,
-		File:  logFile,
-	})
-	if err != nil {
-		log.Error("init logger failed", zap.Error(err))
-		os.Exit(1)
-	}
-	uri, err := url.Parse(upstreamURIStr)
-	if err != nil {
-		log.Error("invalid upstream-uri", zap.Error(err))
-		os.Exit(1)
-	}
-	upstreamURI = uri
-	scheme := strings.ToLower(upstreamURI.Scheme)
-	if !psink.IsStorageScheme(scheme) {
-		log.Error("invalid storage scheme, the scheme of upstream-uri must be file/s3/azblob/gcs")
-		os.Exit(1)
-	}
-}
 
 // fileIndexRange defines a range of files. eg. CDC000002.csv ~ CDC000005.csv
 type fileIndexRange struct {
@@ -509,36 +471,7 @@ func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partiti
 	return g.currentTableID
 }
 
-func createFileFormat() {
-	db, err := sql.Open("snowflake", downstreamURIStr)
-	if err != nil {
-		log.Error("fail to connect to snowflake", zap.Error(err))
-	}
-	createFileFormatQuery := fmt.Sprintf(`CREATE OR REPLACE FILE FORMAT "%s"
-		EMPTY_FIELD_AS_NULL	= FALSE 
-		NULL_IF=('\N')
-		TYPE = CSV
-		SKIP_HEADER = 1
-		FIELD_OPTIONALLY_ENCLOSED_BY='"';`, incrementalFileFormatName)
-	_, err = db.Exec(createFileFormatQuery)
-	if err != nil {
-		log.Error("fail to create file format", zap.Error(err))
-	}
-}
-
-func DropFileFormat() {
-	db, err := sql.Open("snowflake", downstreamURIStr)
-	if err != nil {
-		log.Error("fail to connect to snowflake", zap.Error(err))
-	}
-	dropFileFormatQuery := fmt.Sprintf(`DROP FILE FORMAT IF EXISTS "%s";`, incrementalFileFormatName)
-	_, err = db.Exec(dropFileFormatQuery)
-	if err != nil {
-		log.Error("fail to drop file format", zap.Error(err))
-	}
-}
-
-func main() {
+func startReplicateIncrement() {
 	var consumer *consumer
 	var err error
 
@@ -567,7 +500,6 @@ func main() {
 				db.Close()
 			}
 		}
-		DropFileFormat()
 		return 0
 	}
 
@@ -577,12 +509,55 @@ func main() {
 		goto EXIT
 	}
 
-	createFileFormat()
-
 	if err = consumer.run(ctx); err != nil {
 		log.Error("error occurred while running consumer", zap.Error(err))
 	}
 
 EXIT:
 	os.Exit(deferFunc())
+}
+
+func newIncrementCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "increment",
+		Short: "Replicate incremental data from TiDB to Snowflake",
+		Run: func(_ *cobra.Command, _ []string) {
+			err := logutil.InitLogger(&logutil.Config{
+				Level: logLevel,
+				File:  logFile,
+			})
+			if err != nil {
+				log.Error("init logger failed", zap.Error(err))
+				os.Exit(1)
+			}
+			uri, err := url.Parse(upstreamURIStr)
+			if err != nil {
+				log.Error("invalid upstream-uri", zap.Error(err))
+				os.Exit(1)
+			}
+			upstreamURI = uri
+			scheme := strings.ToLower(upstreamURI.Scheme)
+			if !psink.IsStorageScheme(scheme) {
+				log.Error("invalid storage scheme, the scheme of upstream-uri must be file/s3/azblob/gcs")
+				os.Exit(1)
+			}
+			startReplicateIncrement()
+		},
+	}
+
+	cmd.Flags().StringVar(&upstreamURIStr, "upstream-uri", "", "storage uri")
+	cmd.Flags().StringVar(&downstreamURIStr, "downstream-uri", "", "downstream sink uri")
+	cmd.Flags().StringVar(&configFile, "config", "", "changefeed configuration file")
+	cmd.Flags().StringVar(&logFile, "log-file", "", "log file path")
+	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level")
+	cmd.Flags().DurationVar(&flushInterval, "flush-interval", 10*time.Second, "flush interval")
+	cmd.Flags().IntVar(&fileIndexWidth, "file-index-width",
+		config.DefaultFileIndexWidth, "file index width")
+	cmd.Flags().BoolVar(&enableProfiling, "enable-profiling", false, "whether to enable profiling")
+	cmd.Flags().StringVar(&timezone, "tz", "System", "Specify time zone of storage consumer")
+	cmd.Flags().StringVar(&storageIntegration, "storage-integration", "", "Specify the storage integration name in Snowflake")
+	cmd.MarkFlagRequired("upstream-uri")
+	cmd.MarkFlagRequired("downstream-uri")
+
+	return cmd
 }
