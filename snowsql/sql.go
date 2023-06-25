@@ -11,21 +11,36 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-const (
-	CreateStageQuery string = `
-CREATE OR REPLACE STAGE "?"
-STORAGE_INTEGRATION = "?"
-URL = '?'
-FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');`
+func GenCreateExternalStage(stageName, s3WorkspaceURL string, storageIntegration string) string {
+	return fmt.Sprintf(`
+CREATE OR REPLACE STAGE "%s"
+STORAGE_INTEGRATION = "%s"
+URL = '%s'
+FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
+	`, stageName, storageIntegration, s3WorkspaceURL)
+}
 
-	DropStageQuery string = `
-DROP STAGE IF EXISTS "?";`
+func GenCreateInternalStage(stageName string) string {
+	return fmt.Sprintf(`
+CREATE OR REPLACE STAGE "%s"
+FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
+	`, stageName)
+}
 
-	LoadSnapshotFromStageQuery string = `
-COPY INTO "?"
-FROM '@"?"?'
-ON_ERROR = CONTINUE;`
-)
+func GenDropStage(stageName string) string {
+	return fmt.Sprintf(`
+DROP STAGE IF EXISTS "%s";
+	`, stageName)
+}
+
+func GenLoadSnapshotFromStage(targetTable, stageName, fileName string) string {
+	// TODO: Load more data?
+	return fmt.Sprintf(`
+COPY INTO "%s"
+FROM '@"%s"%s'
+ON_ERROR = CONTINUE;
+	`, targetTable, stageName, fileName)
+}
 
 func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) (string, error) {
 	query := fmt.Sprintf("SHOW COLUMNS FROM `%s`.`%s`", sourceDatabase, sourceTable) // FIXME: Escape
