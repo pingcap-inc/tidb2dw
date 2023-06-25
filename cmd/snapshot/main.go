@@ -95,7 +95,7 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 			return nil, errors.Trace(err)
 		}
 		if parsed.Scheme != "s3" {
-			return nil, fmt.Errorf("storage must be like s3://...")
+			return nil, errors.Errorf("storage must be like s3://...")
 		}
 
 		bucket := parsed.Host
@@ -204,7 +204,7 @@ func (sess *ReplicateSession) buildDumper() (*export.Dumper, error) {
 
 	sess.ResolvedTSO = conf.Snapshot
 	if len(sess.ResolvedTSO) == 0 {
-		return nil, fmt.Errorf("Snapshot is not available")
+		return nil, errors.Errorf("Snapshot is not available")
 	}
 	// FIXME: This might cause a bug, because the underlying is a pool?
 	_, err = sess.TiDBPool.ExecContext(context.Background(), "SET SESSION tidb_snapshot = ?", conf.Snapshot)
@@ -259,9 +259,8 @@ func (sess *ReplicateSession) dumpPrepareTargetTable() error {
 
 func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	stageName := fmt.Sprintf("snapshot_stage_%s", sess.SourceTable)
-	sql := snowsql.GenCreateStage(stageName, sess.StorageWorkspacePath, sess.StorageIntegration)
 	log.Info("Creating stage for loading snapshot data", zap.String("stageName", stageName))
-	_, err := sess.SnowflakePool.Exec(sql)
+	_, err := sess.SnowflakePool.Exec(snowsql.CreateStageQuery, stageName, sess.StorageIntegration, sess.StorageWorkspacePath)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -305,21 +304,14 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 
 	for _, dumpedSnapshot := range dumpedSnapshots {
 		log.Info("Loading snapshot data", zap.String("snapshot", dumpedSnapshot))
-		sql, err = snowsql.GenLoadSnapshotFromStage(
-			sess.SourceTable, stageName, dumpedSnapshot)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		log.Debug("Executing SQL", zap.String("sql", sql))
-		_, err = sess.SnowflakePool.Exec(sql)
+		_, err = sess.SnowflakePool.Exec(snowsql.LoadSnapshotFromStageQuery, sess.SourceTable, stageName, dumpedSnapshot)
 		if err != nil {
 			return errors.Trace(err)
 		}
 		log.Info("Snapshot data load finished", zap.String("snapshot", dumpedSnapshot))
 	}
 
-	sql = snowsql.GenDropStage(stageName)
-	_, err = sess.SnowflakePool.Exec(sql)
+	_, err = sess.SnowflakePool.Exec(snowsql.DropStageQuery, stageName)
 	if err != nil {
 		return errors.Trace(err)
 	}
