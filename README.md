@@ -1,11 +1,16 @@
 # tidb-snowflake
 Replicate from TiDB to Snowflake
 
+## build
+
+```bash
+make build
+```
+
 ## replicate snapshot data from TiDB to Snowflake
 
 ```bash
-make snapshot
-AWS_SDK_LOAD_CONFIG=true ./bin/snapshot --storage s3://test/dump --table <database_name>.<table_name> --snowflake.account-id <organization>-<account> --snowflake.user <use_name> --snowflake.pass <password> --snowflake.database <database> --snowflake.schema <schema>
+AWS_SDK_LOAD_CONFIG=true ./bin/tidb2dw snowflake snapshot --storage s3://test/dump --table <database_name>.<table_name> --snowflake.account-id <organization>-<account> --snowflake.user <use_name> --snowflake.pass <password> --snowflake.database <database> --snowflake.schema <schema>
 ```
 
 ## replicate incremental data from TiDB to Snowflake
@@ -19,8 +24,7 @@ AWS_SDK_LOAD_CONFIG=true ./bin/snapshot --storage s3://test/dump --table <databa
 tiup cdc cli changefeed create --server=http://127.0.0.1:8300 --sink-uri="s3://test/cdc?protocol=csv&flush-interval=5m&file-size=268435456"
 
 # start the replication
-make incremental
-AWS_SDK_LOAD_CONFIG=true ./bin/incremental --upstream-uri="s3://test/cdc?protocol=csv&flush-interval=5m&file-size=268435456" --downstream-uri="<use_name>:<password>@<organization>-<account>/<database>/<schema>?warehouse=<warehouse>"
+AWS_SDK_LOAD_CONFIG=true ./bin/tidb2dw snowflake increment --upstream-uri="s3://test/cdc?protocol=csv&flush-interval=5m&file-size=268435456" --downstream-uri="<use_name>:<password>@<organization>-<account>/<database>/<schema>?warehouse=<warehouse>"
 
 # run any dml operation in tidb
 ...
