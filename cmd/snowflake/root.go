@@ -4,7 +4,7 @@ import "github.com/spf13/cobra"
 
 func NewSnowfalkeCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "snowflake increment/snapshot",
+		Use:   "snowflake <command> [args...]",
 		Short: "Replicate data from TiDB to Snowflake",
 	}
 

@@ -1,5 +1,15 @@
-# tidb-snowflake
-Replicate from TiDB to Snowflake
+# tidb2dw
+
+A tool to replicate data from TiDB to Data Warehouse.
+
+> **Note**
+> Only support TiDB v7.1.0 or later, and only support Snowflake as target Data Warehouse now.
+
+## build
+
+```bash
+make build
+```
 
 ## build
 
