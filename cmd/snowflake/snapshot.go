@@ -151,6 +151,7 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 			MinVersion: tls.VersionTLS12,
 			ServerName: config.TiDBHost,
 		})
+		tidbConfig.TLSConfig = "tidb"
 		db, err := sql.Open("mysql", tidbConfig.FormatDSN())
 		if err != nil {
 			return nil, err
