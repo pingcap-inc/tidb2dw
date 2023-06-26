@@ -1,4 +1,4 @@
-module github.com/breezewish/tidb-snowflake
+module github.com/pingcap-inc/tidb2dw
 
 go 1.20
 

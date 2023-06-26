@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	sfCmd "github.com/breezewish/tidb-snowflake/cmd/snowflake"
-	"github.com/breezewish/tidb-snowflake/version"
+	sfCmd "github.com/pingcap-inc/tidb2dw/cmd/snowflake"
+	"github.com/pingcap-inc/tidb2dw/version"
 	"github.com/spf13/cobra"
 )
 

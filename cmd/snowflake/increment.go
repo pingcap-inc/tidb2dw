@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/breezewish/tidb-snowflake/snowsql"
+	"github.com/pingcap-inc/tidb2dw/snowsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/br/pkg/storage"
