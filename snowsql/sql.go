@@ -21,11 +21,11 @@ URL = '{url}'
 CREDENTIALS = (AWS_KEY_ID = '{awsKeyId}' AWS_SECRET_KEY = '{awsSecretKey}' AWS_TOKEN = '{awsToken}')
 FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
 	`, formatter.Named{
-		"stageName":    stageName,            // FIXME: Quote
-		"url":          s3WorkspaceURL,       // FIXME: Quote
-		"awsKeyId":     cred.AccessKeyID,     // FIXME: Quote
-		"awsSecretKey": cred.SecretAccessKey, // FIXME: Quote
-		"awsToken":     cred.SessionToken,    // FIXME: Quote
+		"stageName":    EscapeString(stageName),
+		"url":          EscapeString(s3WorkspaceURL),
+		"awsKeyId":     EscapeString(cred.AccessKeyID),
+		"awsSecretKey": EscapeString(cred.SecretAccessKey),
+		"awsToken":     EscapeString(cred.SessionToken),
 	})
 	if err != nil {
 		return errors.Trace(err)
