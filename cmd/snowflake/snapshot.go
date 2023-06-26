@@ -2,9 +2,12 @@ package snowflake
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -29,6 +32,7 @@ type Config struct {
 	TiDBPort            int
 	TiDBUser            string
 	TiDBPass            string
+	TiDBSSLCA           string
 	SnowflakeAccountId  string
 	SnowflakeWarehouse  string
 	SnowflakeUser       string
@@ -140,6 +144,20 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 		tidbConfig.Passwd = config.TiDBPass
 		tidbConfig.Net = "tcp"
 		tidbConfig.Addr = fmt.Sprintf("%s:%d", config.TiDBHost, config.TiDBPort)
+		rootCertPool := x509.NewCertPool()
+		pem, err := os.ReadFile(config.TiDBSSLCA)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
+			log.Fatal("Failed to append PEM.")
+		}
+		mysql.RegisterTLSConfig("tidb", &tls.Config{
+			RootCAs:    rootCertPool,
+			MinVersion: tls.VersionTLS12,
+			ServerName: config.TiDBHost,
+		})
+		tidbConfig.TLSConfig = "tidb"
 		db, err := sql.Open("mysql", tidbConfig.FormatDSN())
 		if err != nil {
 			return nil, errors.Annotate(err, "Failed to open TiDB connection")
@@ -356,6 +374,7 @@ func newSnapshotCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&configFromCli.TiDBPort, "port", "P", 4000, "")
 	cmd.Flags().StringVarP(&configFromCli.TiDBUser, "user", "u", "root", "")
 	cmd.Flags().StringVarP(&configFromCli.TiDBPass, "pass", "p", "", "")
+	cmd.Flags().StringVar(&configFromCli.TiDBSSLCA, "ssl-ca", "", "")
 	cmd.Flags().StringVar(&configFromCli.SnowflakeAccountId, "snowflake.account-id", "", "")
 	cmd.Flags().StringVar(&configFromCli.SnowflakeWarehouse, "snowflake.warehouse", "COMPUTE_WH", "")
 	cmd.Flags().StringVar(&configFromCli.SnowflakeUser, "snowflake.user", "", "")
