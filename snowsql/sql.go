@@ -39,8 +39,8 @@ func GenCreateExternalStage(stageName, s3WorkspaceURL string, storageIntegration
 	// TO BE DEPRECATED
 	return fmt.Sprintf(`
 CREATE OR REPLACE STAGE "%s"
+STORAGE_INTEGRATION = "%s"
 URL = '%s'
-CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s')
 FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
 	`, stageName, storageIntegration, s3WorkspaceURL)
 }
