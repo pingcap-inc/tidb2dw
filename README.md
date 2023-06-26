@@ -11,12 +11,6 @@ A tool to replicate data from TiDB to Data Warehouse.
 make build
 ```
 
-## build
-
-```bash
-make build
-```
-
 ## replicate snapshot data from TiDB to Snowflake
 
 ```bash
