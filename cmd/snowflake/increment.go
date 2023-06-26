@@ -48,9 +48,7 @@ var (
 )
 
 const (
-	defaultChangefeedName         = "storage-consumer"
 	fakePartitionNumForSchemaFile = -1
-	incrementalFileFormatName     = "INCREMENTAL_IO_CSV_FORMAT"
 )
 
 // fileIndexRange defines a range of files. eg. CDC000002.csv ~ CDC000005.csv
