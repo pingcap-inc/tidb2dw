@@ -11,7 +11,6 @@ dev: build
 
 BUILD_FLAGS ?=
 BUILD_TAGS ?=
-BUILD_CGO_ENABLED := 0
 
 ROOT_PATH := $(shell pwd)
 BUILD_BIN_PATH := $(ROOT_PATH)/bin
@@ -31,7 +30,7 @@ LDFLAGS += $(EXTRA_LDFLAGS)
 build: tidb2dw
 
 tidb2dw:
-	CGO_ENABLED=$(BUILD_CGO_ENABLED) go build $(BUILD_FLAGS) -gcflags '$(GCFLAGS)' -ldflags '$(LDFLAGS)' -tags "$(BUILD_TAGS)" -o $(BUILD_BIN_PATH)/tidb2dw main.go
+	go build $(BUILD_FLAGS) -gcflags '$(GCFLAGS)' -ldflags '$(LDFLAGS)' -tags "$(BUILD_TAGS)" -o $(BUILD_BIN_PATH)/tidb2dw main.go
 
 .PHONY: build tidb2dw
 
