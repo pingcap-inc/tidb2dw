@@ -16,6 +16,18 @@ BUILD_CGO_ENABLED := 0
 ROOT_PATH := $(shell pwd)
 BUILD_BIN_PATH := $(ROOT_PATH)/bin
 
+REPO    := github.com/pingcap-inc/tidb2dw
+
+_COMMIT := $(shell git describe --no-match --always --dirty)
+_GITREF := $(shell git rev-parse --abbrev-ref HEAD)
+COMMIT  := $(if $(COMMIT),$(COMMIT),$(_COMMIT))
+GITREF  := $(if $(GITREF),$(GITREF),$(_GITREF))
+
+LDFLAGS := -w -s
+LDFLAGS += -X "$(REPO)/version.GitHash=$(COMMIT)"
+LDFLAGS += -X "$(REPO)/version.GitRef=$(GITREF)"
+LDFLAGS += $(EXTRA_LDFLAGS)
+
 build: tidb2dw
 
 tidb2dw:
