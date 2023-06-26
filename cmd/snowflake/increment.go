@@ -519,7 +519,7 @@ EXIT:
 
 func newIncrementCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "increment [flags]",
+		Use:   "increment",
 		Short: "Replicate incremental data from TiDB to Snowflake",
 		Run: func(_ *cobra.Command, _ []string) {
 			err := logutil.InitLogger(&logutil.Config{

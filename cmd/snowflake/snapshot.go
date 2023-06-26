@@ -328,7 +328,7 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 
 func newSnapshotCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "snapshot [flags]",
+		Use:   "snapshot",
 		Short: "Replicate snapshot from TiDB to Snowflake",
 		Run: func(_ *cobra.Command, _ []string) {
 			session, err := NewReplicateSession(&configFromCli)

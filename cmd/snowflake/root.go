@@ -2,9 +2,9 @@ package snowflake
 
 import "github.com/spf13/cobra"
 
-func NewSnowfalkeCmd() *cobra.Command {
+func NewSnowflakeCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "snowflake <command> [args...]",
+		Use:   "snowflake",
 		Short: "Replicate data from TiDB to Snowflake",
 	}
 

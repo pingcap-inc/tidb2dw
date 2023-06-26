@@ -27,17 +27,12 @@ LDFLAGS += -X "$(REPO)/version.GitHash=$(COMMIT)"
 LDFLAGS += -X "$(REPO)/version.GitRef=$(GITREF)"
 LDFLAGS += $(EXTRA_LDFLAGS)
 
-build: tidb2dw
+.PHONY: build
 
-tidb2dw:
+build:
 	go build $(BUILD_FLAGS) -gcflags '$(GCFLAGS)' -ldflags '$(LDFLAGS)' -tags "$(BUILD_TAGS)" -o $(BUILD_BIN_PATH)/tidb2dw main.go
 
-.PHONY: build tidb2dw
-
-#### Clean up ####
+.PHONY: clean
 
 clean:
-	# Cleaning building files...
 	rm -rf $(BUILD_BIN_PATH)
-
-.PHONY: clean

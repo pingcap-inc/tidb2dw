@@ -12,7 +12,7 @@ var rootCmd *cobra.Command
 
 func init() {
 	rootCmd = &cobra.Command{
-		Use:                "tidb2dw [flags] <command> [args...]",
+		Use:                "tidb2dw",
 		Short:              "A service to replicate from TiDB to Data Warehouse",
 		SilenceErrors:      true,
 		DisableFlagParsing: true,
@@ -35,7 +35,7 @@ func init() {
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version of tidb2dw")
 
 	rootCmd.AddCommand(
-		sfCmd.NewSnowfalkeCmd(),
+		sfCmd.NewSnowflakeCmd(),
 	)
 }
 
