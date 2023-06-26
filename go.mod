@@ -64,6 +64,7 @@ require (
 	github.com/vbauerster/mpb/v7 v7.5.3 // indirect
 	github.com/xdg/scram v1.0.5 // indirect
 	github.com/xdg/stringprep v1.0.3 // indirect
+	gitlab.com/tymonx/go-formatter v1.5.1 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/api v0.27.2 // indirect
 	k8s.io/apimachinery v0.27.2 // indirect
