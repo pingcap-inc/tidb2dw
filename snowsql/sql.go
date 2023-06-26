@@ -6,12 +6,37 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/dumpling/export"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
+	"gitlab.com/tymonx/go-formatter/formatter"
 	"golang.org/x/exp/slices"
 )
 
+func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred credentials.Value) error {
+	sql, err := formatter.Format(`
+CREATE OR REPLACE STAGE "{stageName}"
+URL = '{url}'
+CREDENTIALS = (AWS_KEY_ID = '{awsKeyId}' AWS_SECRET_KEY = '{awsSecretKey}' AWS_TOKEN = '{awsToken}')
+FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
+	`, formatter.Named{
+		"stageName":    stageName,            // FIXME: Quote
+		"url":          s3WorkspaceURL,       // FIXME: Quote
+		"awsKeyId":     cred.AccessKeyID,     // FIXME: Quote
+		"awsSecretKey": cred.SecretAccessKey, // FIXME: Quote
+		"awsToken":     cred.SessionToken,    // FIXME: Quote
+	})
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	_, err = db.Exec(sql)
+	return err
+}
+
 func GenCreateExternalStage(stageName, s3WorkspaceURL string, storageIntegration string) string {
+	// TO BE DEPRECATED
 	return fmt.Sprintf(`
 CREATE OR REPLACE STAGE "%s"
 STORAGE_INTEGRATION = "%s"
@@ -215,14 +240,14 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 
 	// TODO: Remove QUALIFY row_number() after cdc support merge dml or snowflake support deterministic merge
 	mergeQuery := fmt.Sprintf(
-		`MERGE INTO "%s" AS T USING 
+		`MERGE INTO "%s" AS T USING
 		(
 			SELECT
 				%s
 			FROM '@"%s"/%s'
 			QUALIFY row_number() over (partition by %s order by $4 desc) = 1
-		) AS S 
-		ON 
+		) AS S
+		ON
 		(
 			%s
 		)

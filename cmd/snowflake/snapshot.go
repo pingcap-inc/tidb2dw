@@ -12,6 +12,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
@@ -27,21 +28,20 @@ import (
 )
 
 type Config struct {
-	TiDBHost                    string
-	TiDBPort                    int
-	TiDBUser                    string
-	TiDBPass                    string
-	TiDBSSLCA                   string
-	SnowflakeAccountId          string
-	SnowflakeWarehouse          string
-	SnowflakeUser               string
-	SnowflakePass               string
-	SnowflakeDatabase           string
-	SnowflakeSchema             string
-	TableFQN                    string
-	SnapshotConcurrency         int
-	S3StoragePath               string
-	SnowflakeStorageIntegration string
+	TiDBHost            string
+	TiDBPort            int
+	TiDBUser            string
+	TiDBPass            string
+	TiDBSSLCA           string
+	SnowflakeAccountId  string
+	SnowflakeWarehouse  string
+	SnowflakeUser       string
+	SnowflakePass       string
+	SnowflakeDatabase   string
+	SnowflakeSchema     string
+	TableFQN            string
+	SnapshotConcurrency int
+	S3StoragePath       string
 }
 
 var configFromCli Config
@@ -54,6 +54,7 @@ type ReplicateSession struct {
 	ResolvedTSO      string // Available after buildDumper()
 
 	AWSSession    *session.Session
+	AWSCredential credentials.Value // The resolved credential from current env
 	SnowflakePool *sql.DB
 	TiDBPool      *sql.DB
 
@@ -61,7 +62,6 @@ type ReplicateSession struct {
 	SourceTable    string
 
 	StorageWorkspacePath string
-	StorageIntegration   string
 }
 
 func NewReplicateSession(config *Config) (*ReplicateSession, error) {
@@ -70,7 +70,6 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 		Config: config,
 	}
 	sess.StorageWorkspacePath = fmt.Sprintf("%s/%s", config.S3StoragePath, sess.ID)
-	sess.StorageIntegration = config.SnowflakeStorageIntegration
 	{
 		parts := strings.SplitN(config.TableFQN, ".", 2)
 		if len(parts) != 2 {
@@ -88,15 +87,22 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 			SharedConfigState: session.SharedConfigEnable,
 		})
 		if err != nil {
-			return nil, errors.Trace(err)
+			return nil, errors.Annotate(err, "Failed to establish AWS session")
 		}
 		sess.AWSSession = awsSession
+
+		creds := credentials.NewEnvCredentials()
+		credValue, err := creds.Get()
+		if err != nil {
+			return nil, errors.Annotate(err, "Failed to resolve AWS credential")
+		}
+		sess.AWSCredential = credValue
 	}
 	{
 		// Parse S3StoragePath like s3://wenxuan-snowflake-test/dump20230601
 		parsed, err := url.Parse(config.S3StoragePath)
 		if err != nil {
-			return nil, errors.Trace(err)
+			return nil, errors.Annotate(err, "Failed to parse --storage value")
 		}
 		if parsed.Scheme != "s3" {
 			return nil, errors.Errorf("storage must be like s3://...")
@@ -109,7 +115,7 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 			if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "NotFound" {
 				return nil, fmt.Errorf("unable to find bucket %s's region not found", bucket)
 			}
-			return nil, errors.Trace(err)
+			return nil, errors.Annotate(err, "Failed to resolve --storage region")
 		}
 		sess.ResolvedS3Region = s3Region
 		log.Info("Resolved storage region", zap.String("region", s3Region))
@@ -124,11 +130,11 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 		sfConfig.Warehouse = config.SnowflakeWarehouse
 		dsn, err := gosnowflake.DSN(&sfConfig)
 		if err != nil {
-			return nil, err
+			return nil, errors.Annotate(err, "Failed to generate Snowflake DSN")
 		}
 		db, err := sql.Open("snowflake", dsn)
 		if err != nil {
-			return nil, err
+			return nil, errors.Annotate(err, "Failed to open Snowflake connection")
 		}
 		sess.SnowflakePool = db
 	}
@@ -154,7 +160,7 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 		tidbConfig.TLSConfig = "tidb"
 		db, err := sql.Open("mysql", tidbConfig.FormatDSN())
 		if err != nil {
-			return nil, err
+			return nil, errors.Annotate(err, "Failed to open TiDB connection")
 		}
 		sess.TiDBPool = db
 	}
@@ -173,14 +179,14 @@ func (sess *ReplicateSession) Run() error {
 	log.Info("Testing connections with Snowflake")
 	err = sess.SnowflakePool.Ping()
 	if err != nil {
-		return errors.Trace(err)
+		return errors.Annotate(err, "Failed to connect to Snowflake")
 	}
 	log.Info("Connected with Snowflake")
 
 	log.Info("Testing connections with TiDB")
 	err = sess.TiDBPool.Ping()
 	if err != nil {
-		return errors.Trace(err)
+		return errors.Annotate(err, "Failed to connect to TiDB")
 	}
 	log.Info("Connected with TiDB")
 
@@ -197,14 +203,14 @@ func (sess *ReplicateSession) Run() error {
 	err = dumper.Dump()
 	_ = dumper.Close()
 	if err != nil {
-		return errors.Trace(err)
+		return errors.Annotate(err, "Failed to dump table from TiDB")
 	}
 
 	log.Info("Successfully dumped table from TiDB, starting to load into Snowflake")
 
 	err = sess.loadSnapshotDataIntoSnowflake()
 	if err != nil {
-		return errors.Trace(err)
+		return errors.Annotate(err, "Failed to load snapshot data into Snowflake")
 	}
 
 	return nil
@@ -213,11 +219,11 @@ func (sess *ReplicateSession) Run() error {
 func (sess *ReplicateSession) buildDumper() (*export.Dumper, error) {
 	conf, err := sess.buildDumperConfig()
 	if err != nil {
-		return nil, errors.Trace(err)
+		return nil, errors.Annotate(err, "Failed to build dumpling config")
 	}
 	dumper, err := export.NewDumper(context.Background(), conf)
 	if err != nil {
-		return nil, errors.Trace(err)
+		return nil, errors.Annotate(err, "Failed to create dumpling instance")
 	}
 
 	sess.ResolvedTSO = conf.Snapshot
@@ -227,7 +233,7 @@ func (sess *ReplicateSession) buildDumper() (*export.Dumper, error) {
 	// FIXME: This might cause a bug, because the underlying is a pool?
 	_, err = sess.TiDBPool.ExecContext(context.Background(), "SET SESSION tidb_snapshot = ?", conf.Snapshot)
 	if err != nil {
-		return nil, err
+		return nil, errors.Trace(err)
 	}
 	log.Info("Using snapshot", zap.String("snapshot", sess.ResolvedTSO))
 
@@ -254,7 +260,7 @@ func (sess *ReplicateSession) buildDumperConfig() (*export.Config, error) {
 	conf.SpecifiedTables = true
 	tables, err := export.GetConfTables([]string{sess.Config.TableFQN})
 	if err != nil {
-		return nil, errors.Trace(err)
+		return nil, errors.Trace(err) // Should not happen
 	}
 	conf.Tables = tables
 
@@ -277,9 +283,12 @@ func (sess *ReplicateSession) dumpPrepareTargetTable() error {
 
 func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	stageName := fmt.Sprintf("snapshot_stage_%s", sess.SourceTable)
-	sql := snowsql.GenCreateExternalStage(stageName, sess.StorageWorkspacePath, sess.StorageIntegration)
 	log.Info("Creating stage for loading snapshot data", zap.String("stageName", stageName))
-	_, err := sess.SnowflakePool.Exec(sql)
+	err := snowsql.CreateExternalStage(
+		sess.SnowflakePool,
+		stageName,
+		sess.StorageWorkspacePath,
+		sess.AWSCredential)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -296,7 +305,6 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 
 	workspacePrefix := strings.TrimPrefix(parsedWorkspace.Path, "/")
 	snapshotPrefix := fmt.Sprintf("%s/snapshot/", workspacePrefix)
-	// workspacePrefix := strings.TrimPrefix(fmt.Sprintf("%s/snapshot/", parsedWorkspace.Path), "/")
 	dumpFilePrefix := fmt.Sprintf("%s%s.%s.", snapshotPrefix, sess.SourceDatabase, sess.SourceTable)
 
 	s3Client := s3.New(sess.AWSSession, aws.NewConfig().WithRegion(sess.ResolvedS3Region))
@@ -304,7 +312,6 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 		Bucket: aws.String(parsedWorkspace.Host),
 		Prefix: aws.String(workspacePrefix),
 	})
-	// var contents []types.Object
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -323,7 +330,7 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 
 	for _, dumpedSnapshot := range dumpedSnapshots {
 		log.Info("Loading snapshot data", zap.String("snapshot", dumpedSnapshot))
-		sql = snowsql.GenLoadSnapshotFromStage(sess.SourceTable, stageName, dumpedSnapshot)
+		sql := snowsql.GenLoadSnapshotFromStage(sess.SourceTable, stageName, dumpedSnapshot)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -335,7 +342,7 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 		log.Info("Snapshot data load finished", zap.String("snapshot", dumpedSnapshot))
 	}
 
-	sql = snowsql.GenDropStage(stageName)
+	sql := snowsql.GenDropStage(stageName)
 	_, err = sess.SnowflakePool.Exec(sql)
 	if err != nil {
 		return errors.Trace(err)
@@ -377,7 +384,6 @@ func newSnapshotCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&configFromCli.TableFQN, "table", "t", "", "")
 	cmd.Flags().IntVar(&configFromCli.SnapshotConcurrency, "snapshot-concurrency", 8, "")
 	cmd.Flags().StringVarP(&configFromCli.S3StoragePath, "storage", "s", "", "")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeStorageIntegration, "snowflake.storage-integration", "", "")
 	cmd.MarkFlagRequired("storage")
 	cmd.MarkFlagRequired("table")
 
