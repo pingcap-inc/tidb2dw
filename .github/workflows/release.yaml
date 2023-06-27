@@ -25,6 +25,7 @@ jobs:
     outputs:
       REL_VER: ${{ steps.build_tidb2dw.outputs.REL_VER }}
     strategy:
+      fail-fast: false
       matrix:
         os:
           - "linux"
