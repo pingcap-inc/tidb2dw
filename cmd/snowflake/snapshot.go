@@ -30,9 +30,12 @@ import (
 type ReplicateSession struct {
 	ID string
 
-	Config           *Config
-	ResolvedS3Region string
-	ResolvedTSO      string // Available after buildDumper()
+	SFConfig            *SnowflakeConfig
+	TiDBConfig          *TiDBConfig
+	TableFQN            string
+	SnapshotConcurrency int
+	ResolvedS3Region    string
+	ResolvedTSO         string // Available after buildDumper()
 
 	AWSSession    *session.Session
 	AWSCredential credentials.Value // The resolved credential from current env
@@ -45,14 +48,22 @@ type ReplicateSession struct {
 	StorageWorkspacePath string
 }
 
-func NewReplicateSession(config *Config) (*ReplicateSession, error) {
+func NewReplicateSession(
+	sfConfigFromCli *SnowflakeConfig,
+	tidbConfigFromCli *TiDBConfig,
+	tableFQN string,
+	snapshotConcurrency int,
+	s3StoragePath string) (*ReplicateSession, error) {
 	sess := &ReplicateSession{
-		ID:     uuid.New().String(),
-		Config: config,
+		ID:                  uuid.New().String(),
+		SFConfig:            sfConfigFromCli,
+		TiDBConfig:          tidbConfigFromCli,
+		TableFQN:            tableFQN,
+		SnapshotConcurrency: snapshotConcurrency,
 	}
-	sess.StorageWorkspacePath = fmt.Sprintf("%s/%s", config.S3StoragePath, sess.ID)
+	sess.StorageWorkspacePath = fmt.Sprintf("%s/%s", s3StoragePath, sess.ID)
 	{
-		parts := strings.SplitN(config.TableFQN, ".", 2)
+		parts := strings.SplitN(tableFQN, ".", 2)
 		if len(parts) != 2 {
 			return nil, fmt.Errorf("table must be a full-qualified name like mydb.mytable")
 		}
@@ -62,7 +73,7 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 	log.Info("Creating replicate session",
 		zap.String("id", sess.ID),
 		zap.String("storage", sess.StorageWorkspacePath),
-		zap.String("source", config.TableFQN))
+		zap.String("source", tableFQN))
 	{
 		awsSession, err := session.NewSessionWithOptions(session.Options{
 			SharedConfigState: session.SharedConfigEnable,
@@ -80,8 +91,8 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 		sess.AWSCredential = credValue
 	}
 	{
-		// Parse S3StoragePath like s3://wenxuan-snowflake-test/dump20230601
-		parsed, err := url.Parse(config.S3StoragePath)
+		// Parse s3StoragePath like s3://wenxuan-snowflake-test/dump20230601
+		parsed, err := url.Parse(s3StoragePath)
 		if err != nil {
 			return nil, errors.Annotate(err, "Failed to parse --storage value")
 		}
@@ -103,12 +114,12 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 	}
 	{
 		sfConfig := gosnowflake.Config{}
-		sfConfig.Account = config.SnowflakeAccountId
-		sfConfig.User = config.SnowflakeUser
-		sfConfig.Password = config.SnowflakePass
-		sfConfig.Database = config.SnowflakeDatabase
-		sfConfig.Schema = config.SnowflakeSchema
-		sfConfig.Warehouse = config.SnowflakeWarehouse
+		sfConfig.Account = sfConfigFromCli.SnowflakeAccountId
+		sfConfig.User = sfConfigFromCli.SnowflakeUser
+		sfConfig.Password = sfConfigFromCli.SnowflakePass
+		sfConfig.Database = sfConfigFromCli.SnowflakeDatabase
+		sfConfig.Schema = sfConfigFromCli.SnowflakeSchema
+		sfConfig.Warehouse = sfConfigFromCli.SnowflakeWarehouse
 		dsn, err := gosnowflake.DSN(&sfConfig)
 		if err != nil {
 			return nil, errors.Annotate(err, "Failed to generate Snowflake DSN")
@@ -121,24 +132,26 @@ func NewReplicateSession(config *Config) (*ReplicateSession, error) {
 	}
 	{
 		tidbConfig := mysql.NewConfig()
-		tidbConfig.User = config.TiDBUser
-		tidbConfig.Passwd = config.TiDBPass
+		tidbConfig.User = tidbConfigFromCli.TiDBUser
+		tidbConfig.Passwd = tidbConfigFromCli.TiDBPass
 		tidbConfig.Net = "tcp"
-		tidbConfig.Addr = fmt.Sprintf("%s:%d", config.TiDBHost, config.TiDBPort)
-		rootCertPool := x509.NewCertPool()
-		pem, err := os.ReadFile(config.TiDBSSLCA)
-		if err != nil {
-			log.Fatal(err.Error())
+		tidbConfig.Addr = fmt.Sprintf("%s:%d", tidbConfigFromCli.TiDBHost, tidbConfigFromCli.TiDBPort)
+		if tidbConfigFromCli.TiDBSSLCA != "" {
+			rootCertPool := x509.NewCertPool()
+			pem, err := os.ReadFile(tidbConfigFromCli.TiDBSSLCA)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
+				log.Fatal("Failed to append PEM.")
+			}
+			mysql.RegisterTLSConfig("tidb", &tls.Config{
+				RootCAs:    rootCertPool,
+				MinVersion: tls.VersionTLS12,
+				ServerName: tidbConfigFromCli.TiDBHost,
+			})
+			tidbConfig.TLSConfig = "tidb"
 		}
-		if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
-			log.Fatal("Failed to append PEM.")
-		}
-		mysql.RegisterTLSConfig("tidb", &tls.Config{
-			RootCAs:    rootCertPool,
-			MinVersion: tls.VersionTLS12,
-			ServerName: config.TiDBHost,
-		})
-		tidbConfig.TLSConfig = "tidb"
 		db, err := sql.Open("mysql", tidbConfig.FormatDSN())
 		if err != nil {
 			return nil, errors.Annotate(err, "Failed to open TiDB connection")
@@ -224,11 +237,11 @@ func (sess *ReplicateSession) buildDumper() (*export.Dumper, error) {
 func (sess *ReplicateSession) buildDumperConfig() (*export.Config, error) {
 	conf := export.DefaultConfig()
 	conf.Logger = log.L()
-	conf.User = sess.Config.TiDBUser
-	conf.Password = sess.Config.TiDBPass
-	conf.Host = sess.Config.TiDBHost
-	conf.Port = sess.Config.TiDBPort
-	conf.Threads = sess.Config.SnapshotConcurrency
+	conf.User = sess.TiDBConfig.TiDBUser
+	conf.Password = sess.TiDBConfig.TiDBPass
+	conf.Host = sess.TiDBConfig.TiDBHost
+	conf.Port = sess.TiDBConfig.TiDBPort
+	conf.Threads = sess.SnapshotConcurrency
 	conf.NoHeader = true
 	conf.FileType = "csv"
 	conf.CsvSeparator = ","
@@ -239,7 +252,7 @@ func (sess *ReplicateSession) buildDumperConfig() (*export.Config, error) {
 	conf.S3.Region = sess.ResolvedS3Region
 
 	conf.SpecifiedTables = true
-	tables, err := export.GetConfTables([]string{sess.Config.TableFQN})
+	tables, err := export.GetConfTables([]string{sess.TableFQN})
 	if err != nil {
 		return nil, errors.Trace(err) // Should not happen
 	}
@@ -332,11 +345,18 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 }
 
 func newSnapshotCmd() *cobra.Command {
+	var (
+		tidbConfigFromCli   TiDBConfig
+		tableFQN            string
+		snapshotConcurrency int
+		s3StoragePath       string
+	)
+
 	cmd := &cobra.Command{
 		Use:   "snapshot",
 		Short: "Replicate snapshot from TiDB to Snowflake",
 		Run: func(_ *cobra.Command, _ []string) {
-			session, err := NewReplicateSession(&configFromCli)
+			session, err := NewReplicateSession(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, s3StoragePath)
 			if err != nil {
 				panic(err)
 			}
@@ -350,20 +370,20 @@ func newSnapshotCmd() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().BoolP("help", "", false, "help for this command")
-	cmd.Flags().StringVarP(&configFromCli.TiDBHost, "host", "h", "127.0.0.1", "")
-	cmd.Flags().IntVarP(&configFromCli.TiDBPort, "port", "P", 4000, "")
-	cmd.Flags().StringVarP(&configFromCli.TiDBUser, "user", "u", "root", "")
-	cmd.Flags().StringVarP(&configFromCli.TiDBPass, "pass", "p", "", "")
-	cmd.Flags().StringVar(&configFromCli.TiDBSSLCA, "ssl-ca", "", "")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeAccountId, "snowflake.account-id", "", "snowflake accound id: <organization>-<account>")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeWarehouse, "snowflake.warehouse", "COMPUTE_WH", "")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeUser, "snowflake.user", "", "snowflake user")
-	cmd.Flags().StringVar(&configFromCli.SnowflakePass, "snowflake.pass", "", "snowflake password")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeDatabase, "snowflake.database", "", "snowflake database")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeSchema, "snowflake.schema", "", "snowflake schema")
-	cmd.Flags().StringVarP(&configFromCli.TableFQN, "table", "t", "", "")
-	cmd.Flags().IntVar(&configFromCli.SnapshotConcurrency, "snapshot-concurrency", 8, "")
-	cmd.Flags().StringVarP(&configFromCli.S3StoragePath, "storage", "s", "", "")
+	cmd.Flags().StringVarP(&tidbConfigFromCli.TiDBHost, "host", "h", "127.0.0.1", "TiDB host")
+	cmd.Flags().IntVarP(&tidbConfigFromCli.TiDBPort, "port", "P", 4000, "TiDB port")
+	cmd.Flags().StringVarP(&tidbConfigFromCli.TiDBUser, "user", "u", "root", "TiDB user")
+	cmd.Flags().StringVarP(&tidbConfigFromCli.TiDBPass, "pass", "p", "", "TiDB password")
+	cmd.Flags().StringVar(&tidbConfigFromCli.TiDBSSLCA, "ssl-ca", "", "TiDB SSL CA")
+	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeAccountId, "snowflake.account-id", "", "snowflake accound id: <organization>-<account>")
+	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeWarehouse, "snowflake.warehouse", "COMPUTE_WH", "")
+	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeUser, "snowflake.user", "", "snowflake user")
+	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakePass, "snowflake.pass", "", "snowflake password")
+	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeDatabase, "snowflake.database", "", "snowflake database")
+	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeSchema, "snowflake.schema", "", "snowflake schema")
+	cmd.Flags().StringVarP(&tableFQN, "table", "t", "", "table fully qualified name: <database>.<table>")
+	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
+	cmd.Flags().StringVarP(&s3StoragePath, "storage", "s", "", "S3 storage path: s3://<bucket>/<path>")
 	cmd.MarkFlagRequired("storage")
 	cmd.MarkFlagRequired("table")
 

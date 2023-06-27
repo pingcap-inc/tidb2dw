@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -34,19 +33,6 @@ import (
 	"go.uber.org/zap"
 )
 
-var (
-	sinkURIStr      string
-	sinkURI         *url.URL
-	configFile      string
-	logFile         string
-	logLevel        string
-	flushInterval   time.Duration
-	fileIndexWidth  int
-	enableProfiling bool
-	timezone        string
-	AWSCredential   credentials.Value // The resolved credential from current env
-)
-
 const (
 	fakePartitionNumForSchemaFile = -1
 )
@@ -69,9 +55,11 @@ type consumer struct {
 	errCh            chan error
 	// snowflakeConnectorMap maintains a map of <TableID, snowflakeConnector>, each table has a snowflakeConnector
 	snowflakeConnectorMap map[model.TableID]*snowsql.SnowflakeConnector
+	awsCredential         credentials.Value // aws credential, resolved from current env
+	sinkURI               *url.URL
 }
 
-func newConsumer(ctx context.Context) (*consumer, error) {
+func newConsumer(ctx context.Context, sinkUri *url.URL, configFile, timezone string) (*consumer, error) {
 	tz, err := putil.GetTimezone(timezone)
 	if err != nil {
 		return nil, errors.Annotate(err, "can not load timezone")
@@ -86,7 +74,7 @@ func newConsumer(ctx context.Context) (*consumer, error) {
 		}
 	}
 
-	err = replicaConfig.ValidateAndAdjust(sinkURI)
+	err = replicaConfig.ValidateAndAdjust(sinkUri)
 	if err != nil {
 		log.Error("failed to validate replica config", zap.Error(err))
 		return nil, err
@@ -108,13 +96,20 @@ func newConsumer(ctx context.Context) (*consumer, error) {
 	}
 	extension := sinkutil.GetFileExtension(protocol)
 
-	storage, err := putil.GetExternalStorageFromURI(ctx, sinkURIStr)
+	storage, err := putil.GetExternalStorageFromURI(ctx, sinkUri.String())
 	if err != nil {
 		log.Error("failed to create external storage", zap.Error(err))
 		return nil, err
 	}
 
 	errCh := make(chan error, 1)
+
+	// resolve aws credential
+	creds := credentials.NewEnvCredentials()
+	credValue, err := creds.Get()
+	if err != nil {
+		log.Error("Failed to resolve AWS credential", zap.Error(err))
+	}
 
 	return &consumer{
 		replicationCfg:  replicaConfig,
@@ -128,6 +123,8 @@ func newConsumer(ctx context.Context) (*consumer, error) {
 			tableIDs: make(map[string]int64),
 		},
 		snowflakeConnectorMap: make(map[model.TableID]*snowsql.SnowflakeConnector),
+		awsCredential:         credValue,
+		sinkURI:               sinkUri,
 	}, nil
 }
 
@@ -209,12 +206,12 @@ func (c *consumer) waitTableFlushComplete(
 
 	if _, ok := c.snowflakeConnectorMap[tableID]; !ok {
 		sfConfig := gosnowflake.Config{}
-		sfConfig.Account = configFromCli.SnowflakeAccountId
-		sfConfig.User = configFromCli.SnowflakeUser
-		sfConfig.Password = configFromCli.SnowflakePass
-		sfConfig.Database = configFromCli.SnowflakeDatabase
-		sfConfig.Schema = configFromCli.SnowflakeSchema
-		sfConfig.Warehouse = configFromCli.SnowflakeWarehouse
+		sfConfig.Account = snowflakeConfigFromCli.SnowflakeAccountId
+		sfConfig.User = snowflakeConfigFromCli.SnowflakeUser
+		sfConfig.Password = snowflakeConfigFromCli.SnowflakePass
+		sfConfig.Database = snowflakeConfigFromCli.SnowflakeDatabase
+		sfConfig.Schema = snowflakeConfigFromCli.SnowflakeSchema
+		sfConfig.Warehouse = snowflakeConfigFromCli.SnowflakeWarehouse
 		dsn, err := gosnowflake.DSN(&sfConfig)
 		if err != nil {
 			return errors.Annotate(err, "Failed to generate Snowflake DSN")
@@ -222,8 +219,8 @@ func (c *consumer) waitTableFlushComplete(
 		db, err := snowsql.NewSnowflakeConnector(
 			dsn,
 			tableDef,
-			sinkURI,
-			AWSCredential,
+			c.sinkURI,
+			c.awsCredential,
 		)
 		if err != nil {
 			return errors.Trace(err)
@@ -231,7 +228,7 @@ func (c *consumer) waitTableFlushComplete(
 		c.snowflakeConnectorMap[tableID] = db
 	}
 
-	err := c.snowflakeConnectorMap[tableID].MergeFile(sinkURI, filePath)
+	err := c.snowflakeConnectorMap[tableID].MergeFile(c.sinkURI, filePath)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -244,7 +241,7 @@ func (c *consumer) syncExecDMLEvents(
 	key cloudstorage.DmlPathKey,
 	fileIdx uint64,
 ) error {
-	filePath := key.GenerateDMLFilePath(fileIdx, c.fileExtension, fileIndexWidth)
+	filePath := key.GenerateDMLFilePath(fileIdx, c.fileExtension, config.DefaultFileIndexWidth)
 	exist, err := c.externalStorage.FileExists(ctx, filePath)
 	if err != nil {
 		return errors.Trace(err)
@@ -425,7 +422,7 @@ func (c *consumer) handleNewFiles(
 	return nil
 }
 
-func (c *consumer) run(ctx context.Context) error {
+func (c *consumer) run(ctx context.Context, flushInterval time.Duration) error {
 	ticker := time.NewTicker(flushInterval)
 	for {
 		select {
@@ -470,22 +467,9 @@ func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partiti
 	return g.currentTableID
 }
 
-func startReplicateIncrement() {
+func startReplicateIncrement(sinkUri *url.URL, flushInterval time.Duration, configFile, timezone string) error {
 	var consumer *consumer
 	var err error
-
-	if enableProfiling {
-		go func() {
-			server := &http.Server{
-				Addr:              ":6060",
-				ReadHeaderTimeout: 5 * time.Second,
-			}
-
-			if err := server.ListenAndServe(); err != nil {
-				log.Fatal("http pprof", zap.Error(err))
-			}
-		}()
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	deferFunc := func() int {
@@ -501,22 +485,29 @@ func startReplicateIncrement() {
 		}
 		return 0
 	}
+	defer deferFunc()
 
-	consumer, err = newConsumer(ctx)
+	consumer, err = newConsumer(ctx, sinkUri, configFile, timezone)
 	if err != nil {
-		log.Error("failed to create storage consumer", zap.Error(err))
-		goto EXIT
+		return errors.Annotate(err, "failed to create storage consumer")
 	}
 
-	if err = consumer.run(ctx); err != nil {
-		log.Error("error occurred while running consumer", zap.Error(err))
+	if err = consumer.run(ctx, flushInterval); err != nil {
+		return errors.Annotate(err, "error occurred while running consumer")
 	}
-
-EXIT:
-	os.Exit(deferFunc())
+	return nil
 }
 
 func newIncrementCmd() *cobra.Command {
+	var (
+		sinkURIStr    string
+		logFile       string
+		logLevel      string
+		flushInterval time.Duration
+		timezone      string
+		configFile    string
+	)
+
 	cmd := &cobra.Command{
 		Use:   "increment",
 		Short: "Replicate incremental data from TiDB to Snowflake",
@@ -534,35 +525,29 @@ func newIncrementCmd() *cobra.Command {
 				log.Error("invalid sink-uri", zap.Error(err))
 				os.Exit(1)
 			}
-			sinkURI = uri
-			scheme := strings.ToLower(sinkURI.Scheme)
+			scheme := strings.ToLower(uri.Scheme)
 			if !psink.IsStorageScheme(scheme) {
 				log.Error("invalid storage scheme, the scheme of sink-uri must be file/s3/azblob/gcs")
 				os.Exit(1)
 			}
-			creds := credentials.NewEnvCredentials()
-			credValue, err := creds.Get()
+			err = startReplicateIncrement(uri, flushInterval, configFile, timezone)
 			if err != nil {
-				log.Error("Failed to resolve AWS credential", zap.Error(err))
+				panic(err)
 			}
-			AWSCredential = credValue
-			startReplicateIncrement()
 		},
 	}
 
 	cmd.Flags().StringVar(&sinkURIStr, "sink-uri", "", "sink uri")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeAccountId, "snowflake.account-id", "", "snowflake accound id: <organization>-<account>")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeWarehouse, "snowflake.warehouse", "COMPUTE_WH", "")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeUser, "snowflake.user", "", "snowflake user")
-	cmd.Flags().StringVar(&configFromCli.SnowflakePass, "snowflake.pass", "", "snowflake password")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeDatabase, "snowflake.database", "", "snowflake database")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeSchema, "snowflake.schema", "", "snowflake schema")
-	cmd.Flags().StringVar(&configFile, "config", "", "changefeed configuration file")
+	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeAccountId, "snowflake.account-id", "", "snowflake accound id: <organization>-<account>")
+	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeWarehouse, "snowflake.warehouse", "COMPUTE_WH", "")
+	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeUser, "snowflake.user", "", "snowflake user")
+	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakePass, "snowflake.pass", "", "snowflake password")
+	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeDatabase, "snowflake.database", "", "snowflake database")
+	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeSchema, "snowflake.schema", "", "snowflake schema")
 	cmd.Flags().StringVar(&logFile, "log-file", "", "log file path")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level")
+	cmd.Flags().StringVar(&configFile, "config", "", "changefeed configuration file")
 	cmd.Flags().DurationVar(&flushInterval, "flush-interval", 60*time.Second, "flush interval")
-	cmd.Flags().IntVar(&fileIndexWidth, "file-index-width", config.DefaultFileIndexWidth, "file index width")
-	cmd.Flags().BoolVar(&enableProfiling, "enable-profiling", false, "whether to enable profiling")
 	cmd.Flags().StringVar(&timezone, "tz", "System", "specify time zone of storage consumer")
 	cmd.MarkFlagRequired("sink-uri")
 

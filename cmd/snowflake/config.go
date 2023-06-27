@@ -1,22 +1,22 @@
 package snowflake
 
-// TODO: refactor this
-type Config struct {
-	TiDBHost            string
-	TiDBPort            int
-	TiDBUser            string
-	TiDBPass            string
-	TiDBSSLCA           string
-	SnowflakeAccountId  string
-	SnowflakeWarehouse  string
-	SnowflakeUser       string
-	SnowflakePass       string
-	SnowflakeDatabase   string
-	SnowflakeSchema     string
-	TableFQN            string
-	SnapshotConcurrency int
-	S3StoragePath       string
-	StartTSO            string
+type SnowflakeConfig struct {
+	SnowflakeAccountId string
+	SnowflakeWarehouse string
+	SnowflakeUser      string
+	SnowflakePass      string
+	SnowflakeDatabase  string
+	SnowflakeSchema    string
 }
 
-var configFromCli Config
+type TiDBConfig struct {
+	TiDBHost  string
+	TiDBPort  int
+	TiDBUser  string
+	TiDBPass  string
+	TiDBSSLCA string
+}
+
+// We always need snowflake config,
+// so we can use this as a global variable
+var snowflakeConfigFromCli SnowflakeConfig
