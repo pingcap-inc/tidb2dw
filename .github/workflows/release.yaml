@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - release-*
-      - master
+      - main
     paths-ignore:
       - "**.md"
       - "LICENSE"
@@ -25,7 +25,6 @@ jobs:
     outputs:
       REL_VER: ${{ steps.build_tidb2dw.outputs.REL_VER }}
     strategy:
-      fail-fast: true
       matrix:
         os:
           - "linux"
