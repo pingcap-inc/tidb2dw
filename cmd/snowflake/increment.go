@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/snowsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
@@ -27,24 +28,23 @@ import (
 	"github.com/pingcap/tiflow/pkg/quotes"
 	psink "github.com/pingcap/tiflow/pkg/sink"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
-	"github.com/pingcap/tiflow/pkg/sink/codec/common"
 	putil "github.com/pingcap/tiflow/pkg/util"
+	"github.com/snowflakedb/gosnowflake"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
 var (
-	upstreamURIStr     string
-	upstreamURI        *url.URL
-	downstreamURIStr   string
-	configFile         string
-	logFile            string
-	logLevel           string
-	flushInterval      time.Duration
-	fileIndexWidth     int
-	enableProfiling    bool
-	timezone           string
-	storageIntegration string
+	sinkURIStr      string
+	sinkURI         *url.URL
+	configFile      string
+	logFile         string
+	logLevel        string
+	flushInterval   time.Duration
+	fileIndexWidth  int
+	enableProfiling bool
+	timezone        string
+	AWSCredential   credentials.Value // The resolved credential from current env
 )
 
 const (
@@ -63,8 +63,6 @@ type consumer struct {
 	fileExtension   string
 	// tableDMLIdxMap maintains a map of <dmlPathKey, max file index>
 	tableDMLIdxMap map[cloudstorage.DmlPathKey]uint64
-	// tableTsMap maintains a map of <TableID, max commit ts>
-	tableTsMap map[model.TableID]model.ResolvedTs
 	// tableDefMap maintains a map of <`schema`.`table`, tableDef slice sorted by TableVersion>
 	tableDefMap      map[string]map[uint64]*cloudstorage.TableDefinition
 	tableIDGenerator *fakeTableIDGenerator
@@ -88,7 +86,7 @@ func newConsumer(ctx context.Context) (*consumer, error) {
 		}
 	}
 
-	err = replicaConfig.ValidateAndAdjust(upstreamURI)
+	err = replicaConfig.ValidateAndAdjust(sinkURI)
 	if err != nil {
 		log.Error("failed to validate replica config", zap.Error(err))
 		return nil, err
@@ -108,16 +106,9 @@ func newConsumer(ctx context.Context) (*consumer, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	codecConfig := common.NewConfig(protocol)
-	err = codecConfig.Apply(upstreamURI, replicaConfig)
-	if err != nil {
-		return nil, err
-	}
-
 	extension := sinkutil.GetFileExtension(protocol)
 
-	storage, err := putil.GetExternalStorageFromURI(ctx, upstreamURIStr)
+	storage, err := putil.GetExternalStorageFromURI(ctx, sinkURIStr)
 	if err != nil {
 		log.Error("failed to create external storage", zap.Error(err))
 		return nil, err
@@ -131,7 +122,6 @@ func newConsumer(ctx context.Context) (*consumer, error) {
 		fileExtension:   extension,
 		errCh:           errCh,
 		tableDMLIdxMap:  make(map[cloudstorage.DmlPathKey]uint64),
-		tableTsMap:      make(map[model.TableID]model.ResolvedTs),
 		tableDefMap:     make(map[string]map[uint64]*cloudstorage.TableDefinition),
 		// tableSinkMap:    make(map[model.TableID]tablesink.TableSink),
 		tableIDGenerator: &fakeTableIDGenerator{
@@ -218,11 +208,22 @@ func (c *consumer) waitTableFlushComplete(
 	}
 
 	if _, ok := c.snowflakeConnectorMap[tableID]; !ok {
+		sfConfig := gosnowflake.Config{}
+		sfConfig.Account = configFromCli.SnowflakeAccountId
+		sfConfig.User = configFromCli.SnowflakeUser
+		sfConfig.Password = configFromCli.SnowflakePass
+		sfConfig.Database = configFromCli.SnowflakeDatabase
+		sfConfig.Schema = configFromCli.SnowflakeSchema
+		sfConfig.Warehouse = configFromCli.SnowflakeWarehouse
+		dsn, err := gosnowflake.DSN(&sfConfig)
+		if err != nil {
+			return errors.Annotate(err, "Failed to generate Snowflake DSN")
+		}
 		db, err := snowsql.NewSnowflakeConnector(
-			downstreamURIStr,
+			dsn,
 			tableDef,
-			upstreamURI,
-			storageIntegration,
+			sinkURI,
+			AWSCredential,
 		)
 		if err != nil {
 			return errors.Trace(err)
@@ -230,7 +231,7 @@ func (c *consumer) waitTableFlushComplete(
 		c.snowflakeConnectorMap[tableID] = db
 	}
 
-	err := c.snowflakeConnectorMap[tableID].MergeFile(upstreamURI, filePath)
+	err := c.snowflakeConnectorMap[tableID].MergeFile(sinkURI, filePath)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -528,34 +529,42 @@ func newIncrementCmd() *cobra.Command {
 				log.Error("init logger failed", zap.Error(err))
 				os.Exit(1)
 			}
-			uri, err := url.Parse(upstreamURIStr)
+			uri, err := url.Parse(sinkURIStr)
 			if err != nil {
-				log.Error("invalid upstream-uri", zap.Error(err))
+				log.Error("invalid sink-uri", zap.Error(err))
 				os.Exit(1)
 			}
-			upstreamURI = uri
-			scheme := strings.ToLower(upstreamURI.Scheme)
+			sinkURI = uri
+			scheme := strings.ToLower(sinkURI.Scheme)
 			if !psink.IsStorageScheme(scheme) {
-				log.Error("invalid storage scheme, the scheme of upstream-uri must be file/s3/azblob/gcs")
+				log.Error("invalid storage scheme, the scheme of sink-uri must be file/s3/azblob/gcs")
 				os.Exit(1)
 			}
+			creds := credentials.NewEnvCredentials()
+			credValue, err := creds.Get()
+			if err != nil {
+				log.Error("Failed to resolve AWS credential", zap.Error(err))
+			}
+			AWSCredential = credValue
 			startReplicateIncrement()
 		},
 	}
 
-	cmd.Flags().StringVar(&upstreamURIStr, "upstream-uri", "", "storage uri")
-	cmd.Flags().StringVar(&downstreamURIStr, "downstream-uri", "", "downstream sink uri")
+	cmd.Flags().StringVar(&sinkURIStr, "sink-uri", "", "sink uri")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeAccountId, "snowflake.account-id", "", "snowflake accound id: <organization>-<account>")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeWarehouse, "snowflake.warehouse", "COMPUTE_WH", "")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeUser, "snowflake.user", "", "snowflake user")
+	cmd.Flags().StringVar(&configFromCli.SnowflakePass, "snowflake.pass", "", "snowflake password")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeDatabase, "snowflake.database", "", "snowflake database")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeSchema, "snowflake.schema", "", "snowflake schema")
 	cmd.Flags().StringVar(&configFile, "config", "", "changefeed configuration file")
 	cmd.Flags().StringVar(&logFile, "log-file", "", "log file path")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level")
-	cmd.Flags().DurationVar(&flushInterval, "flush-interval", 10*time.Second, "flush interval")
-	cmd.Flags().IntVar(&fileIndexWidth, "file-index-width",
-		config.DefaultFileIndexWidth, "file index width")
+	cmd.Flags().DurationVar(&flushInterval, "flush-interval", 60*time.Second, "flush interval")
+	cmd.Flags().IntVar(&fileIndexWidth, "file-index-width", config.DefaultFileIndexWidth, "file index width")
 	cmd.Flags().BoolVar(&enableProfiling, "enable-profiling", false, "whether to enable profiling")
-	cmd.Flags().StringVar(&timezone, "tz", "System", "Specify time zone of storage consumer")
-	cmd.Flags().StringVar(&storageIntegration, "storage-integration", "", "Specify the storage integration name in Snowflake")
-	cmd.MarkFlagRequired("upstream-uri")
-	cmd.MarkFlagRequired("downstream-uri")
+	cmd.Flags().StringVar(&timezone, "tz", "System", "specify time zone of storage consumer")
+	cmd.MarkFlagRequired("sink-uri")
 
 	return cmd
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
@@ -18,11 +19,10 @@ type SnowflakeConnector struct {
 
 	tableDef cloudstorage.TableDefinition
 
-	stageName          string
-	storageIntegration string
+	stageName string
 }
 
-func NewSnowflakeConnector(uri string, tableDef cloudstorage.TableDefinition, upstreamURI *url.URL, storageIntegration string) (*SnowflakeConnector, error) {
+func NewSnowflakeConnector(uri string, tableDef cloudstorage.TableDefinition, upstreamURI *url.URL, credentials credentials.Value) (*SnowflakeConnector, error) {
 	db, err := sql.Open("snowflake", uri)
 	if err != nil {
 		log.Error("fail to connect to snowflake", zap.Error(err))
@@ -41,14 +41,17 @@ func NewSnowflakeConnector(uri string, tableDef cloudstorage.TableDefinition, up
 		createStageQuery = GenCreateInternalStage(stageName)
 	} else {
 		stageUrl := fmt.Sprintf("%s://%s/%s", upstreamURI.Scheme, upstreamURI.Host, upstreamURI.Path)
-		createStageQuery = GenCreateExternalStage(stageName, stageUrl, storageIntegration)
+		createStageQuery, err = GenCreateExternalStage(stageName, stageUrl, credentials)
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
 	}
 	_, err = db.Exec(createStageQuery)
 	if err != nil {
-		return nil, errors.Trace(err)
+		return nil, errors.Annotate(err, "Failed to create stage")
 	}
 
-	return &SnowflakeConnector{db, tableDef, stageName, storageIntegration}, nil
+	return &SnowflakeConnector{db, tableDef, stageName}, nil
 }
 
 func (sc *SnowflakeConnector) MergeFile(uri *url.URL, filePath string) error {

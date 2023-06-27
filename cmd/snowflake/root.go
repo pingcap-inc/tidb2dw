@@ -9,8 +9,9 @@ func NewSnowflakeCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(
-		newIncrementCmd(),
+		newFullCmd(),
 		newSnapshotCmd(),
+		newIncrementCmd(),
 	)
 	return cmd
 }

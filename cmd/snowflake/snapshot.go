@@ -27,25 +27,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type Config struct {
-	TiDBHost            string
-	TiDBPort            int
-	TiDBUser            string
-	TiDBPass            string
-	TiDBSSLCA           string
-	SnowflakeAccountId  string
-	SnowflakeWarehouse  string
-	SnowflakeUser       string
-	SnowflakePass       string
-	SnowflakeDatabase   string
-	SnowflakeSchema     string
-	TableFQN            string
-	SnapshotConcurrency int
-	S3StoragePath       string
-}
-
-var configFromCli Config
-
 type ReplicateSession struct {
 	ID string
 
@@ -284,13 +265,16 @@ func (sess *ReplicateSession) dumpPrepareTargetTable() error {
 func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	stageName := fmt.Sprintf("snapshot_stage_%s", sess.SourceTable)
 	log.Info("Creating stage for loading snapshot data", zap.String("stageName", stageName))
-	err := snowsql.CreateExternalStage(
-		sess.SnowflakePool,
+	sql, err := snowsql.GenCreateExternalStage(
 		stageName,
 		sess.StorageWorkspacePath,
 		sess.AWSCredential)
 	if err != nil {
 		return errors.Trace(err)
+	}
+	_, err = sess.SnowflakePool.Exec(sql)
+	if err != nil {
+		return errors.Annotate(err, "Failed to create stage")
 	}
 
 	// List all available files
@@ -342,7 +326,7 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 		log.Info("Snapshot data load finished", zap.String("snapshot", dumpedSnapshot))
 	}
 
-	sql := snowsql.GenDropStage(stageName)
+	sql = snowsql.GenDropStage(stageName)
 	_, err = sess.SnowflakePool.Exec(sql)
 	if err != nil {
 		return errors.Trace(err)
@@ -375,12 +359,12 @@ func newSnapshotCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&configFromCli.TiDBUser, "user", "u", "root", "")
 	cmd.Flags().StringVarP(&configFromCli.TiDBPass, "pass", "p", "", "")
 	cmd.Flags().StringVar(&configFromCli.TiDBSSLCA, "ssl-ca", "", "")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeAccountId, "snowflake.account-id", "", "")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeAccountId, "snowflake.account-id", "", "snowflake accound id: <organization>-<account>")
 	cmd.Flags().StringVar(&configFromCli.SnowflakeWarehouse, "snowflake.warehouse", "COMPUTE_WH", "")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeUser, "snowflake.user", "", "")
-	cmd.Flags().StringVar(&configFromCli.SnowflakePass, "snowflake.pass", "", "")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeDatabase, "snowflake.database", "", "")
-	cmd.Flags().StringVar(&configFromCli.SnowflakeSchema, "snowflake.schema", "", "")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeUser, "snowflake.user", "", "snowflake user")
+	cmd.Flags().StringVar(&configFromCli.SnowflakePass, "snowflake.pass", "", "snowflake password")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeDatabase, "snowflake.database", "", "snowflake database")
+	cmd.Flags().StringVar(&configFromCli.SnowflakeSchema, "snowflake.schema", "", "snowflake schema")
 	cmd.Flags().StringVarP(&configFromCli.TableFQN, "table", "t", "", "")
 	cmd.Flags().IntVar(&configFromCli.SnapshotConcurrency, "snapshot-concurrency", 8, "")
 	cmd.Flags().StringVarP(&configFromCli.S3StoragePath, "storage", "s", "", "")
