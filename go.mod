@@ -11,6 +11,7 @@ require (
 	github.com/pingcap/tidb v1.1.0-beta.0.20230609033446-1061ed208c94
 	github.com/snowflakedb/gosnowflake v1.6.18
 	github.com/spf13/cobra v1.7.0
+	gitlab.com/tymonx/go-formatter v1.5.1
 	go.uber.org/zap v1.24.0
 	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
 )
@@ -64,7 +65,6 @@ require (
 	github.com/vbauerster/mpb/v7 v7.5.3 // indirect
 	github.com/xdg/scram v1.0.5 // indirect
 	github.com/xdg/stringprep v1.0.3 // indirect
-	gitlab.com/tymonx/go-formatter v1.5.1 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/api v0.27.2 // indirect
 	k8s.io/apimachinery v0.27.2 // indirect
