@@ -265,14 +265,11 @@ func (sess *ReplicateSession) dumpPrepareTargetTable() error {
 func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	stageName := fmt.Sprintf("snapshot_stage_%s", sess.SourceTable)
 	log.Info("Creating stage for loading snapshot data", zap.String("stageName", stageName))
-	sql, err := snowsql.GenCreateExternalStage(
+	err := snowsql.CreateExternalStage(
+		sess.SnowflakePool,
 		stageName,
 		sess.StorageWorkspacePath,
 		sess.AWSCredential)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	_, err = sess.SnowflakePool.Exec(sql)
 	if err != nil {
 		return errors.Annotate(err, "Failed to create stage")
 	}
@@ -326,8 +323,7 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 		log.Info("Snapshot data load finished", zap.String("snapshot", dumpedSnapshot))
 	}
 
-	sql = snowsql.GenDropStage(stageName)
-	_, err = sess.SnowflakePool.Exec(sql)
+	err = snowsql.DropStage(sess.SnowflakePool, stageName)
 	if err != nil {
 		return errors.Trace(err)
 	}

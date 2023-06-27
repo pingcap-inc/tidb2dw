@@ -13,7 +13,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func GenCreateExternalStage(stageName, s3WorkspaceURL string, cred credentials.Value) (string, error) {
+func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred credentials.Value) error {
 	sql, err := formatter.Format(`
 CREATE OR REPLACE STAGE "{stageName}"
 URL = '{url}'
@@ -26,20 +26,38 @@ FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OP
 		"awsSecretKey": EscapeString(cred.SecretAccessKey),
 		"awsToken":     EscapeString(cred.SessionToken),
 	})
-	return sql, err
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(sql)
+	return err
 }
 
-func GenCreateInternalStage(stageName string) string {
-	return fmt.Sprintf(`
+func CreateInternalStage(db *sql.DB, stageName string) error {
+	sql, err := formatter.Format(`
 CREATE OR REPLACE STAGE "%s"
 FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
-	`, stageName)
+`, formatter.Named{
+		"stageName": EscapeString(stageName),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(sql)
+	return err
 }
 
-func GenDropStage(stageName string) string {
-	return fmt.Sprintf(`
+func DropStage(db *sql.DB, stageName string) error {
+	sql, err := formatter.Format(`
 DROP STAGE IF EXISTS "%s";
-	`, stageName)
+`, formatter.Named{
+		"stageName": EscapeString(stageName),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(sql)
+	return err
 }
 
 func GenLoadSnapshotFromStage(targetTable, stageName, fileName string) string {
