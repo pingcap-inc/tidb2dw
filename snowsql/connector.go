@@ -46,7 +46,7 @@ func NewSnowflakeConnector(uri string, stageName string, upstreamURI *url.URL, c
 	return &SnowflakeConnector{db, stageName}, nil
 }
 
-func (sc *SnowflakeConnector) CopyTableScheme(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {
+func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {
 	createTableQuery, err := GenCreateSchema(sourceDatabase, sourceTable, sourceTiDBConn)
 	if err != nil {
 		return errors.Trace(err)

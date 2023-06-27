@@ -194,7 +194,7 @@ func (sess *ReplicateSession) Run() error {
 		return errors.Trace(err)
 	}
 
-	err = sess.SnowflakePool.CopyTableScheme(sess.SourceDatabase, sess.SourceTable, sess.TiDBPool)
+	err = sess.SnowflakePool.CopyTableSchema(sess.SourceDatabase, sess.SourceTable, sess.TiDBPool)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -253,7 +253,7 @@ func (sess *ReplicateSession) buildDumperConfig() (*export.Config, error) {
 	conf.CsvDelimiter = "\""
 	conf.EscapeBackslash = true
 	conf.TransactionalConsistency = true
-	conf.OutputDirPath = fmt.Sprintf("%s/snapshot", sess.StorageWorkspaceUri.RawQuery) // FIXME: This is a hack
+	conf.OutputDirPath = sess.StorageWorkspaceUri.Path
 	conf.S3.Region = sess.ResolvedS3Region
 
 	conf.SpecifiedTables = true
