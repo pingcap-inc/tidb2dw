@@ -64,7 +64,7 @@ func GenLoadSnapshotFromStage(targetTable, stageName, fileName string) string {
 	// TODO: Load more data?
 	return fmt.Sprintf(`
 COPY INTO "%s"
-FROM '@"%s"%s'
+FROM '@"%s"/%s'
 ON_ERROR = CONTINUE;
 	`, targetTable, stageName, fileName)
 }

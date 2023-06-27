@@ -10,6 +10,7 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	"github.com/pingcap/tiflow/pkg/logutil"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -81,21 +82,21 @@ func newFullCmd() *cobra.Command {
 		cdcFileSize         int64
 		timezone            string
 		startTSO            uint64
+		logFile             string
+		logLevel            string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "full",
 		Short: "Replicate both snapshot and incremental data from TiDB to Snowflake",
 		Run: func(_ *cobra.Command, _ []string) {
-			snapPath, err := url.JoinPath(s3StoragePath, "snapshot")
+			err := logutil.InitLogger(&logutil.Config{
+				Level: logLevel,
+				File:  logFile,
+			})
 			if err != nil {
 				panic(err)
 			}
-			session, err := NewReplicateSession(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapPath)
-			if err != nil {
-				panic(err)
-			}
-			defer session.Close()
 
 			// create changefeed
 			sinkURI, err := genSinkURI(s3StoragePath, cdcFlushInterval, cdcFileSize)
@@ -109,13 +110,14 @@ func newFullCmd() *cobra.Command {
 			log.Info("create changefeed success", zap.String("changefeed", sinkURI.String()))
 
 			// run replicate snapshot
-			err = session.Run()
+			err = startReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, s3StoragePath)
 			if err != nil {
 				panic(err)
 			}
+			log.Info("replicate snapshot success")
 
 			// run replicate increment
-			err = startReplicateIncrement(sinkURI, cdcFlushInterval / 5, "", timezone)
+			err = startReplicateIncrement(sinkURI, cdcFlushInterval/5, "", timezone)
 			if err != nil {
 				panic(err)
 			}
@@ -142,6 +144,8 @@ func newFullCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&cdcFlushInterval, "cdc-flush-interval", 60*time.Second, "")
 	cmd.Flags().Int64Var(&cdcFileSize, "cdc-file-size", 64*1024*1024, "")
 	cmd.Flags().StringVar(&timezone, "tz", "System", "specify time zone of storage consumer")
+	cmd.Flags().StringVar(&logFile, "log-file", "", "log file path")
+	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level")
 
 	cmd.MarkFlagRequired("storage")
 	cmd.MarkFlagRequired("table")
