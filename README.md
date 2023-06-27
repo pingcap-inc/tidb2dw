@@ -28,7 +28,7 @@ AWS_SDK_LOAD_CONFIG=true ./bin/tidb2dw snowflake snapshot --storage s3://test/du
 tiup cdc cli changefeed create --server=http://127.0.0.1:8300 --sink-uri="s3://test/cdc?protocol=csv&flush-interval=5m&file-size=268435456"
 
 # start the replication
-AWS_SDK_LOAD_CONFIG=true ./bin/tidb2dw snowflake increment --upstream-uri="s3://test/cdc?protocol=csv&flush-interval=5m&file-size=268435456" --downstream-uri="<use_name>:<password>@<organization>-<account>/<database>/<schema>?warehouse=<warehouse>"
+AWS_SDK_LOAD_CONFIG=true ./bin/tidb2dw snowflake increment --sink-uri="s3://test/cdc?protocol=csv&flush-interval=5m&file-size=268435456" --snowflake.account-id <organization>-<account> --snowflake.user <use_name> --snowflake.pass <password> --snowflake.database <database> --snowflake.schema <schema>
 
 # run any dml operation in tidb
 ...

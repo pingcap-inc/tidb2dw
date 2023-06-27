@@ -7,14 +7,13 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/dumpling/export"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"gitlab.com/tymonx/go-formatter/formatter"
 	"golang.org/x/exp/slices"
 )
 
-func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred credentials.Value) error {
+func GenCreateExternalStage(stageName, s3WorkspaceURL string, cred credentials.Value) (string, error) {
 	sql, err := formatter.Format(`
 CREATE OR REPLACE STAGE "{stageName}"
 URL = '{url}'
@@ -27,22 +26,7 @@ FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OP
 		"awsSecretKey": EscapeString(cred.SecretAccessKey),
 		"awsToken":     EscapeString(cred.SessionToken),
 	})
-	if err != nil {
-		return errors.Trace(err)
-	}
-
-	_, err = db.Exec(sql)
-	return err
-}
-
-func GenCreateExternalStage(stageName, s3WorkspaceURL string, storageIntegration string) string {
-	// TO BE DEPRECATED
-	return fmt.Sprintf(`
-CREATE OR REPLACE STAGE "%s"
-STORAGE_INTEGRATION = "%s"
-URL = '%s'
-FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
-	`, stageName, storageIntegration, s3WorkspaceURL)
+	return sql, err
 }
 
 func GenCreateInternalStage(stageName string) string {
