@@ -36,17 +36,12 @@ func NewSnowflakeConnector(uri string, tableDef cloudstorage.TableDefinition, up
 
 	// create stage
 	stageName := fmt.Sprintf("cdc_stage_%s", tableDef.Table)
-	var createStageQuery string
 	if upstreamURI.Host == "" {
-		createStageQuery = GenCreateInternalStage(stageName)
+		err = CreateInternalStage(db, stageName)
 	} else {
 		stageUrl := fmt.Sprintf("%s://%s/%s", upstreamURI.Scheme, upstreamURI.Host, upstreamURI.Path)
-		createStageQuery, err = GenCreateExternalStage(stageName, stageUrl, credentials)
-		if err != nil {
-			return nil, errors.Trace(err)
-		}
+		err = CreateExternalStage(db, stageName, stageUrl, credentials)
 	}
-	_, err = db.Exec(createStageQuery)
 	if err != nil {
 		return nil, errors.Annotate(err, "Failed to create stage")
 	}
@@ -89,8 +84,7 @@ func (sc *SnowflakeConnector) MergeFile(uri *url.URL, filePath string) error {
 
 func (sc *SnowflakeConnector) Close() {
 	// drop stage
-	dropStageQuery := GenDropStage(sc.stageName)
-	_, err := sc.db.Exec(dropStageQuery)
+	err := DropStage(sc.db, sc.stageName)
 	if err != nil {
 		log.Error("fail to drop stage", zap.Error(err))
 	}
