@@ -115,7 +115,7 @@ jobs:
           TAR="tar --sort=name --mtime=${{ steps.get_git.outputs.COMMIT_TIMESTAMP }} --owner=0 --group=0 --numeric-owner"
 
           # package all binaries to upload to github release asset
-          ${TAR} -C bin -czf tidb2dw-${REL_VER}-${ARCH}.tar.gz tidb2dw checksum.${{ matrix.os }}-${{ matrix.arch }}.txt
+          ${TAR} -C bin -czf tidb2dw-${REL_VER}-${ARCH}.tar.gz tidb2dw ../checksum.${{ matrix.os }}-${{ matrix.arch }}.txt
 
       - name: Upload the all-in-one tarball to GitHub release
         uses: ncipollo/release-action@v1
