@@ -6,24 +6,29 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"path"
 	"time"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/log"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 func genSinkURI(s3StoragePath string, flushInterval time.Duration, fileSize int64) (*url.URL, error) {
-	cdcPath, err := url.Parse(path.Join(s3StoragePath, "increment"))
+	sinkPath, err := url.JoinPath(s3StoragePath, "increment")
+	if err != nil {
+		return nil, errors.Annotate(err, "join url failed")
+	}
+	sinkUri, err := url.Parse(sinkPath)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	values := cdcPath.Query()
+	values := sinkUri.Query()
 	values.Add("protocol", "csv")
 	values.Add("flush-interval", flushInterval.String())
 	values.Add("file-size", fmt.Sprint(fileSize))
-	cdcPath.RawQuery = values.Encode()
-	return cdcPath, nil
+	sinkUri.RawQuery = values.Encode()
+	return sinkUri, nil
 }
 
 func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, startTSO uint64) error {
@@ -42,12 +47,17 @@ func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, start
 		sinkConfig := make(map[string]interface{})
 		sinkConfig["csv"] = csvConfig
 		replicateConfig["sink"] = sinkConfig
+		data["replica_config"] = replicateConfig
 	}
-	{
+	if startTSO != 0 {
 		data["start_ts"] = startTSO
 	}
 	bytesData, _ := json.Marshal(data)
-	req, _ := http.NewRequest("POST", path.Join(cdcServer, "api/v2/changefeeds"), bytes.NewReader(bytesData))
+	url, err := url.JoinPath(cdcServer, "api/v2/changefeeds")
+	if err != nil {
+		return errors.Annotate(err, "join url failed")
+	}
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(bytesData))
 	resp, err := client.Do(req)
 	if err != nil {
 		return errors.Trace(err)
@@ -77,7 +87,11 @@ func newFullCmd() *cobra.Command {
 		Use:   "full",
 		Short: "Replicate both snapshot and incremental data from TiDB to Snowflake",
 		Run: func(_ *cobra.Command, _ []string) {
-			session, err := NewReplicateSession(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, path.Join(s3StoragePath, "snapshot"))
+			snapPath, err := url.JoinPath(s3StoragePath, "snapshot")
+			if err != nil {
+				panic(err)
+			}
+			session, err := NewReplicateSession(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapPath)
 			if err != nil {
 				panic(err)
 			}
@@ -92,6 +106,7 @@ func newFullCmd() *cobra.Command {
 			if err != nil {
 				panic(err)
 			}
+			log.Info("create changefeed success", zap.String("changefeed", sinkURI.String()))
 
 			// run replicate snapshot
 			err = session.Run()
@@ -100,7 +115,7 @@ func newFullCmd() *cobra.Command {
 			}
 
 			// run replicate increment
-			err = startReplicateIncrement(sinkURI, cdcFlushInterval, "", timezone)
+			err = startReplicateIncrement(sinkURI, cdcFlushInterval / 5, "", timezone)
 			if err != nil {
 				panic(err)
 			}
@@ -123,9 +138,9 @@ func newFullCmd() *cobra.Command {
 	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
 	cmd.Flags().StringVarP(&s3StoragePath, "storage", "s", "", "S3 storage path: s3://<bucket>/<path>")
 	cmd.Flags().Uint64Var(&startTSO, "start-ts", 0, "")
-	cmd.Flags().StringVar(&cdcServer, "cdc-server", "", "TiCDC server address")
+	cmd.Flags().StringVar(&cdcServer, "cdc-server", "http://127.0.0.1:8300", "TiCDC server address")
 	cmd.Flags().DurationVar(&cdcFlushInterval, "cdc-flush-interval", 60*time.Second, "")
-	cmd.Flags().Int64Var(&cdcFileSize, "cdc-file-size", 1024*1024, "")
+	cmd.Flags().Int64Var(&cdcFileSize, "cdc-file-size", 64*1024*1024, "")
 	cmd.Flags().StringVar(&timezone, "tz", "System", "specify time zone of storage consumer")
 
 	cmd.MarkFlagRequired("storage")

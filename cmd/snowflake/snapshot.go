@@ -136,20 +136,22 @@ func NewReplicateSession(
 		tidbConfig.Passwd = tidbConfigFromCli.TiDBPass
 		tidbConfig.Net = "tcp"
 		tidbConfig.Addr = fmt.Sprintf("%s:%d", tidbConfigFromCli.TiDBHost, tidbConfigFromCli.TiDBPort)
-		rootCertPool := x509.NewCertPool()
-		pem, err := os.ReadFile(tidbConfigFromCli.TiDBSSLCA)
-		if err != nil {
-			log.Fatal(err.Error())
+		if tidbConfigFromCli.TiDBSSLCA != "" {
+			rootCertPool := x509.NewCertPool()
+			pem, err := os.ReadFile(tidbConfigFromCli.TiDBSSLCA)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
+				log.Fatal("Failed to append PEM.")
+			}
+			mysql.RegisterTLSConfig("tidb", &tls.Config{
+				RootCAs:    rootCertPool,
+				MinVersion: tls.VersionTLS12,
+				ServerName: tidbConfigFromCli.TiDBHost,
+			})
+			tidbConfig.TLSConfig = "tidb"
 		}
-		if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
-			log.Fatal("Failed to append PEM.")
-		}
-		mysql.RegisterTLSConfig("tidb", &tls.Config{
-			RootCAs:    rootCertPool,
-			MinVersion: tls.VersionTLS12,
-			ServerName: tidbConfigFromCli.TiDBHost,
-		})
-		tidbConfig.TLSConfig = "tidb"
 		db, err := sql.Open("mysql", tidbConfig.FormatDSN())
 		if err != nil {
 			return nil, errors.Annotate(err, "Failed to open TiDB connection")
