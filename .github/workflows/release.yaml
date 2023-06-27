@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - release-*
-      - master
+      - main
     paths-ignore:
       - "**.md"
       - "LICENSE"

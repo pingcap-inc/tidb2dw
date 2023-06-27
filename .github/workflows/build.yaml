@@ -4,20 +4,20 @@ name: build-tidb2dw
 on:
   schedule:
     # times are in UTC
-    - cron: '19 21 * * *'
+    - cron: "19 21 * * *"
   pull_request:
     branches:
-      - master
+      - main
       - release-*
     paths-ignore:
-      - '**.md'
-      - 'LICENSE'
+      - "**.md"
+      - "LICENSE"
   push:
     branches:
-      - master
+      - main
     paths-ignore:
-      - '**.md'
-      - 'LICENSE'
+      - "**.md"
+      - "LICENSE"
 
 jobs:
   tiup:
