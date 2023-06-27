@@ -33,10 +33,6 @@ import (
 	"go.uber.org/zap"
 )
 
-var (
-// sinkURI *url.URL
-)
-
 const (
 	fakePartitionNumForSchemaFile = -1
 )
