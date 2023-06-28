@@ -17,12 +17,10 @@ type SnowflakeConnector struct {
 	// db is the connection to snowflake.
 	db *sql.DB
 
-	tableDef cloudstorage.TableDefinition
-
 	stageName string
 }
 
-func NewSnowflakeConnector(uri string, tableDef cloudstorage.TableDefinition, upstreamURI *url.URL, credentials credentials.Value) (*SnowflakeConnector, error) {
+func NewSnowflakeConnector(uri string, stageName string, upstreamURI *url.URL, credentials credentials.Value) (*SnowflakeConnector, error) {
 	db, err := sql.Open("snowflake", uri)
 	if err != nil {
 		log.Error("fail to connect to snowflake", zap.Error(err))
@@ -35,21 +33,45 @@ func NewSnowflakeConnector(uri string, tableDef cloudstorage.TableDefinition, up
 	log.Info("snowflake connection established", zap.String("uri", uri))
 
 	// create stage
-	stageName := fmt.Sprintf("cdc_stage_%s", tableDef.Table)
 	if upstreamURI.Host == "" {
 		err = CreateInternalStage(db, stageName)
 	} else {
-		stageUrl := fmt.Sprintf("%s://%s/%s", upstreamURI.Scheme, upstreamURI.Host, upstreamURI.Path)
+		stageUrl := fmt.Sprintf("%s://%s%s", upstreamURI.Scheme, upstreamURI.Host, upstreamURI.Path)
 		err = CreateExternalStage(db, stageName, stageUrl, credentials)
 	}
 	if err != nil {
 		return nil, errors.Annotate(err, "Failed to create stage")
 	}
 
-	return &SnowflakeConnector{db, tableDef, stageName}, nil
+	return &SnowflakeConnector{db, stageName}, nil
 }
 
-func (sc *SnowflakeConnector) MergeFile(uri *url.URL, filePath string) error {
+func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {
+	createTableQuery, err := GenCreateSchema(sourceDatabase, sourceTable, sourceTiDBConn)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	log.Info("Creating table in Snowflake", zap.String("sql", createTableQuery))
+	_, err = sc.db.Exec(createTableQuery)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	log.Info("Successfully copying table scheme", zap.String("database", sourceDatabase), zap.String("table", sourceTable))
+	return nil
+}
+
+func (sc *SnowflakeConnector) CopyFile(targetTable, fileName string) error {
+	copyQuery := GenLoadSnapshotFromStage(targetTable, sc.stageName, fileName)
+	_, err := sc.db.Exec(copyQuery)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	log.Info("Successfully copy file", zap.String("file", fileName))
+	return nil
+}
+
+func (sc *SnowflakeConnector) MergeFile(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
 	if uri.Scheme == "file" {
 		// if the file is local, we need to upload it to stage first
 		putQuery := fmt.Sprintf(`PUT file://%s/%s '@"%s"/%s';`, uri.Path, filePath, sc.stageName, filePath)
@@ -61,7 +83,7 @@ func (sc *SnowflakeConnector) MergeFile(uri *url.URL, filePath string) error {
 	}
 
 	// merge staged file into table
-	mergeQuery := GenMergeInto(sc.tableDef, filePath, sc.stageName)
+	mergeQuery := GenMergeInto(tableDef, filePath, sc.stageName)
 	_, err := sc.db.Exec(mergeQuery)
 	if err != nil {
 		return errors.Trace(err)

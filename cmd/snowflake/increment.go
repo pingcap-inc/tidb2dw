@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
 	"os/signal"
 	"sort"
 	"strings"
@@ -218,7 +217,7 @@ func (c *consumer) waitTableFlushComplete(
 		}
 		db, err := snowsql.NewSnowflakeConnector(
 			dsn,
-			tableDef,
+			fmt.Sprintf("increment_stage_%s", tableDef.Table),
 			c.sinkURI,
 			c.awsCredential,
 		)
@@ -228,7 +227,7 @@ func (c *consumer) waitTableFlushComplete(
 		c.snowflakeConnectorMap[tableID] = db
 	}
 
-	err := c.snowflakeConnectorMap[tableID].MergeFile(c.sinkURI, filePath)
+	err := c.snowflakeConnectorMap[tableID].MergeFile(tableDef, c.sinkURI, filePath)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -517,18 +516,15 @@ func newIncrementCmd() *cobra.Command {
 				File:  logFile,
 			})
 			if err != nil {
-				log.Error("init logger failed", zap.Error(err))
-				os.Exit(1)
+				panic(err)
 			}
 			uri, err := url.Parse(sinkURIStr)
 			if err != nil {
-				log.Error("invalid sink-uri", zap.Error(err))
-				os.Exit(1)
+				panic(err)
 			}
 			scheme := strings.ToLower(uri.Scheme)
 			if !psink.IsStorageScheme(scheme) {
-				log.Error("invalid storage scheme, the scheme of sink-uri must be file/s3/azblob/gcs")
-				os.Exit(1)
+				panic("invalid storage scheme, the scheme of sink-uri must be file/s3/azblob/gcs")
 			}
 			err = startReplicateIncrement(uri, flushInterval, configFile, timezone)
 			if err != nil {
@@ -544,11 +540,12 @@ func newIncrementCmd() *cobra.Command {
 	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakePass, "snowflake.pass", "", "snowflake password")
 	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeDatabase, "snowflake.database", "", "snowflake database")
 	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeSchema, "snowflake.schema", "", "snowflake schema")
-	cmd.Flags().StringVar(&logFile, "log-file", "", "log file path")
-	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level")
 	cmd.Flags().StringVar(&configFile, "config", "", "changefeed configuration file")
 	cmd.Flags().DurationVar(&flushInterval, "flush-interval", 60*time.Second, "flush interval")
 	cmd.Flags().StringVar(&timezone, "tz", "System", "specify time zone of storage consumer")
+	cmd.Flags().StringVar(&logFile, "log-file", "", "log file path")
+	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level")
+
 	cmd.MarkFlagRequired("sink-uri")
 
 	return cmd

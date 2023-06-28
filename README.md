@@ -37,5 +37,5 @@ AWS_SDK_LOAD_CONFIG=true ./bin/tidb2dw snowflake increment --sink-uri="s3://test
 ## replicate both snapshot and incremental data from TiDB to Snowflake
 
 ```shell
-AWS_SDK_LOAD_CONFIG=true ./bin/tidb2dw snowflake snapshot --storage s3://test/ --table <database_name>.<table_name> --snowflake.account-id <organization>-<account> --snowflake.user <use_name> --snowflake.pass <password> --snowflake.database <database> --snowflake.schema <schema>
+AWS_SDK_LOAD_CONFIG=true ./bin/tidb2dw snowflake full --storage s3://test/ --table <database_name>.<table_name> --snowflake.account-id <organization>-<account> --snowflake.user <use_name> --snowflake.pass <password> --snowflake.database <database> --snowflake.schema <schema>
 ```
