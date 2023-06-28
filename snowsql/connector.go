@@ -30,7 +30,7 @@ func NewSnowflakeConnector(uri string, stageName string, upstreamURI *url.URL, c
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	log.Info("snowflake connection established", zap.String("uri", uri))
+	log.Info("snowflake connection established")
 
 	// create stage
 	if upstreamURI.Host == "" {
