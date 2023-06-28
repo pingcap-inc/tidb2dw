@@ -87,7 +87,7 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	// Ref: https://docs.snowflake.com/en/sql-reference/intro-summary-data-types
 	for _, oneRow := range results {
 		fieldName, tp := oneRow[0], oneRow[1]
-		snowflakeFieldNames = append(snowflakeFieldNames, fmt.Sprintf(`"%s"`, fieldName)) // FIXME: Escape
+		snowflakeFieldNames = append(snowflakeFieldNames, fieldName)
 		tpParts := strings.SplitN(tp, "(", 2)
 		tpBase := tpParts[0]
 		switch tpBase {
@@ -182,7 +182,7 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	for _, oneRow := range indexResults {
 		keyName, columnName := oneRow[0], oneRow[1]
 		if keyName == "PRIMARY" {
-			snowflakePKColumns = append(snowflakePKColumns, fmt.Sprintf(`"%s"`, columnName)) // FIXME: Escape
+			snowflakePKColumns = append(snowflakePKColumns, columnName)
 		}
 	}
 
@@ -202,7 +202,7 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	}
 
 	sql := []string{}
-	sql = append(sql, fmt.Sprintf(`CREATE OR REPLACE TABLE "%s" (`, sourceTable)) // TODO: Escape
+	sql = append(sql, fmt.Sprintf(`CREATE OR REPLACE TABLE %s (`, sourceTable)) // TODO: Escape
 	sql = append(sql, strings.Join(sqlRows, ",\n"))
 	sql = append(sql, ")")
 
@@ -213,36 +213,36 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 	selectStat := make([]string, 0, len(tableDef.Columns)+1)
 	selectStat = append(selectStat, `$1 AS "METADATA$FLAG"`)
 	for i, col := range tableDef.Columns {
-		selectStat = append(selectStat, fmt.Sprintf(`$%d AS "%s"`, i+5, col.Name))
+		selectStat = append(selectStat, fmt.Sprintf(`$%d AS %s`, i+5, col.Name))
 	}
 
 	pkColumn := make([]string, 0)
 	onStat := make([]string, 0)
 	for _, col := range tableDef.Columns {
 		if col.IsPK == "true" {
-			pkColumn = append(pkColumn, fmt.Sprintf(`"%s"`, col.Name))
-			onStat = append(onStat, fmt.Sprintf(`T."%s" = S."%s"`, col.Name, col.Name))
+			pkColumn = append(pkColumn, col.Name)
+			onStat = append(onStat, fmt.Sprintf(`T.%s = S.%s`, col.Name, col.Name))
 		}
 	}
 
 	updateStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
-		updateStat = append(updateStat, fmt.Sprintf(`"%s" = S."%s"`, col.Name, col.Name))
+		updateStat = append(updateStat, fmt.Sprintf(`%s = S.%s`, col.Name, col.Name))
 	}
 
 	insertStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
-		insertStat = append(insertStat, fmt.Sprintf(`"%s"`, col.Name))
+		insertStat = append(insertStat, col.Name)
 	}
 
 	valuesStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
-		valuesStat = append(valuesStat, fmt.Sprintf(`S."%s"`, col.Name))
+		valuesStat = append(valuesStat, fmt.Sprintf(`S.%s`, col.Name))
 	}
 
 	// TODO: Remove QUALIFY row_number() after cdc support merge dml or snowflake support deterministic merge
 	mergeQuery := fmt.Sprintf(
-		`MERGE INTO "%s" AS T USING
+		`MERGE INTO %s AS T USING
 		(
 			SELECT
 				%s
