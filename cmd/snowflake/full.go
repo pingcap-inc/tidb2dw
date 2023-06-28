@@ -88,7 +88,8 @@ func newFullCmd() *cobra.Command {
 		tableFQN            string
 		snapshotConcurrency int
 		s3StoragePath       string
-		cdcServer           string
+		cdcHost             string
+		cdcPort             int
 		cdcFlushInterval    time.Duration
 		cdcFileSize         int64
 		timezone            string
@@ -114,7 +115,7 @@ func newFullCmd() *cobra.Command {
 			if err != nil {
 				panic(err)
 			}
-			err = createChangefeed(cdcServer, sinkURI, tableFQN, startTSO)
+			err = createChangefeed(fmt.Sprintf("http://%s:%d", cdcHost, cdcPort), sinkURI, tableFQN, startTSO)
 			if err != nil {
 				panic(err)
 			}
@@ -136,11 +137,11 @@ func newFullCmd() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().BoolP("help", "", false, "help for this command")
-	cmd.Flags().StringVarP(&tidbConfigFromCli.TiDBHost, "host", "h", "127.0.0.1", "TiDB host")
-	cmd.Flags().IntVarP(&tidbConfigFromCli.TiDBPort, "port", "P", 4000, "TiDB port")
-	cmd.Flags().StringVarP(&tidbConfigFromCli.TiDBUser, "user", "u", "root", "TiDB user")
-	cmd.Flags().StringVarP(&tidbConfigFromCli.TiDBPass, "pass", "p", "", "TiDB password")
-	cmd.Flags().StringVar(&tidbConfigFromCli.TiDBSSLCA, "ssl-ca", "", "TiDB SSL CA")
+	cmd.Flags().StringVarP(&tidbConfigFromCli.TiDBHost, "tidb.host", "h", "127.0.0.1", "TiDB host")
+	cmd.Flags().IntVarP(&tidbConfigFromCli.TiDBPort, "tidb.port", "P", 4000, "TiDB port")
+	cmd.Flags().StringVarP(&tidbConfigFromCli.TiDBUser, "tidb.user", "u", "root", "TiDB user")
+	cmd.Flags().StringVarP(&tidbConfigFromCli.TiDBPass, "tidb.pass", "p", "", "TiDB password")
+	cmd.Flags().StringVar(&tidbConfigFromCli.TiDBSSLCA, "tidb.ssl-ca", "", "TiDB SSL CA")
 	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeAccountId, "snowflake.account-id", "", "snowflake accound id: <organization>-<account>")
 	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeWarehouse, "snowflake.warehouse", "COMPUTE_WH", "")
 	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeUser, "snowflake.user", "", "snowflake user")
@@ -151,7 +152,8 @@ func newFullCmd() *cobra.Command {
 	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
 	cmd.Flags().StringVarP(&s3StoragePath, "storage", "s", "", "S3 storage path: s3://<bucket>/<path>")
 	cmd.Flags().Uint64Var(&startTSO, "start-ts", 0, "")
-	cmd.Flags().StringVar(&cdcServer, "cdc-server", "http://127.0.0.1:8300", "TiCDC server address")
+	cmd.Flags().StringVar(&cdcHost, "cdc.host", "127.0.0.1", "TiCDC server host")
+	cmd.Flags().IntVar(&cdcPort, "cdc.port", 8300, "TiCDC server port")
 	cmd.Flags().DurationVar(&cdcFlushInterval, "cdc-flush-interval", 60*time.Second, "")
 	cmd.Flags().Int64Var(&cdcFileSize, "cdc-file-size", 64*1024*1024, "")
 	cmd.Flags().StringVar(&timezone, "tz", "System", "specify time zone of storage consumer")
