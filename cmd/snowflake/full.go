@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/google/uuid"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/logutil"
@@ -17,11 +18,7 @@ import (
 )
 
 func genSinkURI(s3StoragePath string, flushInterval time.Duration, fileSize int64) (*url.URL, error) {
-	sinkPath, err := url.JoinPath(s3StoragePath, "increment")
-	if err != nil {
-		return nil, errors.Annotate(err, "join url failed")
-	}
-	sinkUri, err := url.Parse(sinkPath)
+	sinkUri, err := url.Parse(s3StoragePath)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -109,8 +106,19 @@ func newFullCmd() *cobra.Command {
 				panic(err)
 			}
 
+			// generate uuid, and append to s3 path
+			uid := uuid.New().String()
+			s3StoragePath, err := url.JoinPath(s3StoragePath, uid)
+			if err != nil {
+				panic(err)
+			}
+
 			// create changefeed
-			sinkURI, err := genSinkURI(s3StoragePath, cdcFlushInterval, cdcFileSize)
+			increS3StoragePath, err := url.JoinPath(s3StoragePath, "increment")
+			if err != nil {
+				panic(err)
+			}
+			sinkURI, err := genSinkURI(increS3StoragePath, cdcFlushInterval, cdcFileSize)
 			if err != nil {
 				panic(err)
 			}
@@ -118,10 +126,14 @@ func newFullCmd() *cobra.Command {
 			if err != nil {
 				panic(err)
 			}
-			log.Info("create changefeed success", zap.String("changefeed", sinkURI.String()))
+			log.Info("create changefeed success")
 
 			// run replicate snapshot
-			err = startReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, s3StoragePath)
+			snapS3StoragePath, err := url.JoinPath(s3StoragePath, "snapshot")
+			if err != nil {
+				panic(err)
+			}
+			err = startReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapS3StoragePath)
 			if err != nil {
 				panic(err)
 			}

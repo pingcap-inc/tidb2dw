@@ -29,8 +29,6 @@ import (
 )
 
 type ReplicateSession struct {
-	ID string
-
 	SFConfig            *SnowflakeConfig
 	TiDBConfig          *TiDBConfig
 	TableFQN            string
@@ -56,17 +54,12 @@ func NewReplicateSession(
 	snapshotConcurrency int,
 	s3StoragePath string) (*ReplicateSession, error) {
 	sess := &ReplicateSession{
-		ID:                  uuid.New().String(),
 		SFConfig:            sfConfigFromCli,
 		TiDBConfig:          tidbConfigFromCli,
 		TableFQN:            tableFQN,
 		SnapshotConcurrency: snapshotConcurrency,
 	}
-	workPath, err := url.JoinPath(s3StoragePath, sess.ID, "snapshot")
-	if err != nil {
-		return nil, errors.Annotate(err, "Failed to join workspace path")
-	}
-	workUri, err := url.Parse(workPath)
+	workUri, err := url.Parse(s3StoragePath)
 	if err != nil {
 		return nil, errors.Annotate(err, "Failed to parse workspace path")
 	}
@@ -80,7 +73,6 @@ func NewReplicateSession(
 		sess.SourceTable = parts[1]
 	}
 	log.Info("Creating replicate session",
-		zap.String("id", sess.ID),
 		zap.String("storage", sess.StorageWorkspaceUri.String()),
 		zap.String("source", tableFQN))
 	{
@@ -302,6 +294,7 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 		if err != nil {
 			return errors.Trace(err)
 		}
+		// TODO: Remove the file from S3
 	}
 
 	return nil
@@ -341,6 +334,7 @@ func newSnapshotCmd() *cobra.Command {
 		Use:   "snapshot",
 		Short: "Replicate snapshot from TiDB to Snowflake",
 		Run: func(_ *cobra.Command, _ []string) {
+			// init logger
 			err := logutil.InitLogger(&logutil.Config{
 				Level: logLevel,
 				File:  logFile,
@@ -348,6 +342,13 @@ func newSnapshotCmd() *cobra.Command {
 			if err != nil {
 				panic(err)
 			}
+			// generate uuid, and append to s3 path
+			uid := uuid.New().String()
+			s3StoragePath, err := url.JoinPath(s3StoragePath, uid, "snapshot")
+			if err != nil {
+				panic(err)
+			}
+			// start replicate snapshot
 			err = startReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, s3StoragePath)
 			if err != nil {
 				panic(err)
