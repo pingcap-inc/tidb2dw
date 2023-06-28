@@ -36,7 +36,7 @@ func NewSnowflakeConnector(uri string, stageName string, upstreamURI *url.URL, c
 	if upstreamURI.Host == "" {
 		err = CreateInternalStage(db, stageName)
 	} else {
-		stageUrl := fmt.Sprintf("%s://%s/%s", upstreamURI.Scheme, upstreamURI.Host, upstreamURI.Path)
+		stageUrl := fmt.Sprintf("%s://%s%s", upstreamURI.Scheme, upstreamURI.Host, upstreamURI.Path)
 		err = CreateExternalStage(db, stageName, stageUrl, credentials)
 	}
 	if err != nil {

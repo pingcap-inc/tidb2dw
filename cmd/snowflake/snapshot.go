@@ -253,7 +253,7 @@ func (sess *ReplicateSession) buildDumperConfig() (*export.Config, error) {
 	conf.CsvDelimiter = "\""
 	conf.EscapeBackslash = true
 	conf.TransactionalConsistency = true
-	conf.OutputDirPath = sess.StorageWorkspaceUri.Path
+	conf.OutputDirPath = sess.StorageWorkspaceUri.String()
 	conf.S3.Region = sess.ResolvedS3Region
 
 	conf.SpecifiedTables = true
@@ -268,16 +268,15 @@ func (sess *ReplicateSession) buildDumperConfig() (*export.Config, error) {
 
 func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	// List all available files
+	workspacePrefix := strings.TrimPrefix(sess.StorageWorkspaceUri.Path, "/")
 	log.Info("List objects",
 		zap.String("bucket", sess.StorageWorkspaceUri.Host),
-		zap.String("prefix", sess.StorageWorkspaceUri.Path))
-
-	dumpFilePrefix := fmt.Sprintf("%s%s.%s.", sess.StorageWorkspaceUri.Path, sess.SourceDatabase, sess.SourceTable)
+		zap.String("prefix", workspacePrefix))
 
 	s3Client := s3.New(sess.AWSSession, aws.NewConfig().WithRegion(sess.ResolvedS3Region))
 	result, err := s3Client.ListObjectsV2(&s3.ListObjectsV2Input{
 		Bucket: aws.String(sess.StorageWorkspaceUri.Host),
-		Prefix: aws.String(sess.StorageWorkspaceUri.Path),
+		Prefix: aws.String(workspacePrefix),
 	})
 	if err != nil {
 		return errors.Trace(err)
@@ -286,10 +285,11 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 		return errors.Errorf("No snapshot files found")
 	}
 
+	dumpFilePrefix := fmt.Sprintf("%s/%s.%s.", workspacePrefix, sess.SourceDatabase, sess.SourceTable)
 	dumpedSnapshots := make([]string, 0, 1)
 	for _, item := range result.Contents {
 		if strings.HasPrefix(*item.Key, dumpFilePrefix) && strings.HasSuffix(*item.Key, ".csv") {
-			filePathToWorkspace := strings.TrimPrefix(*item.Key, sess.StorageWorkspaceUri.Path)
+			filePathToWorkspace := strings.TrimPrefix(*item.Key, workspacePrefix)
 			filePathToWorkspace = strings.TrimPrefix(filePathToWorkspace, "/")
 			dumpedSnapshots = append(dumpedSnapshots, filePathToWorkspace)
 			log.Info("Found snapshot file", zap.String("key", filePathToWorkspace))

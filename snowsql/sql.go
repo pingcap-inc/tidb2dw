@@ -35,7 +35,7 @@ FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OP
 
 func CreateInternalStage(db *sql.DB, stageName string) error {
 	sql, err := formatter.Format(`
-CREATE OR REPLACE STAGE "%s"
+CREATE OR REPLACE STAGE "{stageName}"
 FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
 `, formatter.Named{
 		"stageName": EscapeString(stageName),
@@ -49,7 +49,7 @@ FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OP
 
 func DropStage(db *sql.DB, stageName string) error {
 	sql, err := formatter.Format(`
-DROP STAGE IF EXISTS "%s";
+DROP STAGE IF EXISTS "{stageName}";
 `, formatter.Named{
 		"stageName": EscapeString(stageName),
 	})

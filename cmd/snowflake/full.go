@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/logutil"
@@ -25,9 +26,19 @@ func genSinkURI(s3StoragePath string, flushInterval time.Duration, fileSize int6
 		return nil, errors.Trace(err)
 	}
 	values := sinkUri.Query()
-	values.Add("protocol", "csv")
 	values.Add("flush-interval", flushInterval.String())
 	values.Add("file-size", fmt.Sprint(fileSize))
+	values.Add("protocol", "csv")
+	if sinkUri.Scheme == "s3" {
+		creds := credentials.NewEnvCredentials()
+		credValue, err := creds.Get()
+		if err != nil {
+			log.Error("Failed to resolve AWS credential", zap.Error(err))
+		}
+		values.Add("access-key", credValue.AccessKeyID)
+		values.Add("secret-access-key", credValue.SecretAccessKey)
+		values.Add("session-token", credValue.SessionToken)
+	}
 	sinkUri.RawQuery = values.Encode()
 	return sinkUri, nil
 }
