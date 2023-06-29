@@ -23,12 +23,12 @@ type SnowflakeConnector struct {
 func NewSnowflakeConnector(uri string, stageName string, upstreamURI *url.URL, credentials credentials.Value) (*SnowflakeConnector, error) {
 	db, err := sql.Open("snowflake", uri)
 	if err != nil {
-		log.Error("fail to connect to snowflake", zap.Error(err))
+		return nil, errors.Annotate(err, "Failed to connect to snowflake")
 	}
 	// make sure the connection is available
 	err = db.Ping()
 	if err != nil {
-		return nil, errors.Trace(err)
+		return nil, errors.Annotate(err, "Failed to ping snowflake")
 	}
 	log.Info("snowflake connection established", zap.String("uri", uri))
 
@@ -54,7 +54,7 @@ func (sc *SnowflakeConnector) ExecDDL(tableDef cloudstorage.TableDefinition) err
 	query := RewriteDDL(tableDef.Query)
 	_, err := sc.db.Exec(query)
 	if err != nil {
-		return errors.Annotate(err, fmt.Sprintf("Failed to execute DDL: %s", query))
+		return errors.Annotate(err, fmt.Sprintf("Received DDL: %s, rewrite to: %s, but failed to execute", tableDef.Query, query))
 	}
 	log.Info("Successfully executed DDL", zap.String("received", tableDef.Query), zap.String("rewritten", query))
 	return nil
