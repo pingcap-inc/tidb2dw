@@ -60,16 +60,17 @@ DROP STAGE IF EXISTS {stageName};
 	return err
 }
 
-func LoadSnapshotFromStage(db *sql.DB, targetTable, stageName, fileName string) error {
-	// TODO: Load more data?
+func LoadSnapshotFromStage(db *sql.DB, targetTable, stageName, filePrefix string) error {
 	sql, err := formatter.Format(`
 COPY INTO {targetTable}
-FROM '@{stageName}/{fileName}'
+FROM @{stageName}
+FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"')
+PATTERN = '{filePrefix}.*'
 ON_ERROR = CONTINUE;
 `, formatter.Named{
 		"targetTable": EscapeString(targetTable),
 		"stageName":   EscapeString(stageName),
-		"fileName":    EscapeString(fileName),
+		"filePrefix":  EscapeString(filePrefix),
 	})
 	if err != nil {
 		return err

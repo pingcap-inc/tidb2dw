@@ -75,12 +75,12 @@ func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable
 	return nil
 }
 
-func (sc *SnowflakeConnector) CopyFile(targetTable, fileName string) error {
-	err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, fileName)
+func (sc *SnowflakeConnector) LoadSnapshot(targetTable, filePrefix string) error {
+	err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, filePrefix)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Successfully copy file", zap.String("file", fileName))
+	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
 	return nil
 }
 

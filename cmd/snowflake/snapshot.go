@@ -10,11 +10,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
@@ -259,44 +257,12 @@ func (sess *ReplicateSession) buildDumperConfig() (*export.Config, error) {
 }
 
 func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
-	// List all available files
 	workspacePrefix := strings.TrimPrefix(sess.StorageWorkspaceUri.Path, "/")
-	log.Info("List objects",
-		zap.String("bucket", sess.StorageWorkspaceUri.Host),
-		zap.String("prefix", workspacePrefix))
-
-	s3Client := s3.New(sess.AWSSession, aws.NewConfig().WithRegion(sess.ResolvedS3Region))
-	result, err := s3Client.ListObjectsV2(&s3.ListObjectsV2Input{
-		Bucket: aws.String(sess.StorageWorkspaceUri.Host),
-		Prefix: aws.String(workspacePrefix),
-	})
+	dumpFilePrefix := fmt.Sprintf("%s/%s.%s.", workspacePrefix, sess.SourceDatabase, sess.SourceTable)
+	err := sess.SnowflakePool.LoadSnapshot(sess.SourceTable, dumpFilePrefix)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	if len(result.Contents) == 0 {
-		return errors.Errorf("No snapshot files found")
-	}
-
-	dumpFilePrefix := fmt.Sprintf("%s/%s.%s.", workspacePrefix, sess.SourceDatabase, sess.SourceTable)
-	dumpedSnapshots := make([]string, 0, 1)
-	for _, item := range result.Contents {
-		if strings.HasPrefix(*item.Key, dumpFilePrefix) && strings.HasSuffix(*item.Key, ".csv") {
-			filePathToWorkspace := strings.TrimPrefix(*item.Key, workspacePrefix)
-			filePathToWorkspace = strings.TrimPrefix(filePathToWorkspace, "/")
-			dumpedSnapshots = append(dumpedSnapshots, filePathToWorkspace)
-			log.Info("Found snapshot file", zap.String("key", filePathToWorkspace))
-		}
-	}
-
-	for _, dumpedSnapshot := range dumpedSnapshots {
-		log.Info("Loading snapshot data", zap.String("snapshot", dumpedSnapshot))
-		err := sess.SnowflakePool.CopyFile(sess.SourceTable, dumpedSnapshot)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		// TODO: Remove the file from S3
-	}
-
 	return nil
 }
 
