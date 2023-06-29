@@ -15,7 +15,7 @@ import (
 
 func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred credentials.Value) error {
 	sql, err := formatter.Format(`
-CREATE OR REPLACE STAGE "{stageName}"
+CREATE OR REPLACE STAGE {stageName}
 URL = '{url}'
 CREDENTIALS = (AWS_KEY_ID = '{awsKeyId}' AWS_SECRET_KEY = '{awsSecretKey}' AWS_TOKEN = '{awsToken}')
 FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
@@ -35,7 +35,7 @@ FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OP
 
 func CreateInternalStage(db *sql.DB, stageName string) error {
 	sql, err := formatter.Format(`
-CREATE OR REPLACE STAGE "{stageName}"
+CREATE OR REPLACE STAGE {stageName}
 FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
 `, formatter.Named{
 		"stageName": EscapeString(stageName),
@@ -49,7 +49,7 @@ FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OP
 
 func DropStage(db *sql.DB, stageName string) error {
 	sql, err := formatter.Format(`
-DROP STAGE IF EXISTS "{stageName}";
+DROP STAGE IF EXISTS {stageName};
 `, formatter.Named{
 		"stageName": EscapeString(stageName),
 	})
@@ -60,13 +60,22 @@ DROP STAGE IF EXISTS "{stageName}";
 	return err
 }
 
-func GenLoadSnapshotFromStage(targetTable, stageName, fileName string) string {
+func LoadSnapshotFromStage(db *sql.DB, targetTable, stageName, fileName string) error {
 	// TODO: Load more data?
-	return fmt.Sprintf(`
-COPY INTO %s
-FROM '@"%s"/%s'
+	sql, err := formatter.Format(`
+COPY INTO {targetTable}
+FROM '@{stageName}/{fileName}'
 ON_ERROR = CONTINUE;
-	`, targetTable, stageName, fileName)
+`, formatter.Named{
+		"targetTable": EscapeString(targetTable),
+		"stageName":   EscapeString(stageName),
+		"fileName":    EscapeString(fileName),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(sql)
+	return err
 }
 
 func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) (string, error) {
@@ -246,7 +255,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 		(
 			SELECT
 				%s
-			FROM '@"%s"/%s'
+			FROM '@%s/%s'
 			QUALIFY row_number() over (partition by %s order by $4 desc) = 1
 		) AS S
 		ON
