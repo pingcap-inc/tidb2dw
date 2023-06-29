@@ -76,8 +76,7 @@ func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable
 }
 
 func (sc *SnowflakeConnector) CopyFile(targetTable, fileName string) error {
-	copyQuery := GenLoadSnapshotFromStage(targetTable, sc.stageName, fileName)
-	_, err := sc.db.Exec(copyQuery)
+	err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, fileName)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -88,7 +87,7 @@ func (sc *SnowflakeConnector) CopyFile(targetTable, fileName string) error {
 func (sc *SnowflakeConnector) MergeFile(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
 	if uri.Scheme == "file" {
 		// if the file is local, we need to upload it to stage first
-		putQuery := fmt.Sprintf(`PUT file://%s/%s '@"%s"/%s';`, uri.Path, filePath, sc.stageName, filePath)
+		putQuery := fmt.Sprintf(`PUT file://%s/%s '@%s/%s';`, uri.Path, filePath, sc.stageName, filePath)
 		_, err := sc.db.Exec(putQuery)
 		if err != nil {
 			return errors.Trace(err)
@@ -106,7 +105,7 @@ func (sc *SnowflakeConnector) MergeFile(tableDef cloudstorage.TableDefinition, u
 
 	if uri.Scheme == "file" {
 		// if the file is local, we need to remove it from stage
-		removeQuery := fmt.Sprintf(`REMOVE '@"%s"/%s';`, sc.stageName, filePath)
+		removeQuery := fmt.Sprintf(`REMOVE '@%s/%s';`, sc.stageName, filePath)
 		_, err = sc.db.Exec(removeQuery)
 		if err != nil {
 			return errors.Trace(err)
