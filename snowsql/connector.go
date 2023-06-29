@@ -23,12 +23,12 @@ type SnowflakeConnector struct {
 func NewSnowflakeConnector(uri string, stageName string, upstreamURI *url.URL, credentials credentials.Value) (*SnowflakeConnector, error) {
 	db, err := sql.Open("snowflake", uri)
 	if err != nil {
-		log.Error("fail to connect to snowflake", zap.Error(err))
+		return nil, errors.Annotate(err, "Failed to connect to snowflake")
 	}
 	// make sure the connection is available
 	err = db.Ping()
 	if err != nil {
-		return nil, errors.Trace(err)
+		return nil, errors.Annotate(err, "Failed to ping snowflake")
 	}
 	log.Info("snowflake connection established")
 
@@ -46,12 +46,26 @@ func NewSnowflakeConnector(uri string, stageName string, upstreamURI *url.URL, c
 	return &SnowflakeConnector{db, stageName}, nil
 }
 
+func (sc *SnowflakeConnector) ExecDDL(tableDef cloudstorage.TableDefinition) error {
+	if supported := IsSnowflakeSupportedDDL(tableDef.Type); !supported {
+		log.Warn("Snowflake unsupported DDL, just skip", zap.String("query", tableDef.Query), zap.Any("type", tableDef.Type))
+		return nil
+	}
+	query := RewriteDDL(tableDef.Query)
+	_, err := sc.db.Exec(query)
+	if err != nil {
+		return errors.Annotate(err, fmt.Sprintf("Received DDL: %s, rewrite to: %s, but failed to execute", tableDef.Query, query))
+	}
+	log.Info("Successfully executed DDL", zap.String("received", tableDef.Query), zap.String("rewritten", query))
+	return nil
+}
+
 func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {
 	createTableQuery, err := GenCreateSchema(sourceDatabase, sourceTable, sourceTiDBConn)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Creating table in Snowflake", zap.String("sql", createTableQuery))
+	log.Info("Creating table in Snowflake", zap.String("query", createTableQuery))
 	_, err = sc.db.Exec(createTableQuery)
 	if err != nil {
 		return errors.Trace(err)
@@ -61,20 +75,19 @@ func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable
 	return nil
 }
 
-func (sc *SnowflakeConnector) CopyFile(targetTable, fileName string) error {
-	copyQuery := GenLoadSnapshotFromStage(targetTable, sc.stageName, fileName)
-	_, err := sc.db.Exec(copyQuery)
+func (sc *SnowflakeConnector) LoadSnapshot(targetTable, filePrefix string) error {
+	err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, filePrefix)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Successfully copy file", zap.String("file", fileName))
+	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
 	return nil
 }
 
 func (sc *SnowflakeConnector) MergeFile(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
 	if uri.Scheme == "file" {
 		// if the file is local, we need to upload it to stage first
-		putQuery := fmt.Sprintf(`PUT file://%s/%s '@"%s"/%s';`, uri.Path, filePath, sc.stageName, filePath)
+		putQuery := fmt.Sprintf(`PUT file://%s/%s '@%s/%s';`, uri.Path, filePath, sc.stageName, filePath)
 		_, err := sc.db.Exec(putQuery)
 		if err != nil {
 			return errors.Trace(err)
@@ -92,7 +105,7 @@ func (sc *SnowflakeConnector) MergeFile(tableDef cloudstorage.TableDefinition, u
 
 	if uri.Scheme == "file" {
 		// if the file is local, we need to remove it from stage
-		removeQuery := fmt.Sprintf(`REMOVE '@"%s"/%s';`, sc.stageName, filePath)
+		removeQuery := fmt.Sprintf(`REMOVE '@%s/%s';`, sc.stageName, filePath)
 		_, err = sc.db.Exec(removeQuery)
 		if err != nil {
 			return errors.Trace(err)

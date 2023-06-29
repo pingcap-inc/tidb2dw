@@ -15,7 +15,7 @@ import (
 
 func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred credentials.Value) error {
 	sql, err := formatter.Format(`
-CREATE OR REPLACE STAGE "{stageName}"
+CREATE OR REPLACE STAGE {stageName}
 URL = '{url}'
 CREDENTIALS = (AWS_KEY_ID = '{awsKeyId}' AWS_SECRET_KEY = '{awsSecretKey}' AWS_TOKEN = '{awsToken}')
 FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
@@ -35,7 +35,7 @@ FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OP
 
 func CreateInternalStage(db *sql.DB, stageName string) error {
 	sql, err := formatter.Format(`
-CREATE OR REPLACE STAGE "{stageName}"
+CREATE OR REPLACE STAGE {stageName}
 FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
 `, formatter.Named{
 		"stageName": EscapeString(stageName),
@@ -49,7 +49,7 @@ FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OP
 
 func DropStage(db *sql.DB, stageName string) error {
 	sql, err := formatter.Format(`
-DROP STAGE IF EXISTS "{stageName}";
+DROP STAGE IF EXISTS {stageName};
 `, formatter.Named{
 		"stageName": EscapeString(stageName),
 	})
@@ -60,13 +60,23 @@ DROP STAGE IF EXISTS "{stageName}";
 	return err
 }
 
-func GenLoadSnapshotFromStage(targetTable, stageName, fileName string) string {
-	// TODO: Load more data?
-	return fmt.Sprintf(`
-COPY INTO "%s"
-FROM '@"%s"/%s'
+func LoadSnapshotFromStage(db *sql.DB, targetTable, stageName, filePrefix string) error {
+	sql, err := formatter.Format(`
+COPY INTO {targetTable}
+FROM @{stageName}
+FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"')
+PATTERN = '{filePrefix}.*'
 ON_ERROR = CONTINUE;
-	`, targetTable, stageName, fileName)
+`, formatter.Named{
+		"targetTable": EscapeString(targetTable),
+		"stageName":   EscapeString(stageName),
+		"filePrefix":  EscapeString(filePrefix),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(sql)
+	return err
 }
 
 func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) (string, error) {
@@ -87,7 +97,7 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	// Ref: https://docs.snowflake.com/en/sql-reference/intro-summary-data-types
 	for _, oneRow := range results {
 		fieldName, tp := oneRow[0], oneRow[1]
-		snowflakeFieldNames = append(snowflakeFieldNames, fmt.Sprintf(`"%s"`, fieldName)) // FIXME: Escape
+		snowflakeFieldNames = append(snowflakeFieldNames, fieldName)
 		tpParts := strings.SplitN(tp, "(", 2)
 		tpBase := tpParts[0]
 		switch tpBase {
@@ -182,7 +192,7 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	for _, oneRow := range indexResults {
 		keyName, columnName := oneRow[0], oneRow[1]
 		if keyName == "PRIMARY" {
-			snowflakePKColumns = append(snowflakePKColumns, fmt.Sprintf(`"%s"`, columnName)) // FIXME: Escape
+			snowflakePKColumns = append(snowflakePKColumns, columnName)
 		}
 	}
 
@@ -202,7 +212,7 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	}
 
 	sql := []string{}
-	sql = append(sql, fmt.Sprintf(`CREATE OR REPLACE TABLE "%s" (`, sourceTable)) // TODO: Escape
+	sql = append(sql, fmt.Sprintf(`CREATE OR REPLACE TABLE %s (`, sourceTable)) // TODO: Escape
 	sql = append(sql, strings.Join(sqlRows, ",\n"))
 	sql = append(sql, ")")
 
@@ -213,40 +223,40 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 	selectStat := make([]string, 0, len(tableDef.Columns)+1)
 	selectStat = append(selectStat, `$1 AS "METADATA$FLAG"`)
 	for i, col := range tableDef.Columns {
-		selectStat = append(selectStat, fmt.Sprintf(`$%d AS "%s"`, i+5, col.Name))
+		selectStat = append(selectStat, fmt.Sprintf(`$%d AS %s`, i+5, col.Name))
 	}
 
 	pkColumn := make([]string, 0)
 	onStat := make([]string, 0)
 	for _, col := range tableDef.Columns {
 		if col.IsPK == "true" {
-			pkColumn = append(pkColumn, fmt.Sprintf(`"%s"`, col.Name))
-			onStat = append(onStat, fmt.Sprintf(`T."%s" = S."%s"`, col.Name, col.Name))
+			pkColumn = append(pkColumn, col.Name)
+			onStat = append(onStat, fmt.Sprintf(`T.%s = S.%s`, col.Name, col.Name))
 		}
 	}
 
 	updateStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
-		updateStat = append(updateStat, fmt.Sprintf(`"%s" = S."%s"`, col.Name, col.Name))
+		updateStat = append(updateStat, fmt.Sprintf(`%s = S.%s`, col.Name, col.Name))
 	}
 
 	insertStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
-		insertStat = append(insertStat, fmt.Sprintf(`"%s"`, col.Name))
+		insertStat = append(insertStat, col.Name)
 	}
 
 	valuesStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
-		valuesStat = append(valuesStat, fmt.Sprintf(`S."%s"`, col.Name))
+		valuesStat = append(valuesStat, fmt.Sprintf(`S.%s`, col.Name))
 	}
 
 	// TODO: Remove QUALIFY row_number() after cdc support merge dml or snowflake support deterministic merge
 	mergeQuery := fmt.Sprintf(
-		`MERGE INTO "%s" AS T USING
+		`MERGE INTO %s AS T USING
 		(
 			SELECT
 				%s
-			FROM '@"%s"/%s'
+			FROM '@%s/%s'
 			QUALIFY row_number() over (partition by %s order by $4 desc) = 1
 		) AS S
 		ON
