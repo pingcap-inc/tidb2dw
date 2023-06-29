@@ -263,6 +263,7 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	if err != nil {
 		return errors.Trace(err)
 	}
+	// TODO: remove dump files
 	return nil
 }
 
