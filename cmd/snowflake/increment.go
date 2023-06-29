@@ -375,7 +375,6 @@ func (c *consumer) handleNewFiles(
 	// TODO: support handling dml events of different tables concurrently.
 	// Note: dml events of the same table should be handled sequentially.
 	//       so we can not just pipeline this loop.
-	var prevKey *cloudstorage.DmlPathKey
 	for _, key := range keys {
 		tableDef := c.mustGetTableDef(key.SchemaPathKey)
 		tableID := c.tableIDGenerator.generateFakeTableID(key.Schema, key.Table, key.PartitionNum)
@@ -413,12 +412,6 @@ func (c *consumer) handleNewFiles(
 					"remove the schema.json file from TiCDC sink path, "+
 					"and restart the program.")
 			}
-
-			// if key and prevKey belong to the same table, then we should remove the prevKey from dmlFileMap.
-			if prevKey != nil && prevKey.Table == key.Table {
-				delete(dmlFileMap, *prevKey)
-			}
-			prevKey = &key
 			continue
 		}
 
@@ -428,7 +421,6 @@ func (c *consumer) handleNewFiles(
 				return err
 			}
 		}
-		prevKey = &key
 	}
 
 	return nil
