@@ -1,10 +1,7 @@
 ---
-name: build-tidb2dw
+name: Build
 
 on:
-  schedule:
-    # times are in UTC
-    - cron: "19 21 * * *"
   pull_request:
     branches:
       - main
@@ -20,27 +17,27 @@ on:
       - "LICENSE"
 
 jobs:
-  tiup:
+  build:
     runs-on: ubuntu-20.04
     timeout-minutes: 10
-    env:
-      working-directory: ${{ github.workspace }}/go/src/github.com/${{ github.repository }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - "linux"
+        arch:
+          - "amd64"
+          - "arm64"
     steps:
       - name: Set up Go 1.20
         uses: actions/setup-go@v2
         with:
           go-version: 1.20.x
-        id: go
-
-      - name: Check out code into the Go module directory
+      - name: Check out
         uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          path: go/src/github.com/${{ github.repository }}
-
-      - name: Build build_tidb2dw
-        working-directory: ${{ env.working-directory }}
+      - name: Build for ${{ matrix.os }}-${{ matrix.arch }}
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
         run: |
-          export GOPATH=${GITHUB_WORKSPACE}/go
-          export PATH=$PATH:$GOPATH/bin
           make build
