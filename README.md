@@ -5,37 +5,38 @@ A tool to replicate data from TiDB to Data Warehouse.
 > **Note**
 > Only support TiDB v7.1.0 or later, and only support Snowflake as target Data Warehouse now.
 
-## build
+## Build
 
 ```bash
 make build
 ```
 
-## replicate snapshot data from TiDB to Snowflake
+## Getting Started
+
+To replicate snapshot and incremental data of a TiDB Table to Snowflake:
 
 ```shell
-AWS_SDK_LOAD_CONFIG=true ./bin/tidb2dw snowflake snapshot --storage s3://test/dump --table <database_name>.<table_name> --snowflake.account-id <organization>-<account> --snowflake.user <use_name> --snowflake.pass <password> --snowflake.database <database> --snowflake.schema <schema>
-```
+export AWS_ACCESS_KEY_ID=<ACCESS_KEY>
+export AWS_SECRET_ACCESS_KEY=<SECRET_KEY>
+export AWS_SESSION_TOKEN=<SESSION_TOKEN>  # Optional
 
-## replicate incremental data from TiDB to Snowflake
+./tidb2dw snowflake full \
+    --storage s3://my-demo-bucket/prefix \
+    --table <database_name>.<table_name> \
+    --snowflake.account-id <organization>-<account> \
+    --snowflake.user <username> \
+    --snowflake.pass <password> \
+    --snowflake.database <database> \
+    --snowflake.schema <schema> \
+
+# Note that you may also need to specify these parameters:
+#   --cdc.host x.x.x.x
+#   --tidb.host x.x.x.x
+#   --tidb.user <user>
+#   --tidb.pass <pass>
+# Use --help for details.
+```
 
 > **Warning**
 > We do not support ddl replication yet. Any ddl operation will cause the incremental replication stop. You need to manually run the DDL on target table and then restart the incremental replication.
 > Restart incremental replication without manually runing DDL on target table may cause data loss.
-
-```shell
-# create a change feed
-tiup cdc cli changefeed create --server=http://127.0.0.1:8300 --sink-uri="s3://test/cdc?protocol=csv&flush-interval=5m&file-size=268435456"
-
-# start the replication
-AWS_SDK_LOAD_CONFIG=true ./bin/tidb2dw snowflake increment --sink-uri="s3://test/cdc?protocol=csv&flush-interval=5m&file-size=268435456" --snowflake.account-id <organization>-<account> --snowflake.user <use_name> --snowflake.pass <password> --snowflake.database <database> --snowflake.schema <schema>
-
-# run any dml operation in tidb
-...
-```
-
-## replicate both snapshot and incremental data from TiDB to Snowflake
-
-```shell
-AWS_SDK_LOAD_CONFIG=true ./bin/tidb2dw snowflake full --storage s3://test/ --table <database_name>.<table_name> --snowflake.account-id <organization>-<account> --snowflake.user <use_name> --snowflake.pass <password> --snowflake.database <database> --snowflake.schema <schema>
-```
