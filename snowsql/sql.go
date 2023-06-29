@@ -63,7 +63,7 @@ DROP STAGE IF EXISTS "{stageName}";
 func GenLoadSnapshotFromStage(targetTable, stageName, fileName string) string {
 	// TODO: Load more data?
 	return fmt.Sprintf(`
-COPY INTO "%s"
+COPY INTO %s
 FROM '@"%s"/%s'
 ON_ERROR = CONTINUE;
 	`, targetTable, stageName, fileName)
