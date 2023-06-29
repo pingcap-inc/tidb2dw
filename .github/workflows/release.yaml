@@ -1,17 +1,10 @@
 ---
-name: release-tidb2dw
+name: Release
 
 on:
   push:
-    branches:
-      - release-*
-      - main
-    paths-ignore:
-      - "**.md"
-      - "LICENSE"
-  release:
-    types:
-      - published
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       git-ref:
@@ -21,109 +14,40 @@ on:
 jobs:
   release:
     runs-on: ubuntu-20.04
-    timeout-minutes: 30
-    outputs:
-      REL_VER: ${{ steps.build_tidb2dw.outputs.REL_VER }}
     strategy:
       fail-fast: false
       matrix:
         os:
           - "linux"
-          - "darwin"
         arch:
           - "amd64"
           - "arm64"
-    env:
-      working-directory: ${{ github.workspace }}/go/src/github.com/${{ github.repository }}
     steps:
+      - name: Check out
+        uses: actions/checkout@v3
       - name: Set up Go 1.20
         uses: actions/setup-go@v4
         with:
           go-version: 1.20.x
-          check-latest: true
-        id: go
-
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.inputs.git-ref || github.event.pull_request.head.sha }}
-          path: go/src/github.com/${{ github.repository }}
-          fetch-depth: 0
-
-      - name: Check if this is a staging build
-        id: check_staging
-        working-directory: ${{ env.working-directory }}
-        if: github.event_name != 'release'
-        run: |
-          STAGING_VER=`git describe --tags | sed 's/-[^-]*$//' | sed -r 's/(-[^-]*$)/-nightly\1/'`
-          echo ::set-output name=STAGING::$STAGING_VER
-
-      - name: Get git ref and commit
-        id: get_git
-        working-directory: ${{ env.working-directory }}
-        # when empty, it will be determined by Makefile
-        run: |
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            echo ::set-output name=GIT_REF::${GITHUB_REF/refs\/tags\//}
-          elif [[ $GITHUB_REF == refs/heads/* ]]; then
-            echo ::set-output name=GIT_REF::${GITHUB_REF/refs\/heads\//}
-          fi
-          COMMIT_TIMESTAMP=`git show --no-patch --no-notes --pretty='%aI'`
-          echo ::set-output name=COMMIT_TIMESTAMP::$COMMIT_TIMESTAMP
-
       - name: Build for ${{ matrix.os }}-${{ matrix.arch }}
-        id: build_tidb2dw
-        working-directory: ${{ env.working-directory }}
+        id: build
         env:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
-          COMMIT: ${GITHUB_SHA}
-          GITREF: ${{ steps.get_git.outputs.GIT_REF }}
-          actor: ${{ github.actor }}
-          event: ${{ github.event_name }}
         run: |
-          export GOPATH=${GITHUB_WORKSPACE}/go
-          export PATH=$PATH:$GOPATH/bin
-
-          if [ ! -z ${{ steps.check_staging.outputs.STAGING }} ]; then
-            export EXTRA_LDFLAGS="-X \"github.com/${{ github.repository }}/version.TiDB2DWVerName=${{ steps.check_staging.outputs.STAGING }}\""
-            export REL_VER=${{ steps.check_staging.outputs.STAGING }}
-          else
-            export REL_VER=`git describe --tags --always`
-          fi
+          export REL_VER=`git describe --tags --always`
           echo ::set-output name=REL_VER::$REL_VER
 
-          BUILD_FLAGS='-trimpath -mod=readonly -modcacherw -buildvcs=false' make build && \
+          make build
           echo "Build success."
 
-          checksum_file=checksum.${{ matrix.os }}-${{ matrix.arch }}.txt
-          checksum_header="TiUP $REL_VER (${actor}@${event}) ${{ github.run_id }}"
-          echo ${checksum_header} > ${checksum_file}
-          echo "sha256sum:" >> ${checksum_file}
-          sha256sum bin/* >> ${checksum_file}
-          echo "b2sum:" >> ${checksum_file}
-          b2sum bin/* >> ${checksum_file}
-          cat ${checksum_file}
-
-      - name: Package components
-        id: packaging
-        working-directory: ${{ env.working-directory }}
-        env:
-          ARCH: ${{ matrix.os }}-${{ matrix.arch }}
-          REL_VER: ${{ steps.build_tidb2dw.outputs.REL_VER }}
-        run: |
-          # make tar reproducible
-          TAR="tar --sort=name --mtime=${{ steps.get_git.outputs.COMMIT_TIMESTAMP }} --owner=0 --group=0 --numeric-owner"
-
-          # package all binaries to upload to github release asset
-          ${TAR} -C bin -czf tidb2dw-${REL_VER}-${ARCH}.tar.gz tidb2dw ../checksum.${{ matrix.os }}-${{ matrix.arch }}.txt
-
-      - name: Upload the all-in-one tarball to GitHub release
+          mv bin/tidb2dw bin/tidb2dw-${{ steps.build.outputs.REL_VER }}-${{ matrix.os }}-${{ matrix.arch }}
+      - name: Upload
         uses: ncipollo/release-action@v1
         if: github.event_name == 'release'
         with:
           allowUpdates: true
-          artifacts: ${{ env.working-directory }}/tidb2dw-${{ steps.build_tidb2dw.outputs.REL_VER }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+          artifacts: bin/tidb2dw-${{ steps.build.outputs.REL_VER }}-${{ matrix.os }}-${{ matrix.arch }}
           artifactContentType: application/gzip
           omitBodyDuringUpdate: true
           omitNameDuringUpdate: true
