@@ -203,30 +203,6 @@ func (c *consumer) waitTableFlushComplete(
 	default:
 	}
 
-	if _, ok := c.snowflakeConnectorMap[tableID]; !ok {
-		sfConfig := gosnowflake.Config{}
-		sfConfig.Account = snowflakeConfigFromCli.SnowflakeAccountId
-		sfConfig.User = snowflakeConfigFromCli.SnowflakeUser
-		sfConfig.Password = snowflakeConfigFromCli.SnowflakePass
-		sfConfig.Database = snowflakeConfigFromCli.SnowflakeDatabase
-		sfConfig.Schema = snowflakeConfigFromCli.SnowflakeSchema
-		sfConfig.Warehouse = snowflakeConfigFromCli.SnowflakeWarehouse
-		dsn, err := gosnowflake.DSN(&sfConfig)
-		if err != nil {
-			return errors.Annotate(err, "Failed to generate Snowflake DSN")
-		}
-		db, err := snowsql.NewSnowflakeConnector(
-			dsn,
-			fmt.Sprintf("increment_stage_%s", tableDef.Table),
-			c.sinkURI,
-			c.awsCredential,
-		)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		c.snowflakeConnectorMap[tableID] = db
-	}
-
 	err := c.snowflakeConnectorMap[tableID].MergeFile(tableDef, c.sinkURI, filePath)
 	if err != nil {
 		return errors.Trace(err)
@@ -237,6 +213,7 @@ func (c *consumer) waitTableFlushComplete(
 func (c *consumer) syncExecDMLEvents(
 	ctx context.Context,
 	tableDef cloudstorage.TableDefinition,
+	tableID int64,
 	key cloudstorage.DmlPathKey,
 	fileIdx uint64,
 ) error {
@@ -253,7 +230,6 @@ func (c *consumer) syncExecDMLEvents(
 		return nil
 	}
 
-	tableID := c.tableIDGenerator.generateFakeTableID(key.Schema, key.Table, key.PartitionNum)
 	err = c.waitTableFlushComplete(ctx, tableID, filePath, tableDef)
 	if err != nil {
 		return errors.Trace(err)
@@ -396,26 +372,63 @@ func (c *consumer) handleNewFiles(
 		return keys[i].Table < keys[j].Table
 	})
 
-	// TODO:
-	// 1. support handling ddl events.
-	// 2. support handling dml events of different tables concurrently.
+	// TODO: support handling dml events of different tables concurrently.
 	// Note: dml events of the same table should be handled sequentially.
 	//       so we can not just pipeline this loop.
+	var prevKey *cloudstorage.DmlPathKey
 	for _, key := range keys {
 		tableDef := c.mustGetTableDef(key.SchemaPathKey)
+		tableID := c.tableIDGenerator.generateFakeTableID(key.Schema, key.Table, key.PartitionNum)
+		if _, ok := c.snowflakeConnectorMap[tableID]; !ok {
+			sfConfig := gosnowflake.Config{}
+			sfConfig.Account = snowflakeConfigFromCli.SnowflakeAccountId
+			sfConfig.User = snowflakeConfigFromCli.SnowflakeUser
+			sfConfig.Password = snowflakeConfigFromCli.SnowflakePass
+			sfConfig.Database = snowflakeConfigFromCli.SnowflakeDatabase
+			sfConfig.Schema = snowflakeConfigFromCli.SnowflakeSchema
+			sfConfig.Warehouse = snowflakeConfigFromCli.SnowflakeWarehouse
+			dsn, err := gosnowflake.DSN(&sfConfig)
+			if err != nil {
+				return errors.Annotate(err, "Failed to generate Snowflake DSN")
+			}
+			db, err := snowsql.NewSnowflakeConnector(
+				dsn,
+				fmt.Sprintf("increment_stage_%s", tableDef.Table),
+				c.sinkURI,
+				c.awsCredential,
+			)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			c.snowflakeConnectorMap[tableID] = db
+		}
+
 		// if the key is a fake dml path key which is mainly used for
 		// sorting schema.json file before the dml files, then execute the ddl query.
 		if key.PartitionNum == fakePartitionNumForSchemaFile &&
 			len(key.Date) == 0 && len(tableDef.Query) > 0 {
-			return errors.Errorf("Receive ddl event, but can not handle now, ignore, ddl: %s", tableDef.Query)
+			if err := c.snowflakeConnectorMap[tableID].ExecDDL(tableDef); err != nil {
+				return errors.Annotate(err, "Please check the DDL query, "+
+					"if necessary, please manually execute the DDL query in Snowflake, "+
+					"remove the schema.json file from TiCDC sink path, "+
+					"and restart the program.")
+			}
+
+			// if key and prevKey belong to the same table, then we should remove the prevKey from dmlFileMap.
+			if prevKey != nil && prevKey.Table == key.Table {
+				delete(dmlFileMap, *prevKey)
+			}
+			prevKey = &key
+			continue
 		}
 
 		fileRange := dmlFileMap[key]
 		for i := fileRange.start; i <= fileRange.end; i++ {
-			if err := c.syncExecDMLEvents(ctx, tableDef, key, i); err != nil {
+			if err := c.syncExecDMLEvents(ctx, tableDef, tableID, key, i); err != nil {
 				return err
 			}
 		}
+		prevKey = &key
 	}
 
 	return nil
