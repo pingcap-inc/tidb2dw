@@ -13,6 +13,8 @@ import (
 	"go.uber.org/zap"
 )
 
+// A Wrapper of snowflake connection.
+// All snowflake related operations should be done through this struct.
 type SnowflakeConnector struct {
 	// db is the connection to snowflake.
 	db *sql.DB

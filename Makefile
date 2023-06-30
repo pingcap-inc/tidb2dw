@@ -1,9 +1,9 @@
 # Build pd-server, pd-ctl, pd-recover
-default: build
+default: dev
 
 # Development validation.
 all: dev
-dev: build
+dev: tidy fmt build
 
 .PHONY: default all dev
 
@@ -27,10 +27,16 @@ LDFLAGS += -X "$(REPO)/version.GitHash=$(COMMIT)"
 LDFLAGS += -X "$(REPO)/version.GitRef=$(GITREF)"
 LDFLAGS += $(EXTRA_LDFLAGS)
 
-.PHONY: build
+.PHONY: build fmt tidy
 
 build:
 	go build $(BUILD_FLAGS) -gcflags '$(GCFLAGS)' -ldflags '$(LDFLAGS)' -tags "$(BUILD_TAGS)" -o $(BUILD_BIN_PATH)/tidb2dw main.go
+
+fmt:
+	go fmt ./...
+
+tidy:
+	go mod tidy
 
 .PHONY: clean
 
