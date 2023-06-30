@@ -27,7 +27,6 @@ import (
 	psink "github.com/pingcap/tiflow/pkg/sink"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	putil "github.com/pingcap/tiflow/pkg/util"
-	"github.com/snowflakedb/gosnowflake"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -374,19 +373,12 @@ func (c *consumer) handleNewFiles(
 		tableDef := c.mustGetTableDef(key.SchemaPathKey)
 		tableID := c.tableIDGenerator.generateFakeTableID(key.Schema, key.Table, key.PartitionNum)
 		if _, ok := c.snowflakeConnectorMap[tableID]; !ok {
-			sfConfig := gosnowflake.Config{}
-			sfConfig.Account = snowflakeConfigFromCli.SnowflakeAccountId
-			sfConfig.User = snowflakeConfigFromCli.SnowflakeUser
-			sfConfig.Password = snowflakeConfigFromCli.SnowflakePass
-			sfConfig.Database = snowflakeConfigFromCli.SnowflakeDatabase
-			sfConfig.Schema = snowflakeConfigFromCli.SnowflakeSchema
-			sfConfig.Warehouse = snowflakeConfigFromCli.SnowflakeWarehouse
-			dsn, err := gosnowflake.DSN(&sfConfig)
+			db, err := OpenSnowflake(&snowflakeConfigFromCli)
 			if err != nil {
-				return errors.Annotate(err, "Failed to generate Snowflake DSN")
+				return errors.Trace(err)
 			}
-			db, err := snowsql.NewSnowflakeConnector(
-				dsn,
+			connector, err := snowsql.NewSnowflakeConnector(
+				db,
 				fmt.Sprintf("increment_stage_%s", tableDef.Table),
 				c.sinkURI,
 				c.awsCredential,
@@ -394,7 +386,7 @@ func (c *consumer) handleNewFiles(
 			if err != nil {
 				return errors.Trace(err)
 			}
-			c.snowflakeConnectorMap[tableID] = db
+			c.snowflakeConnectorMap[tableID] = connector
 		}
 
 		// if the key is a fake dml path key which is mainly used for

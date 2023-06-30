@@ -20,18 +20,9 @@ type SnowflakeConnector struct {
 	stageName string
 }
 
-func NewSnowflakeConnector(uri string, stageName string, upstreamURI *url.URL, credentials credentials.Value) (*SnowflakeConnector, error) {
-	db, err := sql.Open("snowflake", uri)
-	if err != nil {
-		return nil, errors.Annotate(err, "Failed to connect to snowflake")
-	}
-	// make sure the connection is available
-	if err = db.Ping(); err != nil {
-		return nil, errors.Annotate(err, "Failed to ping snowflake")
-	}
-	log.Info("snowflake connection established")
-
+func NewSnowflakeConnector(db *sql.DB, stageName string, upstreamURI *url.URL, credentials credentials.Value) (*SnowflakeConnector, error) {
 	// create stage
+	var err error
 	if upstreamURI.Host == "" {
 		err = CreateInternalStage(db, stageName)
 	} else {

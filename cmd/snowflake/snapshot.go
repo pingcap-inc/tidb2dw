@@ -2,33 +2,29 @@ package snowflake
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"database/sql"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"github.com/pingcap-inc/tidb2dw/snowsql"
+	"github.com/pingcap-inc/tidb2dw/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/dumpling/export"
 	"github.com/pingcap/tiflow/pkg/logutil"
-	"github.com/snowflakedb/gosnowflake"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
 type ReplicateSession struct {
 	SFConfig            *SnowflakeConfig
-	TiDBConfig          *TiDBConfig
+	TiDBConfig          *tidbsql.TiDBConfig
 	TableFQN            string
 	SnapshotConcurrency int
 	ResolvedS3Region    string
@@ -41,21 +37,24 @@ type ReplicateSession struct {
 
 	SourceDatabase string
 	SourceTable    string
+	StartTSO       string
 
 	StorageWorkspaceUri url.URL
 }
 
 func NewReplicateSession(
 	sfConfigFromCli *SnowflakeConfig,
-	tidbConfigFromCli *TiDBConfig,
+	tidbConfigFromCli *tidbsql.TiDBConfig,
 	tableFQN string,
 	snapshotConcurrency int,
-	s3StoragePath string) (*ReplicateSession, error) {
+	s3StoragePath string,
+	startTSO string) (*ReplicateSession, error) {
 	sess := &ReplicateSession{
 		SFConfig:            sfConfigFromCli,
 		TiDBConfig:          tidbConfigFromCli,
 		TableFQN:            tableFQN,
 		SnapshotConcurrency: snapshotConcurrency,
+		StartTSO:            startTSO,
 	}
 	workUri, err := url.Parse(s3StoragePath)
 	if err != nil {
@@ -112,19 +111,12 @@ func NewReplicateSession(
 		log.Info("Resolved storage region", zap.String("region", s3Region))
 	}
 	{
-		sfConfig := gosnowflake.Config{}
-		sfConfig.Account = sfConfigFromCli.SnowflakeAccountId
-		sfConfig.User = sfConfigFromCli.SnowflakeUser
-		sfConfig.Password = sfConfigFromCli.SnowflakePass
-		sfConfig.Database = sfConfigFromCli.SnowflakeDatabase
-		sfConfig.Schema = sfConfigFromCli.SnowflakeSchema
-		sfConfig.Warehouse = sfConfigFromCli.SnowflakeWarehouse
-		dsn, err := gosnowflake.DSN(&sfConfig)
+		db, err := OpenSnowflake(&snowflakeConfigFromCli)
 		if err != nil {
-			return nil, errors.Annotate(err, "Failed to generate Snowflake DSN")
+			return nil, errors.Trace(err)
 		}
-		db, err := snowsql.NewSnowflakeConnector(
-			dsn,
+		connector, err := snowsql.NewSnowflakeConnector(
+			db,
 			fmt.Sprintf("snapshot_stage_%s", sess.SourceTable),
 			&sess.StorageWorkspaceUri,
 			sess.AWSCredential,
@@ -132,33 +124,12 @@ func NewReplicateSession(
 		if err != nil {
 			return nil, errors.Annotate(err, "Failed to create Snowflake connector")
 		}
-		sess.SnowflakePool = db
+		sess.SnowflakePool = connector
 	}
 	{
-		tidbConfig := mysql.NewConfig()
-		tidbConfig.User = tidbConfigFromCli.TiDBUser
-		tidbConfig.Passwd = tidbConfigFromCli.TiDBPass
-		tidbConfig.Net = "tcp"
-		tidbConfig.Addr = fmt.Sprintf("%s:%d", tidbConfigFromCli.TiDBHost, tidbConfigFromCli.TiDBPort)
-		if tidbConfigFromCli.TiDBSSLCA != "" {
-			rootCertPool := x509.NewCertPool()
-			pem, err := os.ReadFile(tidbConfigFromCli.TiDBSSLCA)
-			if err != nil {
-				log.Fatal(err.Error())
-			}
-			if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
-				log.Fatal("Failed to append PEM.")
-			}
-			mysql.RegisterTLSConfig("tidb", &tls.Config{
-				RootCAs:    rootCertPool,
-				MinVersion: tls.VersionTLS12,
-				ServerName: tidbConfigFromCli.TiDBHost,
-			})
-			tidbConfig.TLSConfig = "tidb"
-		}
-		db, err := sql.Open("mysql", tidbConfig.FormatDSN())
+		db, err := tidbsql.OpenTiDB(tidbConfigFromCli)
 		if err != nil {
-			return nil, errors.Annotate(err, "Failed to open TiDB connection")
+			return nil, errors.Trace(err)
 		}
 		sess.TiDBPool = db
 	}
@@ -192,13 +163,11 @@ func (sess *ReplicateSession) Run() error {
 	if err != nil {
 		return errors.Annotate(err, "Failed to dump table from TiDB")
 	}
-
 	log.Info("Successfully dumped table from TiDB, starting to load into Snowflake")
 
 	if err = sess.loadSnapshotDataIntoSnowflake(); err != nil {
 		return errors.Annotate(err, "Failed to load snapshot data into Snowflake")
 	}
-
 	return nil
 }
 
@@ -242,6 +211,7 @@ func (sess *ReplicateSession) buildDumperConfig() (*export.Config, error) {
 	conf.TransactionalConsistency = true
 	conf.OutputDirPath = sess.StorageWorkspaceUri.String()
 	conf.S3.Region = sess.ResolvedS3Region
+	conf.Snapshot = sess.StartTSO
 
 	conf.SpecifiedTables = true
 	tables, err := export.GetConfTables([]string{sess.TableFQN})
@@ -265,11 +235,12 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 
 func startReplicateSnapshot(
 	sfConfigFromCli *SnowflakeConfig,
-	tidbConfigFromCli *TiDBConfig,
+	tidbConfigFromCli *tidbsql.TiDBConfig,
 	tableFQN string,
 	snapshotConcurrency int,
-	s3StoragePath string) error {
-	session, err := NewReplicateSession(sfConfigFromCli, tidbConfigFromCli, tableFQN, snapshotConcurrency, s3StoragePath)
+	s3StoragePath string,
+	startTSO string) error {
+	session, err := NewReplicateSession(sfConfigFromCli, tidbConfigFromCli, tableFQN, snapshotConcurrency, s3StoragePath, startTSO)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -285,7 +256,7 @@ func startReplicateSnapshot(
 
 func newSnapshotCmd() *cobra.Command {
 	var (
-		tidbConfigFromCli   TiDBConfig
+		tidbConfigFromCli   tidbsql.TiDBConfig
 		tableFQN            string
 		snapshotConcurrency int
 		s3StoragePath       string
@@ -312,7 +283,7 @@ func newSnapshotCmd() *cobra.Command {
 				panic(err)
 			}
 			// start replicate snapshot
-			if err = startReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, s3StoragePath); err != nil {
+			if err = startReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, s3StoragePath, ""); err != nil {
 				panic(err)
 			}
 		},

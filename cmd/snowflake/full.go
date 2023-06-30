@@ -11,6 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/google/uuid"
+	"github.com/pingcap-inc/tidb2dw/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/logutil"
@@ -93,7 +94,7 @@ func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, start
 
 func newFullCmd() *cobra.Command {
 	var (
-		tidbConfigFromCli   TiDBConfig
+		tidbConfigFromCli   tidbsql.TiDBConfig
 		tableFQN            string
 		snapshotConcurrency int
 		s3StoragePath       string
@@ -102,7 +103,6 @@ func newFullCmd() *cobra.Command {
 		cdcFlushInterval    time.Duration
 		cdcFileSize         int64
 		timezone            string
-		startTSO            uint64
 		logFile             string
 		logLevel            string
 	)
@@ -115,6 +115,12 @@ func newFullCmd() *cobra.Command {
 				Level: logLevel,
 				File:  logFile,
 			})
+			if err != nil {
+				panic(err)
+			}
+
+			// get current tso
+			startTSO, err := tidbsql.GetCurrentTSO(&tidbConfigFromCli)
 			if err != nil {
 				panic(err)
 			}
@@ -144,7 +150,7 @@ func newFullCmd() *cobra.Command {
 			if err != nil {
 				panic(err)
 			}
-			if err = startReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapS3StoragePath); err != nil {
+			if err = startReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapS3StoragePath, fmt.Sprint(startTSO)); err != nil {
 				panic(err)
 			}
 
@@ -170,7 +176,6 @@ func newFullCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&tableFQN, "table", "t", "", "table full qualified name: <database>.<table>")
 	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
 	cmd.Flags().StringVarP(&s3StoragePath, "storage", "s", "", "S3 storage path: s3://<bucket>/<path>")
-	cmd.Flags().Uint64Var(&startTSO, "start-ts", 0, "")
 	cmd.Flags().StringVar(&cdcHost, "cdc.host", "127.0.0.1", "TiCDC server host")
 	cmd.Flags().IntVar(&cdcPort, "cdc.port", 8300, "TiCDC server port")
 	cmd.Flags().DurationVar(&cdcFlushInterval, "cdc-flush-interval", 60*time.Second, "")
