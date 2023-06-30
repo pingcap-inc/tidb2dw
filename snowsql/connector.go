@@ -26,8 +26,7 @@ func NewSnowflakeConnector(uri string, stageName string, upstreamURI *url.URL, c
 		return nil, errors.Annotate(err, "Failed to connect to snowflake")
 	}
 	// make sure the connection is available
-	err = db.Ping()
-	if err != nil {
+	if err = db.Ping(); err != nil {
 		return nil, errors.Annotate(err, "Failed to ping snowflake")
 	}
 	log.Info("snowflake connection established")
@@ -76,8 +75,7 @@ func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable
 }
 
 func (sc *SnowflakeConnector) LoadSnapshot(targetTable, filePrefix string) error {
-	err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, filePrefix)
-	if err != nil {
+	if err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, filePrefix); err != nil {
 		return errors.Trace(err)
 	}
 	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
@@ -119,8 +117,7 @@ func (sc *SnowflakeConnector) MergeFile(tableDef cloudstorage.TableDefinition, u
 
 func (sc *SnowflakeConnector) Close() {
 	// drop stage
-	err := DropStage(sc.db, sc.stageName)
-	if err != nil {
+	if err := DropStage(sc.db, sc.stageName); err != nil {
 		log.Error("fail to drop stage", zap.Error(err))
 	}
 

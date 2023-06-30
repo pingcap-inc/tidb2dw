@@ -173,8 +173,7 @@ func (sess *ReplicateSession) Close() {
 
 func (sess *ReplicateSession) Run() error {
 	log.Info("Testing connections with TiDB")
-	err := sess.TiDBPool.Ping()
-	if err != nil {
+	if err := sess.TiDBPool.Ping(); err != nil {
 		return errors.Annotate(err, "Failed to connect to TiDB")
 	}
 	log.Info("Connected with TiDB")
@@ -184,8 +183,7 @@ func (sess *ReplicateSession) Run() error {
 		return errors.Trace(err)
 	}
 
-	err = sess.SnowflakePool.CopyTableSchema(sess.SourceDatabase, sess.SourceTable, sess.TiDBPool)
-	if err != nil {
+	if err = sess.SnowflakePool.CopyTableSchema(sess.SourceDatabase, sess.SourceTable, sess.TiDBPool); err != nil {
 		return errors.Trace(err)
 	}
 
@@ -197,8 +195,7 @@ func (sess *ReplicateSession) Run() error {
 
 	log.Info("Successfully dumped table from TiDB, starting to load into Snowflake")
 
-	err = sess.loadSnapshotDataIntoSnowflake()
-	if err != nil {
+	if err = sess.loadSnapshotDataIntoSnowflake(); err != nil {
 		return errors.Annotate(err, "Failed to load snapshot data into Snowflake")
 	}
 
@@ -259,8 +256,7 @@ func (sess *ReplicateSession) buildDumperConfig() (*export.Config, error) {
 func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	workspacePrefix := strings.TrimPrefix(sess.StorageWorkspaceUri.Path, "/")
 	dumpFilePrefix := fmt.Sprintf("%s/%s.%s.", workspacePrefix, sess.SourceDatabase, sess.SourceTable)
-	err := sess.SnowflakePool.LoadSnapshot(sess.SourceTable, dumpFilePrefix)
-	if err != nil {
+	if err := sess.SnowflakePool.LoadSnapshot(sess.SourceTable, dumpFilePrefix); err != nil {
 		return errors.Trace(err)
 	}
 	// TODO: remove dump files
@@ -279,10 +275,10 @@ func startReplicateSnapshot(
 	}
 	defer session.Close()
 
-	err = session.Run()
-	if err != nil {
+	if err = session.Run(); err != nil {
 		return errors.Trace(err)
 	}
+	log.Info("Successfully replicated snapshot from TiDB to Snowflake")
 
 	return nil
 }
@@ -316,8 +312,7 @@ func newSnapshotCmd() *cobra.Command {
 				panic(err)
 			}
 			// start replicate snapshot
-			err = startReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, s3StoragePath)
-			if err != nil {
+			if err = startReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, s3StoragePath); err != nil {
 				panic(err)
 			}
 		},
