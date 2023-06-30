@@ -119,11 +119,24 @@ func newFullCmd() *cobra.Command {
 				panic(err)
 			}
 
-			// get current tso
-			startTSO, err := tidbsql.GetCurrentTSO(&tidbConfigFromCli)
+			db, err := tidbsql.OpenTiDB(&tidbConfigFromCli)
 			if err != nil {
 				panic(err)
 			}
+			defer db.Close()
+
+			// get current tso
+			startTSO, err := tidbsql.GetCurrentTSO(db)
+			if err != nil {
+				panic(err)
+			}
+
+			// enlarge gc duration
+			if err = tidbsql.EnlargeGCDuration(db); err != nil {
+				panic(err)
+			}
+			// make sure reset gc duration
+			defer tidbsql.ResetGCDuration(db)
 
 			// generate uuid, and append to s3 path
 			uid := uuid.New().String()
@@ -151,6 +164,11 @@ func newFullCmd() *cobra.Command {
 				panic(err)
 			}
 			if err = startReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapS3StoragePath, fmt.Sprint(startTSO)); err != nil {
+				panic(err)
+			}
+
+			// reset gc duration
+			if err = tidbsql.ResetGCDuration(db); err != nil {
 				panic(err)
 			}
 
