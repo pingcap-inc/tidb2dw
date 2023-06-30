@@ -143,12 +143,6 @@ func (sess *ReplicateSession) Close() {
 }
 
 func (sess *ReplicateSession) Run() error {
-	log.Info("Testing connections with TiDB")
-	if err := sess.TiDBPool.Ping(); err != nil {
-		return errors.Annotate(err, "Failed to connect to TiDB")
-	}
-	log.Info("Connected with TiDB")
-
 	dumper, err := sess.buildDumper()
 	if err != nil {
 		return errors.Trace(err)
