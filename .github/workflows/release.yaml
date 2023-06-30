@@ -3,6 +3,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - release-*
     tags:
       - "v*"
   workflow_dispatch:
@@ -36,7 +38,7 @@ jobs:
           GOARCH: ${{ matrix.arch }}
         run: |
           export REL_VER=`git describe --tags --always`
-          echo ::set-output name=REL_VER::$REL_VER
+          echo "REL_VER=$REL_VER" >> $GITHUB_OUTPUT
 
           make build
           echo "Build success."
