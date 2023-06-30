@@ -9,6 +9,7 @@ require (
 	github.com/pingcap/errors v0.11.5-0.20221009092201-b66cddb77c32
 	github.com/pingcap/log v1.1.1-0.20230317032135-a0d097d16e22
 	github.com/pingcap/tidb v1.1.0-beta.0.20230609033446-1061ed208c94
+	github.com/pingcap/tidb/parser v0.0.0-20230609033446-1061ed208c94
 	github.com/snowflakedb/gosnowflake v1.6.18
 	github.com/spf13/cobra v1.7.0
 	gitlab.com/tymonx/go-formatter v1.5.1
@@ -192,7 +193,6 @@ require (
 	github.com/pingcap/goleveldb v0.0.0-20191226122134-f82aafb29989 // indirect
 	github.com/pingcap/kvproto v0.0.0-20230530111525-e4919c190b46 // indirect
 	github.com/pingcap/sysutil v1.0.1-0.20230407040306-fb007c5aff21 // indirect
-	github.com/pingcap/tidb/parser v0.0.0-20230609033446-1061ed208c94
 	github.com/pingcap/tiflow v0.0.0-20230607052141-d20d6d6667fc
 	github.com/pingcap/tipb v0.0.0-20230602100112-acb7942db1ca // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
