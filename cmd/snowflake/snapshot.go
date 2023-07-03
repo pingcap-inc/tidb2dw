@@ -195,7 +195,9 @@ func (sess *ReplicateSession) Run() error {
 		return errors.Annotate(err, "Failed to dump table from TiDB")
 	}
 
-	log.Info("Successfully dumped table from TiDB, starting to load into Snowflake")
+	status := dumper.GetStatus()
+
+	log.Info("Successfully dumped table from TiDB, starting to load into Snowflake", zap.Any("status", status))
 
 	err = sess.loadSnapshotDataIntoSnowflake()
 	if err != nil {
