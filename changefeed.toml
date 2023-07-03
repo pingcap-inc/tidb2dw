@@ -80,53 +80,13 @@ region-threshold = 100000
 write-key-threshold = 0
 
 [sink]
-# 对于 MQ 类的 Sink，可以通过 dispatchers 配置 event 分发器
-# 支持 partition 及 topic（从 v6.1 开始支持）两种 event 分发器。二者的详细说明见下一节。
-# matcher 的匹配语法和过滤器规则语法相同，matcher 匹配规则的详细说明见下一节。
-# 注意：该参数只有当下游为消息队列时，才会生效。
-# dispatchers = [
-#    {matcher = ['test1.*', 'test2.*'], topic = "Topic 表达式 1", partition = "ts" },
-#    {matcher = ['test3.*', 'test4.*'], topic = "Topic 表达式 2", partition = "index-value" },
-#    {matcher = ['test1.*', 'test5.*'], topic = "Topic 表达式 3", partition = "table"},
-#    {matcher = ['test6.*'], partition = "ts"}
-# ]
-
-# protocol 用于指定传递到下游的协议格式
-# 当下游类型是 Kafka 时，支持 canal-json、avro 两种协议。
-# 当下游类型是存储服务时，目前仅支持 canal-json、csv 两种协议。
-# 注意：该参数只有当下游为 Kafka 或存储服务时，才会生效。
-# protocol = "canal-json"
-
-# 以下三个配置项仅在同步到存储服务的 sink 中使用，在 MQ 和 MySQL 类 sink 中无需设置。
-# 换行符，用来分隔两个数据变更事件。默认值为空，表示使用 "\r\n" 作为换行符。
-# terminator = ''
-
-# 文件路径的日期分隔类型。可选类型有 `none`、`year`、`month` 和 `day`。默认值为 `none`，即不使用日期分隔。详见 <https://docs.pingcap.com/zh/tidb/dev/ticdc-sink-to-cloud-storage#数据变更记录>。
+# 文件路径的日期分隔类型。可选类型有 `none`、`year`、`month` 和 `day`。默认值为 `day`。详见 <https://docs.pingcap.com/zh/tidb/dev/ticdc-sink-to-cloud-storage#数据变更记录>。
 # 注意：该参数只有当下游为存储服务时，才会生效。
-date-separator = 'none'
+date-separator = 'day'
 
 # 是否使用 partition 作为分隔字符串。默认值为 true，即一张表中各个 partition 的数据会分不同的目录来存储。建议保持该配置项为 true 以避免下游分区表可能丢数据的问题 <https://github.com/pingcap/tiflow/issues/8581>。使用示例详见 <https://docs.pingcap.com/zh/tidb/dev/ticdc-sink-to-cloud-storage#数据变更记录>。
 # 注意：该参数只有当下游为存储服务时，才会生效。
 enable-partition-separator = true
-
-# Schema 注册表的 URL。
-# 注意：该参数只有当下游为消息队列时，才会生效。
-# schema-registry = "http://localhost:80801/subjects/{subject-name}/versions/{version-number}/schema"
-
-# 编码数据时所用编码器的线程数。
-# 默认值为 16。
-# 注意：该参数只有当下游为消息队列时，才会生效。
-# encoder-concurrency = 16
-
-# 是否开启 Kafka Sink V2。Kafka Sink V2 内部使用 kafka-go 实现。
-# 默认值为 false。
-# 注意：该参数只有当下游为消息队列时，才会生效。
-# enable-kafka-sink-v2 = false
-
-# 是否只向下游同步有内容更新的列。从 v7.1.0 开始支持。
-# 默认值为 false。
-# 注意：该参数只有当下游为消息队列，并且使用 Open Protocol 或 Canal-JSON 时，才会生效。
-# only-output-updated-columns = false
 
 # 从 v6.5.0 开始，TiCDC 支持以 CSV 格式将数据变更记录保存至存储服务中，在 MQ 和 MySQL 类 sink 中无需设置。
 [sink.csv]

@@ -13,6 +13,8 @@ import (
 	"go.uber.org/zap"
 )
 
+// A Wrapper of snowflake connection.
+// All snowflake related operations should be done through this struct.
 type SnowflakeConnector struct {
 	// db is the connection to snowflake.
 	db *sql.DB
@@ -20,19 +22,9 @@ type SnowflakeConnector struct {
 	stageName string
 }
 
-func NewSnowflakeConnector(uri string, stageName string, upstreamURI *url.URL, credentials credentials.Value) (*SnowflakeConnector, error) {
-	db, err := sql.Open("snowflake", uri)
-	if err != nil {
-		return nil, errors.Annotate(err, "Failed to connect to snowflake")
-	}
-	// make sure the connection is available
-	err = db.Ping()
-	if err != nil {
-		return nil, errors.Annotate(err, "Failed to ping snowflake")
-	}
-	log.Info("snowflake connection established")
-
+func NewSnowflakeConnector(db *sql.DB, stageName string, upstreamURI *url.URL, credentials credentials.Value) (*SnowflakeConnector, error) {
 	// create stage
+	var err error
 	if upstreamURI.Host == "" {
 		err = CreateInternalStage(db, stageName)
 	} else {
@@ -76,8 +68,7 @@ func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable
 }
 
 func (sc *SnowflakeConnector) LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
-	err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, filePrefix, onSnapshotLoadProgress)
-	if err != nil {
+	if err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, filePrefix, onSnapshotLoadProgress); err != nil {
 		return errors.Trace(err)
 	}
 	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
@@ -119,8 +110,7 @@ func (sc *SnowflakeConnector) MergeFile(tableDef cloudstorage.TableDefinition, u
 
 func (sc *SnowflakeConnector) Close() {
 	// drop stage
-	err := DropStage(sc.db, sc.stageName)
-	if err != nil {
+	if err := DropStage(sc.db, sc.stageName); err != nil {
 		log.Error("fail to drop stage", zap.Error(err))
 	}
 

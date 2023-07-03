@@ -27,7 +27,6 @@ import (
 	psink "github.com/pingcap/tiflow/pkg/sink"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	putil "github.com/pingcap/tiflow/pkg/util"
-	"github.com/snowflakedb/gosnowflake"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -73,8 +72,7 @@ func newConsumer(ctx context.Context, sinkUri *url.URL, configFile, timezone str
 		}
 	}
 
-	err = replicaConfig.ValidateAndAdjust(sinkUri)
-	if err != nil {
+	if err = replicaConfig.ValidateAndAdjust(sinkUri); err != nil {
 		log.Error("failed to validate replica config", zap.Error(err))
 		return nil, err
 	}
@@ -203,8 +201,7 @@ func (c *consumer) waitTableFlushComplete(
 	default:
 	}
 
-	err := c.snowflakeConnectorMap[tableID].MergeFile(tableDef, c.sinkURI, filePath)
-	if err != nil {
+	if err := c.snowflakeConnectorMap[tableID].MergeFile(tableDef, c.sinkURI, filePath); err != nil {
 		return errors.Trace(err)
 	}
 	return nil
@@ -230,14 +227,12 @@ func (c *consumer) syncExecDMLEvents(
 		return nil
 	}
 
-	err = c.waitTableFlushComplete(ctx, tableID, filePath, tableDef)
-	if err != nil {
+	if err = c.waitTableFlushComplete(ctx, tableID, filePath, tableDef); err != nil {
 		return errors.Trace(err)
 	}
 
 	// delete file after flush complete in order to avoid duplicate flush
-	err = c.externalStorage.DeleteFile(ctx, filePath)
-	if err != nil {
+	if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
 		return errors.Trace(err)
 	}
 
@@ -281,8 +276,7 @@ func (c *consumer) parseSchemaFilePath(ctx context.Context, path string) error {
 	if err != nil {
 		return errors.Trace(err)
 	}
-	err = json.Unmarshal(schemaContent, &tableDef)
-	if err != nil {
+	if err = json.Unmarshal(schemaContent, &tableDef); err != nil {
 		return errors.Trace(err)
 	}
 	checksumInMem, err := tableDef.Sum32(nil)
@@ -379,19 +373,12 @@ func (c *consumer) handleNewFiles(
 		tableDef := c.mustGetTableDef(key.SchemaPathKey)
 		tableID := c.tableIDGenerator.generateFakeTableID(key.Schema, key.Table, key.PartitionNum)
 		if _, ok := c.snowflakeConnectorMap[tableID]; !ok {
-			sfConfig := gosnowflake.Config{}
-			sfConfig.Account = snowflakeConfigFromCli.SnowflakeAccountId
-			sfConfig.User = snowflakeConfigFromCli.SnowflakeUser
-			sfConfig.Password = snowflakeConfigFromCli.SnowflakePass
-			sfConfig.Database = snowflakeConfigFromCli.SnowflakeDatabase
-			sfConfig.Schema = snowflakeConfigFromCli.SnowflakeSchema
-			sfConfig.Warehouse = snowflakeConfigFromCli.SnowflakeWarehouse
-			dsn, err := gosnowflake.DSN(&sfConfig)
+			db, err := OpenSnowflake(&snowflakeConfigFromCli)
 			if err != nil {
-				return errors.Annotate(err, "Failed to generate Snowflake DSN")
+				return errors.Trace(err)
 			}
-			db, err := snowsql.NewSnowflakeConnector(
-				dsn,
+			connector, err := snowsql.NewSnowflakeConnector(
+				db,
 				fmt.Sprintf("increment_stage_%s", tableDef.Table),
 				c.sinkURI,
 				c.awsCredential,
@@ -399,7 +386,7 @@ func (c *consumer) handleNewFiles(
 			if err != nil {
 				return errors.Trace(err)
 			}
-			c.snowflakeConnectorMap[tableID] = db
+			c.snowflakeConnectorMap[tableID] = connector
 		}
 
 		// if the key is a fake dml path key which is mainly used for
@@ -442,8 +429,7 @@ func (c *consumer) run(ctx context.Context, flushInterval time.Duration) error {
 			return errors.Trace(err)
 		}
 
-		err = c.handleNewFiles(ctx, dmlFileMap)
-		if err != nil {
+		if err = c.handleNewFiles(ctx, dmlFileMap); err != nil {
 			return errors.Trace(err)
 		}
 	}
@@ -531,8 +517,7 @@ func newIncrementCmd() *cobra.Command {
 			if !psink.IsStorageScheme(scheme) {
 				panic("invalid storage scheme, the scheme of sink-uri must be file/s3/azblob/gcs")
 			}
-			err = startReplicateIncrement(uri, flushInterval, configFile, timezone)
-			if err != nil {
+			if err = startReplicateIncrement(uri, flushInterval, configFile, timezone); err != nil {
 				panic(err)
 			}
 		},
