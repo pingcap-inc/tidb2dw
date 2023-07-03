@@ -76,7 +76,7 @@ func GetServerSideTimestamp(db *sql.DB) (string, error) {
 	return result, nil
 }
 
-func LoadSnapshotFromStage(db *sql.DB, targetTable, stageName, filePrefix string) error {
+func LoadSnapshotFromStage(db *sql.DB, targetTable, stageName, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
 	// The timestamp and reqId is used to monitor the progress of COPY INTO query.
 	ts, err := GetServerSideTimestamp(db)
 	if err != nil {
@@ -109,9 +109,13 @@ ON_ERROR = CONTINUE;
 	copyFinished := make(chan struct{})
 
 	go func() {
+		// This is a goroutine to monitor the COPY INTO progress.
 		defer wg.Done()
 
-		// This is a goroutine to monitor the COPY INTO progress.
+		if onSnapshotLoadProgress == nil {
+			return
+		}
+
 		var rowsProduced int64
 
 		checkInterval := 10 * time.Second
@@ -137,7 +141,7 @@ ON_ERROR = CONTINUE;
 					log.Warn("Failed to get progress", zap.Error(err))
 				}
 
-				log.Info("COPY INTO copied rows", zap.Int64("rowsProduced", rowsProduced))
+				onSnapshotLoadProgress(rowsProduced)
 			}
 		}
 	}()

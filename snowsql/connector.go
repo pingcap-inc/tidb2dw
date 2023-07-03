@@ -75,8 +75,8 @@ func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable
 	return nil
 }
 
-func (sc *SnowflakeConnector) LoadSnapshot(targetTable, filePrefix string) error {
-	err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, filePrefix)
+func (sc *SnowflakeConnector) LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
+	err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, filePrefix, onSnapshotLoadProgress)
 	if err != nil {
 		return errors.Trace(err)
 	}
