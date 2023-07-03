@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -70,7 +71,7 @@ ON_ERROR = CONTINUE;
 `, formatter.Named{
 		"targetTable": EscapeString(targetTable),
 		"stageName":   EscapeString(stageName),
-		"filePrefix":  EscapeString(filePrefix),
+		"filePrefix":  EscapeString(regexp.QuoteMeta(filePrefix)),
 	})
 	if err != nil {
 		return err
