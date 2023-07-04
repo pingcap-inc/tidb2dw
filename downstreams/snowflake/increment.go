@@ -22,12 +22,9 @@ import (
 	sinkutil "github.com/pingcap/tiflow/cdc/sink/util"
 	"github.com/pingcap/tiflow/pkg/cmd/util"
 	"github.com/pingcap/tiflow/pkg/config"
-	"github.com/pingcap/tiflow/pkg/logutil"
 	"github.com/pingcap/tiflow/pkg/quotes"
-	psink "github.com/pingcap/tiflow/pkg/sink"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	putil "github.com/pingcap/tiflow/pkg/util"
-	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
@@ -42,6 +39,8 @@ type fileIndexRange struct {
 }
 
 type consumer struct {
+	sfConfig *snowsql.SnowflakeConfig
+
 	replicationCfg  *config.ReplicaConfig
 	externalStorage storage.ExternalStorage
 	fileExtension   string
@@ -57,7 +56,7 @@ type consumer struct {
 	sinkURI               *url.URL
 }
 
-func newConsumer(ctx context.Context, sinkUri *url.URL, configFile, timezone string) (*consumer, error) {
+func newConsumer(ctx context.Context, sfConfig *snowsql.SnowflakeConfig, sinkUri *url.URL, configFile, timezone string) (*consumer, error) {
 	tz, err := putil.GetTimezone(timezone)
 	if err != nil {
 		return nil, errors.Annotate(err, "can not load timezone")
@@ -109,6 +108,7 @@ func newConsumer(ctx context.Context, sinkUri *url.URL, configFile, timezone str
 	}
 
 	return &consumer{
+		sfConfig:        sfConfig,
 		replicationCfg:  replicaConfig,
 		externalStorage: storage,
 		fileExtension:   extension,
@@ -373,7 +373,7 @@ func (c *consumer) handleNewFiles(
 		tableDef := c.mustGetTableDef(key.SchemaPathKey)
 		tableID := c.tableIDGenerator.generateFakeTableID(key.Schema, key.Table, key.PartitionNum)
 		if _, ok := c.snowflakeConnectorMap[tableID]; !ok {
-			db, err := OpenSnowflake(&snowflakeConfigFromCli)
+			db, err := snowsql.OpenSnowflake(c.sfConfig)
 			if err != nil {
 				return errors.Trace(err)
 			}
@@ -457,7 +457,7 @@ func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partiti
 	return g.currentTableID
 }
 
-func startReplicateIncrement(sinkUri *url.URL, flushInterval time.Duration, configFile, timezone string) error {
+func StartReplicateIncrement(sfConfig *snowsql.SnowflakeConfig, sinkUri *url.URL, flushInterval time.Duration, configFile, timezone string) error {
 	var consumer *consumer
 	var err error
 
@@ -477,7 +477,7 @@ func startReplicateIncrement(sinkUri *url.URL, flushInterval time.Duration, conf
 	}
 	defer deferFunc()
 
-	consumer, err = newConsumer(ctx, sinkUri, configFile, timezone)
+	consumer, err = newConsumer(ctx, sfConfig, sinkUri, configFile, timezone)
 	if err != nil {
 		return errors.Annotate(err, "failed to create storage consumer")
 	}
@@ -486,57 +486,4 @@ func startReplicateIncrement(sinkUri *url.URL, flushInterval time.Duration, conf
 		return errors.Annotate(err, "error occurred while running consumer")
 	}
 	return nil
-}
-
-func newIncrementCmd() *cobra.Command {
-	var (
-		sinkURIStr    string
-		logFile       string
-		logLevel      string
-		flushInterval time.Duration
-		timezone      string
-		configFile    string
-	)
-
-	cmd := &cobra.Command{
-		Use:   "increment",
-		Short: "Replicate incremental data from TiDB to Snowflake",
-		Run: func(_ *cobra.Command, _ []string) {
-			err := logutil.InitLogger(&logutil.Config{
-				Level: logLevel,
-				File:  logFile,
-			})
-			if err != nil {
-				panic(err)
-			}
-			uri, err := url.Parse(sinkURIStr)
-			if err != nil {
-				panic(err)
-			}
-			scheme := strings.ToLower(uri.Scheme)
-			if !psink.IsStorageScheme(scheme) {
-				panic("invalid storage scheme, the scheme of sink-uri must be file/s3/azblob/gcs")
-			}
-			if err = startReplicateIncrement(uri, flushInterval, configFile, timezone); err != nil {
-				panic(err)
-			}
-		},
-	}
-
-	cmd.Flags().StringVar(&sinkURIStr, "sink-uri", "", "sink uri")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeAccountId, "snowflake.account-id", "", "snowflake accound id: <organization>-<account>")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeWarehouse, "snowflake.warehouse", "COMPUTE_WH", "")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeUser, "snowflake.user", "", "snowflake user")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakePass, "snowflake.pass", "", "snowflake password")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeDatabase, "snowflake.database", "", "snowflake database")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeSchema, "snowflake.schema", "", "snowflake schema")
-	cmd.Flags().StringVar(&configFile, "config", "", "changefeed configuration file")
-	cmd.Flags().DurationVar(&flushInterval, "flush-interval", 60*time.Second, "flush interval")
-	cmd.Flags().StringVar(&timezone, "tz", "System", "specify time zone of storage consumer")
-	cmd.Flags().StringVar(&logFile, "log-file", "", "log file path")
-	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level")
-
-	cmd.MarkFlagRequired("sink-uri")
-
-	return cmd
 }

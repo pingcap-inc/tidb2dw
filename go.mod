@@ -12,6 +12,7 @@ require (
 	github.com/pingcap/tidb/parser v0.0.0-20230609033446-1061ed208c94
 	github.com/snowflakedb/gosnowflake v1.6.18
 	github.com/spf13/cobra v1.7.0
+	github.com/thediveo/enumflag v0.10.1
 	gitlab.com/tymonx/go-formatter v1.5.1
 	go.uber.org/zap v1.24.0
 	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1

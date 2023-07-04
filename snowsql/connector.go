@@ -9,9 +9,44 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
+	"github.com/snowflakedb/gosnowflake"
 	_ "github.com/snowflakedb/gosnowflake"
 	"go.uber.org/zap"
 )
+
+type SnowflakeConfig struct {
+	AccountId string
+	Warehouse string
+	User      string
+	Pass      string
+	Database  string
+	Schema    string
+}
+
+func OpenSnowflake(config *SnowflakeConfig) (*sql.DB, error) {
+	sfConfig := gosnowflake.Config{
+		Account:   config.AccountId,
+		User:      config.User,
+		Password:  config.Pass,
+		Database:  config.Database,
+		Schema:    config.Schema,
+		Warehouse: config.Warehouse,
+	}
+	dsn, err := gosnowflake.DSN(&sfConfig)
+	if err != nil {
+		return nil, errors.Annotate(err, "Failed to generate Snowflake DSN")
+	}
+	db, err := sql.Open("snowflake", dsn)
+	if err != nil {
+		return nil, errors.Annotate(err, "Failed to open Snowflake connection")
+	}
+	// make sure the connection is available
+	if err = db.Ping(); err != nil {
+		return nil, errors.Annotate(err, "Failed to ping Snowflake")
+	}
+	log.Info("Snowflake connection established")
+	return db, nil
+}
 
 // A Wrapper of snowflake connection.
 // All snowflake related operations should be done through this struct.
