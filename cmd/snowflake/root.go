@@ -2,6 +2,7 @@ package snowflake
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,13 +11,13 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/google/uuid"
 	"github.com/pingcap-inc/tidb2dw/downstreams/snowflake"
 	"github.com/pingcap-inc/tidb2dw/snowsql"
 	"github.com/pingcap-inc/tidb2dw/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/logutil"
+	putil "github.com/pingcap/tiflow/pkg/util"
 	"github.com/spf13/cobra"
 	"github.com/thediveo/enumflag"
 	"go.uber.org/zap"
@@ -39,7 +40,9 @@ func genSinkURI(s3StoragePath string, flushInterval time.Duration, fileSize int6
 		}
 		values.Add("access-key", credValue.AccessKeyID)
 		values.Add("secret-access-key", credValue.SecretAccessKey)
-		values.Add("session-token", credValue.SessionToken)
+		if credValue.SessionToken != "" {
+			values.Add("session-token", credValue.SessionToken)
+		}
 	}
 	sinkUri.RawQuery = values.Encode()
 	return sinkUri, nil
@@ -128,38 +131,55 @@ func NewSnowflakeCmd() *cobra.Command {
 	)
 
 	run := func() error {
-		// get current tso
-		startTSO, err := tidbsql.GetCurrentTSO(&tidbConfigFromCli)
+		// 0. check status
+		ctx := context.Background()
+		storage, err := putil.GetExternalStorageFromURI(ctx, s3StoragePath)
 		if err != nil {
-			return errors.Annotate(err, "Failed to get current TSO")
+			return errors.Trace(err)
 		}
-
-		// generate uuid, and append to s3 path
-		uid := uuid.New().String()
-		s3StoragePath, err := url.JoinPath(s3StoragePath, uid)
+		metadataExist, err := storage.FileExists(ctx, "increment/metadata")
+		if err != nil {
+			return errors.Trace(err)
+		}
+		loadinfoExist, err := storage.FileExists(ctx, "snapshot/loadinfo")
 		if err != nil {
 			return errors.Trace(err)
 		}
 
+		// 1. get current tso
+		startTSO := uint64(0)
+		if !loadinfoExist {
+			startTSO, err = tidbsql.GetCurrentTSO(&tidbConfigFromCli)
+			if err != nil {
+				return errors.Annotate(err, "Failed to get current TSO")
+			}
+		} else {
+			log.Info("Snapshot data is all loaded, skip get current TSO")
+		}
+
 		var sinkURI *url.URL
 
-		// create changefeed
+		// 2. create changefeed
 		if mode == RunModeFull || mode == RunModeIncrementalOnly {
 			increS3StoragePath, err := url.JoinPath(s3StoragePath, "increment")
 			if err != nil {
 				return errors.Trace(err)
 			}
-			sinkURI, err := genSinkURI(increS3StoragePath, cdcFlushInterval, cdcFileSize)
+			sinkURI, err = genSinkURI(increS3StoragePath, cdcFlushInterval, cdcFileSize)
 			if err != nil {
 				return errors.Trace(err)
 			}
-			if err = createChangefeed(fmt.Sprintf("http://%s:%d", cdcHost, cdcPort), sinkURI, tableFQN, startTSO); err != nil {
-				return errors.Annotate(err, "Failed to create changefeed")
+			if !loadinfoExist || !metadataExist {
+				if err = createChangefeed(fmt.Sprintf("http://%s:%d", cdcHost, cdcPort), sinkURI, tableFQN, startTSO); err != nil {
+					return errors.Annotate(err, "Failed to create changefeed")
+				}
+			} else {
+				log.Info("Snapshot has been loaded, Changefeed has been created, skip create changefeed")
 			}
 		}
 
-		// run replicate snapshot
-		if mode == RunModeFull || mode == RunModeSnapshotOnly {
+		// 3. run replicate snapshot
+		if (mode == RunModeFull || mode == RunModeSnapshotOnly) && !loadinfoExist {
 			snapS3StoragePath, err := url.JoinPath(s3StoragePath, "snapshot")
 			if err != nil {
 				return errors.Trace(err)
@@ -167,10 +187,12 @@ func NewSnowflakeCmd() *cobra.Command {
 			if err = snowflake.StartReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapS3StoragePath, fmt.Sprint(startTSO)); err != nil {
 				return errors.Annotate(err, "Failed to replicate snapshot")
 			}
+		} else if !loadinfoExist {
+			log.Info("Snapshot has been loaded, skip replicate snapshot")
 		}
 
+		// 4. run replicate increment
 		if mode == RunModeFull || mode == RunModeIncrementalOnly {
-			// run replicate increment
 			if err = snowflake.StartReplicateIncrement(&snowflakeConfigFromCli, sinkURI, cdcFlushInterval/5, "", timezone); err != nil {
 				return errors.Annotate(err, "Failed to replicate incremental")
 			}

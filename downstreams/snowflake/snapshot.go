@@ -18,6 +18,7 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/dumpling/export"
+	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
 )
 
@@ -201,12 +202,32 @@ func (sess *SnapshotReplicateSession) Run() error {
 		return errors.Annotate(err, "Failed to dump table from TiDB")
 	}
 	status := dumper.GetStatus()
-
 	log.Info("Successfully dumped table from TiDB, starting to load into Snowflake", zap.Any("status", status))
 
+	startTime := time.Now()
 	if err = sess.loadSnapshotDataIntoSnowflake(); err != nil {
 		return errors.Annotate(err, "Failed to load snapshot data into Snowflake")
 	}
+	endTime := time.Now()
+
+	// Write load info to workspace to record the status of load,
+	// loadinfo exists means the data has been all loaded into snowflake.
+	ctx := context.Background()
+	storage, err := putil.GetExternalStorageFromURI(ctx, sess.StorageWorkspaceUri.String())
+	if err != nil {
+		log.Error("Failed to get external storage", zap.Error(err))
+	}
+	writer, err := storage.Create(ctx, "loadinfo")
+	if err != nil {
+		log.Error("Failed to create loadinfo file", zap.Error(err))
+	}
+	loadinfo := fmt.Sprintf("Copy to snowflake start time: %s\nCopy to snowflake end time: %s", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
+	_, err = writer.Write(ctx, []byte(loadinfo))
+	if err != nil {
+		log.Error("Failed to write loadinfo", zap.Error(err))
+	}
+	writer.Close(ctx)
+	log.Info("Successfully upload loadinfo", zap.String("loadinfo", loadinfo))
 	return nil
 }
 
