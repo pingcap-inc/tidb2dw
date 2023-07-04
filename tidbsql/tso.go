@@ -2,6 +2,8 @@ package tidbsql
 
 import (
 	"github.com/pingcap/errors"
+	"github.com/pingcap/log"
+	"go.uber.org/zap"
 )
 
 func GetCurrentTSO(config *TiDBConfig) (uint64, error) {
@@ -16,5 +18,6 @@ func GetCurrentTSO(config *TiDBConfig) (uint64, error) {
 	if err != nil {
 		return 0, errors.Annotate(err, "failed to get current tso")
 	}
+	log.Info("Successfully get current tso", zap.Uint64("tso", tso))
 	return tso, nil
 }
