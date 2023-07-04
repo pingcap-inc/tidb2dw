@@ -13,22 +13,22 @@ import (
 )
 
 type TiDBConfig struct {
-	TiDBHost  string
-	TiDBPort  int
-	TiDBUser  string
-	TiDBPass  string
-	TiDBSSLCA string
+	Host  string
+	Port  int
+	User  string
+	Pass  string
+	SSLCA string
 }
 
 func OpenTiDB(config *TiDBConfig) (*sql.DB, error) {
 	tidbConfig := mysql.NewConfig()
-	tidbConfig.User = config.TiDBUser
-	tidbConfig.Passwd = config.TiDBPass
+	tidbConfig.User = config.User
+	tidbConfig.Passwd = config.Pass
 	tidbConfig.Net = "tcp"
-	tidbConfig.Addr = fmt.Sprintf("%s:%d", config.TiDBHost, config.TiDBPort)
-	if config.TiDBSSLCA != "" {
+	tidbConfig.Addr = fmt.Sprintf("%s:%d", config.Host, config.Port)
+	if config.SSLCA != "" {
 		rootCertPool := x509.NewCertPool()
-		pem, err := os.ReadFile(config.TiDBSSLCA)
+		pem, err := os.ReadFile(config.SSLCA)
 		if err != nil {
 			log.Fatal(err.Error())
 		}
@@ -38,7 +38,7 @@ func OpenTiDB(config *TiDBConfig) (*sql.DB, error) {
 		mysql.RegisterTLSConfig("tidb", &tls.Config{
 			RootCAs:    rootCertPool,
 			MinVersion: tls.VersionTLS12,
-			ServerName: config.TiDBHost,
+			ServerName: config.Host,
 		})
 		tidbConfig.TLSConfig = "tidb"
 	}

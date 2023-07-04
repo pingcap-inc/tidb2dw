@@ -13,19 +13,16 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/google/uuid"
 	"github.com/pingcap-inc/tidb2dw/snowsql"
 	"github.com/pingcap-inc/tidb2dw/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/dumpling/export"
-	"github.com/pingcap/tiflow/pkg/logutil"
-	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
-type ReplicateSession struct {
-	SFConfig            *SnowflakeConfig
+type SnapshotReplicateSession struct {
+	SFConfig            *snowsql.SnowflakeConfig
 	TiDBConfig          *tidbsql.TiDBConfig
 	TableFQN            string
 	SnapshotConcurrency int
@@ -47,16 +44,16 @@ type ReplicateSession struct {
 	StorageWorkspaceUri url.URL
 }
 
-func NewReplicateSession(
-	sfConfigFromCli *SnowflakeConfig,
-	tidbConfigFromCli *tidbsql.TiDBConfig,
+func NewSnapshotReplicateSession(
+	sfConfig *snowsql.SnowflakeConfig,
+	tidbConfig *tidbsql.TiDBConfig,
 	tableFQN string,
 	snapshotConcurrency int,
 	s3StoragePath string,
-	startTSO string) (*ReplicateSession, error) {
-	sess := &ReplicateSession{
-		SFConfig:            sfConfigFromCli,
-		TiDBConfig:          tidbConfigFromCli,
+	startTSO string) (*SnapshotReplicateSession, error) {
+	sess := &SnapshotReplicateSession{
+		SFConfig:            sfConfig,
+		TiDBConfig:          tidbConfig,
 		TableFQN:            tableFQN,
 		SnapshotConcurrency: snapshotConcurrency,
 		StartTSO:            startTSO,
@@ -116,7 +113,7 @@ func NewReplicateSession(
 		log.Info("Resolved storage region", zap.String("region", s3Region))
 	}
 	{
-		db, err := OpenSnowflake(&snowflakeConfigFromCli)
+		db, err := snowsql.OpenSnowflake(sfConfig)
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
@@ -132,7 +129,7 @@ func NewReplicateSession(
 		sess.SnowflakePool = connector
 	}
 	{
-		db, err := tidbsql.OpenTiDB(tidbConfigFromCli)
+		db, err := tidbsql.OpenTiDB(tidbConfig)
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
@@ -151,12 +148,12 @@ func NewReplicateSession(
 	return sess, nil
 }
 
-func (sess *ReplicateSession) Close() {
+func (sess *SnapshotReplicateSession) Close() {
 	sess.SnowflakePool.Close()
 	sess.TiDBPool.Close()
 }
 
-func (sess *ReplicateSession) Run() error {
+func (sess *SnapshotReplicateSession) Run() error {
 	dumper, err := sess.buildDumper()
 	if err != nil {
 		return errors.Trace(err)
@@ -213,7 +210,7 @@ func (sess *ReplicateSession) Run() error {
 	return nil
 }
 
-func (sess *ReplicateSession) buildDumper() (*export.Dumper, error) {
+func (sess *SnapshotReplicateSession) buildDumper() (*export.Dumper, error) {
 	conf, err := sess.buildDumperConfig()
 	if err != nil {
 		return nil, errors.Annotate(err, "Failed to build dumpling config")
@@ -237,13 +234,13 @@ func (sess *ReplicateSession) buildDumper() (*export.Dumper, error) {
 	return dumper, nil
 }
 
-func (sess *ReplicateSession) buildDumperConfig() (*export.Config, error) {
+func (sess *SnapshotReplicateSession) buildDumperConfig() (*export.Config, error) {
 	conf := export.DefaultConfig()
 	conf.Logger = log.L()
-	conf.User = sess.TiDBConfig.TiDBUser
-	conf.Password = sess.TiDBConfig.TiDBPass
-	conf.Host = sess.TiDBConfig.TiDBHost
-	conf.Port = sess.TiDBConfig.TiDBPort
+	conf.User = sess.TiDBConfig.User
+	conf.Password = sess.TiDBConfig.Pass
+	conf.Host = sess.TiDBConfig.Host
+	conf.Port = sess.TiDBConfig.Port
 	conf.Threads = sess.SnapshotConcurrency
 	conf.NoHeader = true
 	conf.FileType = "csv"
@@ -265,7 +262,7 @@ func (sess *ReplicateSession) buildDumperConfig() (*export.Config, error) {
 	return conf, nil
 }
 
-func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
+func (sess *SnapshotReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	workspacePrefix := strings.TrimPrefix(sess.StorageWorkspaceUri.Path, "/")
 	dumpFilePrefix := fmt.Sprintf("%s/%s.%s.", workspacePrefix, sess.SourceDatabase, sess.SourceTable)
 	if err := sess.SnowflakePool.LoadSnapshot(sess.SourceTable, dumpFilePrefix, sess.OnSnapshotLoadProgress); err != nil {
@@ -275,14 +272,14 @@ func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	return nil
 }
 
-func startReplicateSnapshot(
-	sfConfigFromCli *SnowflakeConfig,
-	tidbConfigFromCli *tidbsql.TiDBConfig,
+func StartReplicateSnapshot(
+	sfConfig *snowsql.SnowflakeConfig,
+	tidbConfig *tidbsql.TiDBConfig,
 	tableFQN string,
 	snapshotConcurrency int,
 	s3StoragePath string,
 	startTSO string) error {
-	session, err := NewReplicateSession(sfConfigFromCli, tidbConfigFromCli, tableFQN, snapshotConcurrency, s3StoragePath, startTSO)
+	session, err := NewSnapshotReplicateSession(sfConfig, tidbConfig, tableFQN, snapshotConcurrency, s3StoragePath, startTSO)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -294,63 +291,4 @@ func startReplicateSnapshot(
 	log.Info("Successfully replicated snapshot from TiDB to Snowflake")
 
 	return nil
-}
-
-func newSnapshotCmd() *cobra.Command {
-	var (
-		tidbConfigFromCli   tidbsql.TiDBConfig
-		tableFQN            string
-		snapshotConcurrency int
-		s3StoragePath       string
-		logFile             string
-		logLevel            string
-	)
-
-	cmd := &cobra.Command{
-		Use:   "snapshot",
-		Short: "Replicate snapshot from TiDB to Snowflake",
-		Run: func(_ *cobra.Command, _ []string) {
-			// init logger
-			err := logutil.InitLogger(&logutil.Config{
-				Level: logLevel,
-				File:  logFile,
-			})
-			if err != nil {
-				panic(err)
-			}
-			// generate uuid, and append to s3 path
-			uid := uuid.New().String()
-			s3StoragePath, err := url.JoinPath(s3StoragePath, uid, "snapshot")
-			if err != nil {
-				panic(err)
-			}
-			// start replicate snapshot
-			if err = startReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, s3StoragePath, ""); err != nil {
-				panic(err)
-			}
-		},
-	}
-
-	cmd.PersistentFlags().BoolP("help", "", false, "help for this command")
-	cmd.Flags().StringVarP(&tidbConfigFromCli.TiDBHost, "host", "h", "127.0.0.1", "TiDB host")
-	cmd.Flags().IntVarP(&tidbConfigFromCli.TiDBPort, "port", "P", 4000, "TiDB port")
-	cmd.Flags().StringVarP(&tidbConfigFromCli.TiDBUser, "user", "u", "root", "TiDB user")
-	cmd.Flags().StringVarP(&tidbConfigFromCli.TiDBPass, "pass", "p", "", "TiDB password")
-	cmd.Flags().StringVar(&tidbConfigFromCli.TiDBSSLCA, "ssl-ca", "", "TiDB SSL CA")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeAccountId, "snowflake.account-id", "", "snowflake accound id: <organization>-<account>")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeWarehouse, "snowflake.warehouse", "COMPUTE_WH", "")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeUser, "snowflake.user", "", "snowflake user")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakePass, "snowflake.pass", "", "snowflake password")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeDatabase, "snowflake.database", "", "snowflake database")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.SnowflakeSchema, "snowflake.schema", "", "snowflake schema")
-	cmd.Flags().StringVarP(&tableFQN, "table", "t", "", "table fully qualified name: <database>.<table>")
-	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
-	cmd.Flags().StringVarP(&s3StoragePath, "storage", "s", "", "S3 storage path: s3://<bucket>/<path>")
-	cmd.Flags().StringVar(&logFile, "log-file", "", "log file path")
-	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level")
-
-	cmd.MarkFlagRequired("storage")
-	cmd.MarkFlagRequired("table")
-
-	return cmd
 }
