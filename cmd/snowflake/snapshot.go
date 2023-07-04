@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -38,6 +40,9 @@ type ReplicateSession struct {
 	SourceDatabase string
 	SourceTable    string
 	StartTSO       string
+
+	OnSnapshotDumpProgress func(dumpedRows, totalRows int64)
+	OnSnapshotLoadProgress func(loadedRows int64)
 
 	StorageWorkspaceUri url.URL
 }
@@ -133,6 +138,15 @@ func NewReplicateSession(
 		}
 		sess.TiDBPool = db
 	}
+	{
+		// Setup progress reporters
+		sess.OnSnapshotLoadProgress = func(loadedRows int64) {
+			log.Info("Snapshot load progress", zap.Int64("loadedRows", loadedRows))
+		}
+		sess.OnSnapshotDumpProgress = func(dumpedRows, totalRows int64) {
+			log.Info("Snapshot dump progress", zap.Int64("dumpedRows", dumpedRows), zap.Int64("estimatedTotalRows", totalRows))
+		}
+	}
 
 	return sess, nil
 }
@@ -152,12 +166,46 @@ func (sess *ReplicateSession) Run() error {
 		return errors.Trace(err)
 	}
 
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	dumpFinished := make(chan struct{})
+
+	go func() {
+		// This is a goroutine to monitor the dump progress.
+		defer wg.Done()
+
+		if sess.OnSnapshotDumpProgress == nil {
+			return
+		}
+
+		checkInterval := 10 * time.Second
+		ticker := time.NewTicker(checkInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-dumpFinished:
+				return
+			case <-ticker.C:
+				status := dumper.GetStatus()
+				sess.OnSnapshotDumpProgress(int64(status.FinishedRows), int64(status.EstimateTotalRows))
+			}
+		}
+	}()
+
 	err = dumper.Dump()
+	dumpFinished <- struct{}{}
+
+	wg.Wait()
+
 	_ = dumper.Close()
 	if err != nil {
 		return errors.Annotate(err, "Failed to dump table from TiDB")
 	}
-	log.Info("Successfully dumped table from TiDB, starting to load into Snowflake")
+	status := dumper.GetStatus()
+
+	log.Info("Successfully dumped table from TiDB, starting to load into Snowflake", zap.Any("status", status))
 
 	if err = sess.loadSnapshotDataIntoSnowflake(); err != nil {
 		return errors.Annotate(err, "Failed to load snapshot data into Snowflake")
@@ -220,7 +268,7 @@ func (sess *ReplicateSession) buildDumperConfig() (*export.Config, error) {
 func (sess *ReplicateSession) loadSnapshotDataIntoSnowflake() error {
 	workspacePrefix := strings.TrimPrefix(sess.StorageWorkspaceUri.Path, "/")
 	dumpFilePrefix := fmt.Sprintf("%s/%s.%s.", workspacePrefix, sess.SourceDatabase, sess.SourceTable)
-	if err := sess.SnowflakePool.LoadSnapshot(sess.SourceTable, dumpFilePrefix); err != nil {
+	if err := sess.SnowflakePool.LoadSnapshot(sess.SourceTable, dumpFilePrefix, sess.OnSnapshotLoadProgress); err != nil {
 		return errors.Trace(err)
 	}
 	// TODO: remove dump files

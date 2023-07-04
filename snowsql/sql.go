@@ -6,11 +6,17 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/pingcap/errors"
+	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/dumpling/export"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
+	"github.com/snowflakedb/gosnowflake"
 	"gitlab.com/tymonx/go-formatter/formatter"
+	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
 )
 
@@ -55,28 +61,96 @@ DROP STAGE IF EXISTS {stageName};
 		"stageName": EscapeString(stageName),
 	})
 	if err != nil {
-		return err
+		return errors.Trace(err)
 	}
 	_, err = db.Exec(sql)
 	return err
 }
 
-func LoadSnapshotFromStage(db *sql.DB, targetTable, stageName, filePrefix string) error {
+func GetServerSideTimestamp(db *sql.DB) (string, error) {
+	var result string
+	err := db.QueryRow("SELECT CURRENT_TIMESTAMP").Scan(&result)
+	if err != nil {
+		return "", errors.Trace(err)
+	}
+	return result, nil
+}
+
+func LoadSnapshotFromStage(db *sql.DB, targetTable, stageName, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
+	// The timestamp and reqId is used to monitor the progress of COPY INTO query.
+	ts, err := GetServerSideTimestamp(db)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	reqId := gosnowflake.NewUUID()
+
 	sql, err := formatter.Format(`
 COPY INTO {targetTable}
+-- tidb2dw-reqid={reqId}
 FROM @{stageName}
-FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"')
+FILE_FORMAT = (TYPE = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"')
 PATTERN = '{filePrefix}.*'
 ON_ERROR = CONTINUE;
 `, formatter.Named{
+		"reqId":       EscapeString(reqId.String()),
 		"targetTable": EscapeString(targetTable),
 		"stageName":   EscapeString(stageName),
-		"filePrefix":  EscapeString(regexp.QuoteMeta(filePrefix)),
+		"filePrefix":  EscapeString(regexp.QuoteMeta(filePrefix)), // TODO: Verify
 	})
 	if err != nil {
-		return err
+		return errors.Trace(err)
 	}
-	_, err = db.Exec(sql)
+
+	ctx := gosnowflake.WithRequestID(context.Background(), reqId)
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	copyFinished := make(chan struct{})
+
+	go func() {
+		// This is a goroutine to monitor the COPY INTO progress.
+		defer wg.Done()
+
+		if onSnapshotLoadProgress == nil {
+			return
+		}
+
+		var rowsProduced int64
+
+		checkInterval := 10 * time.Second
+		ticker := time.NewTicker(checkInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-copyFinished:
+				return
+			case <-ticker.C:
+
+				err := db.QueryRow(`
+		SELECT ROWS_PRODUCED
+		FROM TABLE(INFORMATION_SCHEMA.QUERY_HISTORY_BY_USER(
+				END_TIME_RANGE_START => ?::TIMESTAMP_LTZ,
+				RESULT_LIMIT => 10000
+		))
+		WHERE QUERY_TYPE = 'COPY'
+		AND CONTAINS(QUERY_TEXT, ?);
+		`, ts, fmt.Sprintf("tidb2dw-reqid=%s", reqId.String())).Scan(&rowsProduced)
+				if err != nil {
+					log.Warn("Failed to get progress", zap.Error(err))
+				}
+
+				onSnapshotLoadProgress(rowsProduced)
+			}
+		}
+	}()
+
+	_, err = db.ExecContext(ctx, sql)
+	copyFinished <- struct{}{}
+
+	wg.Wait()
+
 	return err
 }
 
