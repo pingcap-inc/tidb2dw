@@ -51,9 +51,7 @@ func genSinkURI(s3StoragePath string, flushInterval time.Duration, fileSize int6
 func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, startTSO uint64) error {
 	client := &http.Client{}
 	data := make(map[string]interface{})
-	{
-		data["sink_uri"] = sinkURI.String()
-	}
+	data["sink_uri"] = sinkURI.String()
 	{
 		replicateConfig := make(map[string]interface{})
 		filterConfig := make(map[string]interface{})
