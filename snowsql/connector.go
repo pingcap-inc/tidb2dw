@@ -10,7 +10,6 @@ import (
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"github.com/snowflakedb/gosnowflake"
-	_ "github.com/snowflakedb/gosnowflake"
 	"go.uber.org/zap"
 )
 
@@ -57,7 +56,7 @@ type SnowflakeConnector struct {
 	stageName string
 }
 
-func NewSnowflakeConnector(db *sql.DB, stageName string, upstreamURI *url.URL, credentials credentials.Value) (*SnowflakeConnector, error) {
+func NewSnowflakeConnector(db *sql.DB, stageName string, upstreamURI *url.URL, credentials *credentials.Value) (*SnowflakeConnector, error) {
 	// create stage
 	var err error
 	if upstreamURI.Host == "" {

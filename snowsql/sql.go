@@ -20,7 +20,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred credentials.Value) error {
+func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred *credentials.Value) error {
 	sql, err := formatter.Format(`
 CREATE OR REPLACE STAGE {stageName}
 URL = '{url}'

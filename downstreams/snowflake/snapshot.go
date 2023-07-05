@@ -30,8 +30,7 @@ type SnapshotReplicateSession struct {
 	ResolvedS3Region    string
 	ResolvedTSO         string // Available after buildDumper()
 
-	AWSSession    *session.Session
-	AWSCredential credentials.Value // The resolved credential from current env
+	AWSCredential *credentials.Value // The resolved credential from current env
 	SnowflakePool *snowsql.SnowflakeConnector
 	TiDBPool      *sql.DB
 
@@ -51,7 +50,8 @@ func NewSnapshotReplicateSession(
 	tableFQN string,
 	snapshotConcurrency int,
 	s3StoragePath string,
-	startTSO string) (*SnapshotReplicateSession, error) {
+	startTSO string,
+	credential *credentials.Value) (*SnapshotReplicateSession, error) {
 	sess := &SnapshotReplicateSession{
 		SFConfig:            sfConfig,
 		TiDBConfig:          tidbConfig,
@@ -75,24 +75,9 @@ func NewSnapshotReplicateSession(
 	log.Info("Creating replicate session",
 		zap.String("storage", sess.StorageWorkspaceUri.String()),
 		zap.String("source", tableFQN))
+	sess.AWSCredential = credential
 	{
-		awsSession, err := session.NewSessionWithOptions(session.Options{
-			SharedConfigState: session.SharedConfigEnable,
-		})
-		if err != nil {
-			return nil, errors.Annotate(err, "Failed to establish AWS session")
-		}
-		sess.AWSSession = awsSession
-
-		creds := credentials.NewEnvCredentials()
-		credValue, err := creds.Get()
-		if err != nil {
-			return nil, errors.Annotate(err, "Failed to resolve AWS credential")
-		}
-		sess.AWSCredential = credValue
-	}
-	{
-		// Parse s3StoragePath like s3://wenxuan-snowflake-test/dump20230601
+		// Parse s3StoragePath like s3://snowflake-test/dump20230601
 		parsed, err := url.Parse(s3StoragePath)
 		if err != nil {
 			return nil, errors.Annotate(err, "Failed to parse --storage value")
@@ -101,9 +86,16 @@ func NewSnapshotReplicateSession(
 			return nil, errors.Errorf("storage must be like s3://...")
 		}
 
+		awsSession, err := session.NewSessionWithOptions(session.Options{
+			SharedConfigState: session.SharedConfigEnable,
+		})
+		if err != nil {
+			return nil, errors.Annotate(err, "Failed to establish AWS session")
+		}
+
 		bucket := parsed.Host
 		log.Debug("Resolving storage region")
-		s3Region, err := s3manager.GetBucketRegion(context.Background(), sess.AWSSession, bucket, "us-west-2")
+		s3Region, err := s3manager.GetBucketRegion(context.Background(), awsSession, bucket, "us-west-2")
 		if err != nil {
 			if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "NotFound" {
 				return nil, fmt.Errorf("unable to find bucket %s's region not found", bucket)
@@ -299,8 +291,9 @@ func StartReplicateSnapshot(
 	tableFQN string,
 	snapshotConcurrency int,
 	s3StoragePath string,
-	startTSO string) error {
-	session, err := NewSnapshotReplicateSession(sfConfig, tidbConfig, tableFQN, snapshotConcurrency, s3StoragePath, startTSO)
+	startTSO string,
+	credential *credentials.Value) error {
+	session, err := NewSnapshotReplicateSession(sfConfig, tidbConfig, tableFQN, snapshotConcurrency, s3StoragePath, startTSO, credential)
 	if err != nil {
 		return errors.Trace(err)
 	}

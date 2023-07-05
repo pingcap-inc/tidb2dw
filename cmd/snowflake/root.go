@@ -89,11 +89,11 @@ func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, start
 		return errors.Trace(err)
 	}
 	respData := make(map[string]interface{})
-	if err = json.Unmarshal([]byte(body), &respData); err != nil {
+	if err = json.Unmarshal(body, &respData); err != nil {
 		return errors.Trace(err)
 	}
 	changefeedID, _ := respData["id"].(string)
-	log.Info("create changefeed success", zap.String("changefeed-id", changefeedID), zap.Any("resp", respData))
+	log.Info("create changefeed success", zap.String("changefeed-id", changefeedID), zap.Any("changefeed-config", respData))
 
 	return nil
 }
@@ -126,6 +126,7 @@ func NewSnowflakeCmd() *cobra.Command {
 		timezone               string
 		logFile                string
 		logLevel               string
+		credValue              credentials.Value
 
 		mode RunMode
 	)
@@ -184,7 +185,7 @@ func NewSnowflakeCmd() *cobra.Command {
 			if err != nil {
 				return errors.Trace(err)
 			}
-			if err = snowflake.StartReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapS3StoragePath, fmt.Sprint(startTSO)); err != nil {
+			if err = snowflake.StartReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapS3StoragePath, fmt.Sprint(startTSO), &credValue); err != nil {
 				return errors.Annotate(err, "Failed to replicate snapshot")
 			}
 		} else if !loadinfoExist {
@@ -193,7 +194,7 @@ func NewSnowflakeCmd() *cobra.Command {
 
 		// 4. run replicate increment
 		if mode == RunModeFull || mode == RunModeIncrementalOnly {
-			if err = snowflake.StartReplicateIncrement(&snowflakeConfigFromCli, sinkURI, cdcFlushInterval/5, "", timezone); err != nil {
+			if err = snowflake.StartReplicateIncrement(&snowflakeConfigFromCli, sinkURI, cdcFlushInterval/5, "", timezone, &credValue); err != nil {
 				return errors.Annotate(err, "Failed to replicate incremental")
 			}
 		}
@@ -205,6 +206,7 @@ func NewSnowflakeCmd() *cobra.Command {
 		Use:   "snowflake",
 		Short: "Replicate snapshot and incremental data from TiDB to Snowflake",
 		Run: func(_ *cobra.Command, _ []string) {
+			// init logger
 			err := logutil.InitLogger(&logutil.Config{
 				Level: logLevel,
 				File:  logFile,
@@ -213,8 +215,14 @@ func NewSnowflakeCmd() *cobra.Command {
 				panic(err)
 			}
 
-			err = run()
+			// resolve aws credential
+			creds := credentials.NewEnvCredentials()
+			credValue, err = creds.Get()
 			if err != nil {
+				panic(err)
+			}
+
+			if err = run(); err != nil {
 				log.Error("Error running snowflake replication", zap.Error(err))
 			}
 		},
