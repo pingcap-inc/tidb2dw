@@ -52,11 +52,11 @@ type consumer struct {
 	errCh            chan error
 	// snowflakeConnectorMap maintains a map of <TableID, snowflakeConnector>, each table has a snowflakeConnector
 	snowflakeConnectorMap map[model.TableID]*snowsql.SnowflakeConnector
-	awsCredential         credentials.Value // aws credential, resolved from current env
+	awsCredential         *credentials.Value // aws credential, resolved from current env
 	sinkURI               *url.URL
 }
 
-func newConsumer(ctx context.Context, sfConfig *snowsql.SnowflakeConfig, sinkUri *url.URL, configFile, timezone string) (*consumer, error) {
+func newConsumer(ctx context.Context, sfConfig *snowsql.SnowflakeConfig, sinkUri *url.URL, configFile, timezone string, credential *credentials.Value) (*consumer, error) {
 	tz, err := putil.GetTimezone(timezone)
 	if err != nil {
 		return nil, errors.Annotate(err, "can not load timezone")
@@ -99,14 +99,6 @@ func newConsumer(ctx context.Context, sfConfig *snowsql.SnowflakeConfig, sinkUri
 	}
 
 	errCh := make(chan error, 1)
-
-	// resolve aws credential
-	creds := credentials.NewEnvCredentials()
-	credValue, err := creds.Get()
-	if err != nil {
-		log.Error("Failed to resolve AWS credential", zap.Error(err))
-	}
-
 	return &consumer{
 		sfConfig:        sfConfig,
 		replicationCfg:  replicaConfig,
@@ -120,7 +112,7 @@ func newConsumer(ctx context.Context, sfConfig *snowsql.SnowflakeConfig, sinkUri
 			tableIDs: make(map[string]int64),
 		},
 		snowflakeConnectorMap: make(map[model.TableID]*snowsql.SnowflakeConnector),
-		awsCredential:         credValue,
+		awsCredential:         credential,
 		sinkURI:               sinkUri,
 	}, nil
 }
@@ -457,7 +449,7 @@ func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partiti
 	return g.currentTableID
 }
 
-func StartReplicateIncrement(sfConfig *snowsql.SnowflakeConfig, sinkUri *url.URL, flushInterval time.Duration, configFile, timezone string) error {
+func StartReplicateIncrement(sfConfig *snowsql.SnowflakeConfig, sinkUri *url.URL, flushInterval time.Duration, configFile, timezone string, credential *credentials.Value) error {
 	var consumer *consumer
 	var err error
 
@@ -477,7 +469,7 @@ func StartReplicateIncrement(sfConfig *snowsql.SnowflakeConfig, sinkUri *url.URL
 	}
 	defer deferFunc()
 
-	consumer, err = newConsumer(ctx, sfConfig, sinkUri, configFile, timezone)
+	consumer, err = newConsumer(ctx, sfConfig, sinkUri, configFile, timezone, credential)
 	if err != nil {
 		return errors.Annotate(err, "failed to create storage consumer")
 	}
