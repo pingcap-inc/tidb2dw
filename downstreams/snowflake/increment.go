@@ -386,10 +386,12 @@ func (c *consumer) handleNewFiles(
 		if key.PartitionNum == fakePartitionNumForSchemaFile &&
 			len(key.Date) == 0 && len(tableDef.Query) > 0 {
 			if err := c.snowflakeConnectorMap[tableID].ExecDDL(tableDef); err != nil {
-				return errors.Annotate(err, "Please check the DDL query, "+
-					"if necessary, please manually execute the DDL query in Snowflake, "+
-					"remove the schema.json file from TiCDC sink path, "+
-					"and restart the program.")
+				return errors.Annotate(err,
+					fmt.Sprintf("Please check the DDL query, "+
+						"if necessary, please manually execute the DDL query in Snowflake, "+
+						"remove the %s/%s/%s/meta/schema_%d_{hash}.json, "+
+						"and restart the program.",
+						c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
 			}
 			continue
 		}

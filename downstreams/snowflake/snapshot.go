@@ -209,16 +209,10 @@ func (sess *SnapshotReplicateSession) Run() error {
 	if err != nil {
 		log.Error("Failed to get external storage", zap.Error(err))
 	}
-	writer, err := storage.Create(ctx, "loadinfo")
-	if err != nil {
-		log.Error("Failed to create loadinfo file", zap.Error(err))
-	}
 	loadinfo := fmt.Sprintf("Copy to snowflake start time: %s\nCopy to snowflake end time: %s", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
-	_, err = writer.Write(ctx, []byte(loadinfo))
-	if err != nil {
-		log.Error("Failed to write loadinfo", zap.Error(err))
+	if err = storage.WriteFile(ctx, "loadinfo", []byte(loadinfo)); err != nil {
+		log.Error("Failed to upload loadinfo", zap.Error(err))
 	}
-	writer.Close(ctx)
 	log.Info("Successfully upload loadinfo", zap.String("loadinfo", loadinfo))
 	return nil
 }
