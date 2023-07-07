@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pingcap-inc/tidb2dw/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/dumpling/export"
@@ -155,20 +154,31 @@ ON_ERROR = CONTINUE;
 	return err
 }
 
-func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) (string, error) {
+func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) (string, []cloudstorage.TableCol, error) {
 	columnQuery := fmt.Sprintf(`SELECT COLUMN_NAME, COLUMN_DEFAULT, IS_NULLABLE, DATA_TYPE, 
-CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION
+CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION, COLUMN_KEY
 FROM information_schema.columns
 WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) // FIXME: Escape
 	rows, err := sourceTiDBConn.QueryContext(context.Background(), columnQuery)
 	if err != nil {
-		return "", err
+		return "", nil, errors.Trace(err)
 	}
 	// TODO: Confirm with generated column, sequence.
 	defer rows.Close()
 	columnRows := make([]string, 0)
+	tableCol := make([]cloudstorage.TableCol, 0)
 	for rows.Next() {
-		var column tidbsql.TiDBColumnInfo
+		var column struct {
+			ColumnName    string
+			ColumnDefault *string
+			IsNullable    string
+			DataType      string
+			CharMaxLength *int
+			NumPrecision  *int
+			NumScale      *int
+			DateTimePrec  *int
+			COLUMN_KEY    *string
+		}
 		err = rows.Scan(
 			&column.ColumnName,
 			&column.ColumnDefault,
@@ -180,8 +190,9 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 			&column.DateTimePrec,
 		)
 		if err != nil {
-			return "", errors.Trace(err)
+			return "", nil, errors.Trace(err)
 		}
+		var precision, scale, nullable, isPK string
 		createTableQuery := ""
 		// Refer to:
 		// https://dev.mysql.com/doc/refman/8.0/en/data-types.html
@@ -189,42 +200,67 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 		switch column.DataType {
 		case "text", "longtext", "mediumtext", "tinytext", "blob", "longblob", "mediumblob", "tinyblob":
 			createTableQuery += fmt.Sprintf("%s %s", column.ColumnName, "TEXT")
+			precision = fmt.Sprintf("%d", *column.CharMaxLength)
 		case "varchar", "char", "binary", "varbinary":
 			createTableQuery += fmt.Sprintf("%s %s(%d)", column.ColumnName, strings.ToUpper(column.DataType), *column.CharMaxLength)
+			precision = fmt.Sprintf("%d", *column.CharMaxLength)
 		case "int", "mediumint":
 			createTableQuery += fmt.Sprintf("%s %s", column.ColumnName, "INT")
+			precision = fmt.Sprintf("%d", *column.NumPrecision)
 		case "bigint", "tinyint", "smallint", "float", "double":
 			createTableQuery += fmt.Sprintf("%s %s", column.ColumnName, strings.ToUpper(column.DataType))
+			precision = fmt.Sprintf("%d", *column.NumPrecision)
 		case "decimal", "numeric":
 			createTableQuery += fmt.Sprintf("%s %s(%d, %d)", column.ColumnName, strings.ToUpper(column.DataType), *column.NumPrecision, *column.NumScale)
+			precision = fmt.Sprintf("%d", *column.NumPrecision)
+			scale = fmt.Sprintf("%d", *column.NumScale)
 		case "bool", "boolean":
 			createTableQuery += fmt.Sprintf("%s %s", column.ColumnName, "BOOLEAN")
+			precision = "1"
 		case "date":
 			createTableQuery += fmt.Sprintf("%s %s", column.ColumnName, "DATE")
 		case "datetime", "timestamp", "time":
 			createTableQuery += fmt.Sprintf("%s %s(%d)", column.ColumnName, strings.ToUpper(column.DataType), *column.DateTimePrec)
+			precision = fmt.Sprintf("%d", *column.DateTimePrec)
 		default:
 			fmt.Println("Unsupported data type: ", column.DataType)
 		}
 		if column.IsNullable == "NO" {
 			createTableQuery += " NOT NULL"
+			nullable = "false"
+		} else {
+			nullable = "true"
 		}
 		if column.ColumnDefault != nil {
 			createTableQuery += fmt.Sprintf(` DEFAULT "%s"`, *column.ColumnDefault) // FIXME: Escape
 		} else {
 			createTableQuery += " DEFAULT NULL"
 		}
+		if column.COLUMN_KEY != nil && *column.COLUMN_KEY == "PRI" {
+			isPK = "true"
+		} else {
+			isPK = "false"
+		}
+		tableCol = append(tableCol, cloudstorage.TableCol{
+			Name:      column.ColumnName,
+			Tp:        column.DataType,
+			Default:   column.ColumnDefault,
+			Precision: precision,
+			Scale:     scale,
+			Nullable:  nullable,
+			IsPK:      isPK,
+		})
 		columnRows = append(columnRows, createTableQuery)
 	}
 
 	indexQuery := fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", sourceDatabase, sourceTable) // FIXME: Escape
 	indexRows, err := sourceTiDBConn.QueryContext(context.Background(), indexQuery)
 	if err != nil {
-		return "", err
+		return "", nil, errors.Trace(err)
 	}
 	indexResults, err := export.GetSpecifiedColumnValuesAndClose(indexRows, "KEY_NAME", "COLUMN_NAME", "SEQ_IN_INDEX")
 	if err != nil {
-		return "", err
+		return "", nil, errors.Trace(err)
 	}
 
 	snowflakePKColumns := make([]string, 0)
@@ -259,7 +295,7 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 	sql = append(sql, strings.Join(sqlRows, ",\n"))
 	sql = append(sql, ")")
 
-	return strings.Join(sql, "\n"), nil
+	return strings.Join(sql, "\n"), tableCol, nil
 }
 
 func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageName string) string {
