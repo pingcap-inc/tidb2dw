@@ -210,7 +210,7 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 			createTableQuery += " NOT NULL"
 		}
 		if column.ColumnDefault != nil {
-			createTableQuery += fmt.Sprintf(" DEFAULT %s", *column.ColumnDefault)
+			createTableQuery += fmt.Sprintf(` DEFAULT "%s"`, *column.ColumnDefault) // FIXME: Escape
 		} else {
 			createTableQuery += " DEFAULT NULL"
 		}
