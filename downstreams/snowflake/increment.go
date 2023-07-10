@@ -401,14 +401,10 @@ func (c *consumer) handleNewFiles(
 							"and restart the program.",
 							c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
 				}
-
-				filePath, err := tableDef.GenerateSchemaFilePath()
-				if err != nil {
-					return errors.Trace(err)
-				}
-				if err := c.externalStorage.DeleteFile(ctx, filePath); err != nil {
-					return errors.Trace(err)
-				}
+				// TODO: we should delete the schema.json file after the DDL query is executed successfully
+				// in order to support resuming from failure.
+				// But TiCDC will need this file before new schema.json file is generated.
+				// TODO: clean tableDefMap
 			}
 			continue
 		}
