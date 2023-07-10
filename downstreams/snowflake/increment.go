@@ -408,7 +408,6 @@ func (c *consumer) handleNewFiles(
 				// Delete all the outdated table definition files.
 				for _, item := range c.tableDefMap[key.GetKey()] {
 					if item.TableVersion < tableDef.TableVersion {
-						// tableDefMultiVersion = append(tableDefMultiVersion, item)
 						filePath, err := item.GenerateSchemaFilePath()
 						if err != nil {
 							return errors.Trace(err)
