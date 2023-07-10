@@ -36,7 +36,7 @@ require (
 	github.com/go-asn1-ber/asn1-ber v1.5.4 // indirect
 	github.com/go-ldap/ldap/v3 v3.4.4 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
-	github.com/go-mysql-org/go-mysql v1.6.1-0.20221223014230-81966e15b9c5 // indirect
+	github.com/go-mysql-org/go-mysql v1.7.1-0.20230619063055-fd67d94318fd // indirect
 	github.com/go-playground/locales v0.14.0 // indirect
 	github.com/go-playground/universal-translator v0.18.0 // indirect
 	github.com/go-playground/validator/v10 v10.10.0 // indirect
@@ -164,7 +164,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/joho/sqltocsv v0.0.0-20210428211105-a6d6801d59df // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.16.5 // indirect
+	github.com/klauspost/compress v1.16.6 // indirect
 	github.com/klauspost/cpuid v1.3.1 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -193,7 +193,7 @@ require (
 	github.com/pingcap/badger v1.5.1-0.20230103063557-828f39b09b6d // indirect
 	github.com/pingcap/failpoint v0.0.0-20220801062533-2eaa32854a6c // indirect
 	github.com/pingcap/goleveldb v0.0.0-20191226122134-f82aafb29989 // indirect
-	github.com/pingcap/kvproto v0.0.0-20230530111525-e4919c190b46 // indirect
+	github.com/pingcap/kvproto v0.0.0-20230626064255-5f60f7f5d8e2 // indirect
 	github.com/pingcap/sysutil v1.0.1-0.20230407040306-fb007c5aff21 // indirect
 	github.com/pingcap/tipb v0.0.0-20230602100112-acb7942db1ca // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
@@ -261,4 +261,4 @@ replace (
 	go.opencensus.io => go.opencensus.io v0.23.1-0.20220331163232-052120675fac
 )
 
-replace github.com/pingcap/tiflow => /DATA/disk1/qiuyang/projects/tiflow
+replace github.com/pingcap/tiflow => github.com/Lloyd-Pottiger/tiflow v0.0.0-20230707062523-28bf48038208

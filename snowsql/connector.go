@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap/errors"
@@ -79,30 +80,48 @@ func NewSnowflakeConnector(db *sql.DB, stageName string, upstreamURI *url.URL, c
 	}, nil
 }
 
+func (sc *SnowflakeConnector) InitColumns(columns []cloudstorage.TableCol) error {
+	if sc.columns != nil {
+		return nil
+	}
+	if columns == nil {
+		return errors.New("Columns in schema is nil")
+	}
+	sc.columns = columns
+	log.Info("table columns initialized", zap.Any("Columns", columns))
+	return nil
+}
+
 func (sc *SnowflakeConnector) ExecDDL(tableDef cloudstorage.TableDefinition) error {
 	if sc.columns == nil {
 		return errors.New("Columns not initialized")
 	}
-	ddl, _ := GenDDLViaColumnsDiff(sc.columns, tableDef) // FIXME: handle error
-	if ddl == "" {
+	ddls, err := GenDDLViaColumnsDiff(sc.columns, tableDef)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	if len(ddls) == 0 {
 		log.Info("No need to execute this DDL in Snowflake", zap.String("ddl", tableDef.Query))
 		return nil
 	}
-	_, err := sc.db.Exec(ddl)
-	if err != nil {
-		return errors.Annotate(err, fmt.Sprintf("Received DDL: %s, rewrite to: %s, but failed to execute", tableDef.Query, ddl))
+	// One DDL may be rewritten to multiple DDLs
+	for _, ddl := range ddls {
+		_, err := sc.db.Exec(ddl)
+		if err != nil {
+			log.Error("Failed to executed DDL", zap.String("received", tableDef.Query), zap.String("rewritten", strings.Join(ddls, "\n")))
+			return errors.Annotate(err, fmt.Sprint("failed to execute", ddl))
+		}
 	}
-	log.Info("Successfully executed DDL", zap.String("received", tableDef.Query), zap.String("rewritten", ddl))
+	// update columns
+	sc.columns = tableDef.Columns
+	log.Info("Successfully executed DDL", zap.String("received", tableDef.Query), zap.String("rewritten", strings.Join(ddls, "\n")))
 	return nil
 }
 
 func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {
-	createTableQuery, tableCol, err := GenCreateSchema(sourceDatabase, sourceTable, sourceTiDBConn)
+	createTableQuery, err := GenCreateSchema(sourceDatabase, sourceTable, sourceTiDBConn)
 	if err != nil {
 		return errors.Trace(err)
-	}
-	if tableCol != nil {
-		sc.columns = tableCol
 	}
 	log.Info("Creating table in Snowflake", zap.String("query", createTableQuery))
 	_, err = sc.db.Exec(createTableQuery)

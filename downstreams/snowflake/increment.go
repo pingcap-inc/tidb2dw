@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"os/signal"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -17,7 +16,6 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tiflow/cdc/contextutil"
 	"github.com/pingcap/tiflow/cdc/model"
 	sinkutil "github.com/pingcap/tiflow/cdc/sink/util"
 	"github.com/pingcap/tiflow/pkg/cmd/util"
@@ -26,6 +24,7 @@ import (
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -57,11 +56,13 @@ type consumer struct {
 }
 
 func newConsumer(ctx context.Context, sfConfig *snowsql.SnowflakeConfig, sinkUri *url.URL, configFile, timezone string, credential *credentials.Value) (*consumer, error) {
-	tz, err := putil.GetTimezone(timezone)
+	_, err := putil.GetTimezone(timezone)
 	if err != nil {
 		return nil, errors.Annotate(err, "can not load timezone")
 	}
-	ctx = contextutil.PutTimezoneInCtx(ctx, tz)
+	serverCfg := config.GetGlobalServerConfig().Clone()
+	serverCfg.TZ = timezone
+	config.StoreGlobalServerConfig(serverCfg)
 	replicaConfig := config.GetDefaultReplicaConfig()
 	if len(configFile) > 0 {
 		err := util.StrictDecodeFile(configFile, "storage consumer", replicaConfig)
@@ -338,25 +339,25 @@ func (c *consumer) handleNewFiles(
 		keys = append(keys, k)
 	}
 	if len(keys) == 0 {
-		log.Info("no new dml files found since last round")
+		log.Info("no new files found since last round")
 		return nil
 	}
-	log.Info("new dml files found since last round", zap.Any("keys", keys))
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].TableVersion != keys[j].TableVersion {
-			return keys[i].TableVersion < keys[j].TableVersion
+	slices.SortStableFunc(keys, func(x, y cloudstorage.DmlPathKey) bool {
+		if x.TableVersion != y.TableVersion {
+			return x.TableVersion < y.TableVersion
 		}
-		if keys[i].PartitionNum != keys[j].PartitionNum {
-			return keys[i].PartitionNum < keys[j].PartitionNum
+		if x.PartitionNum != y.PartitionNum {
+			return x.PartitionNum < y.PartitionNum
 		}
-		if keys[i].Date != keys[j].Date {
-			return keys[i].Date < keys[j].Date
+		if x.Date != y.Date {
+			return x.Date < y.Date
 		}
-		if keys[i].Schema != keys[j].Schema {
-			return keys[i].Schema < keys[j].Schema
+		if x.Schema != y.Schema {
+			return x.Schema < y.Schema
 		}
-		return keys[i].Table < keys[j].Table
+		return x.Table < y.Table
 	})
+	log.Info("new files found since last round", zap.Any("keys", keys))
 
 	// TODO: support handling dml events of different tables concurrently.
 	// Note: dml events of the same table should be handled sequentially.
@@ -382,16 +383,33 @@ func (c *consumer) handleNewFiles(
 		}
 
 		// if the key is a fake dml path key which is mainly used for
-		// sorting schema.json file before the dml files, then execute the ddl query.
+		// sorting schema.json file before the dml files, which means it is a schema.json file.
 		if key.PartitionNum == fakePartitionNumForSchemaFile &&
-			len(key.Date) == 0 && len(tableDef.Query) > 0 {
-			if err := c.snowflakeConnectorMap[tableID].ExecDDL(tableDef); err != nil {
-				return errors.Annotate(err,
-					fmt.Sprintf("Please check the DDL query, "+
-						"if necessary, please manually execute the DDL query in Snowflake, "+
-						"remove the %s/%s/%s/meta/schema_%d_{hash}.json, "+
-						"and restart the program.",
-						c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
+			len(key.Date) == 0 {
+			// schema.json file without query is used to initialize the columns.
+			// Note: this file should not be deleted.
+			if len(tableDef.Query) == 0 {
+				if err := c.snowflakeConnectorMap[tableID].InitColumns(tableDef.Columns); err != nil {
+					return errors.Trace(err)
+				}
+			} else {
+				if err := c.snowflakeConnectorMap[tableID].ExecDDL(tableDef); err != nil {
+					return errors.Annotate(err,
+						fmt.Sprintf("Please check the DDL query, "+
+							"if necessary, please manually execute the DDL query in Snowflake, "+
+							"remove the %s/%s/%s/meta/schema_%d_{hash}.json, "+
+							"and restart the program.",
+							c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
+				}
+
+				// TODO: remove the schema.json file after the ddl query is executed successfully.
+				filePath, err := tableDef.GenerateSchemaFilePath()
+				if err != nil {
+					return errors.Trace(err)
+				}
+				if err := c.externalStorage.DeleteFile(ctx, filePath); err != nil {
+					return errors.Trace(err)
+				}
 			}
 			continue
 		}
@@ -440,7 +458,7 @@ func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partiti
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	key := quotes.QuoteSchema(schema, table)
-	if partition != 0 {
+	if partition > 0 {
 		key = fmt.Sprintf("%s.`%d`", key, partition)
 	}
 	if tableID, ok := g.tableIDs[key]; ok {
