@@ -402,7 +402,6 @@ func (c *consumer) handleNewFiles(
 							c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
 				}
 
-				// TODO: remove the schema.json file after the ddl query is executed successfully.
 				filePath, err := tableDef.GenerateSchemaFilePath()
 				if err != nil {
 					return errors.Trace(err)

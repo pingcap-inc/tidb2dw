@@ -81,11 +81,11 @@ func NewSnowflakeConnector(db *sql.DB, stageName string, upstreamURI *url.URL, c
 }
 
 func (sc *SnowflakeConnector) InitColumns(columns []cloudstorage.TableCol) error {
-	if sc.columns != nil {
+	if len(sc.columns) != 0 {
 		return nil
 	}
-	if columns == nil {
-		return errors.New("Columns in schema is nil")
+	if len(columns) == 0 {
+		return errors.New("Columns in schema is empty")
 	}
 	sc.columns = columns
 	log.Info("table columns initialized", zap.Any("Columns", columns))
@@ -93,7 +93,7 @@ func (sc *SnowflakeConnector) InitColumns(columns []cloudstorage.TableCol) error
 }
 
 func (sc *SnowflakeConnector) ExecDDL(tableDef cloudstorage.TableDefinition) error {
-	if sc.columns == nil {
+	if len(sc.columns) == 0 {
 		return errors.New("Columns not initialized")
 	}
 	ddls, err := GenDDLViaColumnsDiff(sc.columns, tableDef)
