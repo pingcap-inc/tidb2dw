@@ -403,31 +403,23 @@ func (c *consumer) handleNewFiles(
 				}
 
 				// The following logic is used to handle pause and resume.
-				// Keep the latest table definition file with len(query) == 0 and delete all the others.
+				// Keep the current table definition file with len(query) == 0 and delete all the outdated files.
 
-				// Get all the table definition with the same table.
-				tableDefMultiVersion := make([]*cloudstorage.TableDefinition, 0, len(c.tableDefMap[key.GetKey()]))
-				for _, v := range c.tableDefMap[key.GetKey()] {
-					if v.TableVersion <= tableDef.TableVersion {
-						tableDefMultiVersion = append(tableDefMultiVersion, v)
+				// Delete all the outdated table definition files.
+				for _, item := range c.tableDefMap[key.GetKey()] {
+					if item.TableVersion < tableDef.TableVersion {
+						// tableDefMultiVersion = append(tableDefMultiVersion, item)
+						filePath, err := item.GenerateSchemaFilePath()
+						if err != nil {
+							return errors.Trace(err)
+						}
+						if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
+							return errors.Trace(err)
+						}
+						delete(c.tableDefMap[key.GetKey()], item.TableVersion)
 					}
 				}
-				// Sort the table definition by version.
-				slices.SortStableFunc(tableDefMultiVersion, func(x, y *cloudstorage.TableDefinition) bool {
-					return x.TableVersion < y.TableVersion
-				})
-				// Delete all the table definition files except the latest one.
-				for _, item := range tableDefMultiVersion[:len(tableDefMultiVersion)-1] {
-					filePath, err := item.GenerateSchemaFilePath()
-					if err != nil {
-						return errors.Trace(err)
-					}
-					if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
-						return errors.Trace(err)
-					}
-					delete(c.tableDefMap[key.GetKey()], item.TableVersion)
-				}
-				// clear the query in the latest table definition file.
+				// clear the query in the current table definition file.
 				tableDef.Query = ""
 				data, err := tableDef.MarshalWithQuery()
 				if err != nil {
@@ -437,7 +429,7 @@ func (c *consumer) handleNewFiles(
 				if err != nil {
 					return errors.Trace(err)
 				}
-				// update the latest table definition file.
+				// update the current table definition file.
 				if err = c.externalStorage.WriteFile(ctx, filePath, data); err != nil {
 					return errors.Trace(err)
 				}
