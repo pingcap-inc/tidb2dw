@@ -401,10 +401,46 @@ func (c *consumer) handleNewFiles(
 							"and restart the program.",
 							c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
 				}
-				// TODO: we should delete the schema.json file after the DDL query is executed successfully
-				// in order to support resuming from failure.
-				// But TiCDC will need this file before new schema.json file is generated.
-				// TODO: clean tableDefMap
+
+				// The following logic is used to handle pause and resume.
+				// Keep the latest table definition file with len(query) == 0 and delete all the others.
+
+				// Get all the table definition with the same table.
+				tableDefMultiVersion := make([]*cloudstorage.TableDefinition, 0, len(c.tableDefMap[key.GetKey()]))
+				for _, v := range c.tableDefMap[key.GetKey()] {
+					if v.TableVersion <= tableDef.TableVersion {
+						tableDefMultiVersion = append(tableDefMultiVersion, v)
+					}
+				}
+				// Sort the table definition by version.
+				slices.SortStableFunc(tableDefMultiVersion, func(x, y *cloudstorage.TableDefinition) bool {
+					return x.TableVersion < y.TableVersion
+				})
+				// Delete all the table definition files except the latest one.
+				for _, item := range tableDefMultiVersion[:len(tableDefMultiVersion)-1] {
+					filePath, err := item.GenerateSchemaFilePath()
+					if err != nil {
+						return errors.Trace(err)
+					}
+					if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
+						return errors.Trace(err)
+					}
+					delete(c.tableDefMap[key.GetKey()], item.TableVersion)
+				}
+				// clear the query in the latest table definition file.
+				tableDef.Query = ""
+				data, err := tableDef.MarshalWithQuery()
+				if err != nil {
+					return errors.Trace(err)
+				}
+				filePath, err := tableDef.GenerateSchemaFilePath()
+				if err != nil {
+					return errors.Trace(err)
+				}
+				// update the latest table definition file.
+				if err = c.externalStorage.WriteFile(ctx, filePath, data); err != nil {
+					return errors.Trace(err)
+				}
 			}
 			continue
 		}
