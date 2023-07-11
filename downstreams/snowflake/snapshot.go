@@ -38,8 +38,6 @@ type SnapshotReplicateSession struct {
 	SourceTable    string
 	StartTSO       string
 
-	dumplingFileSize string
-
 	OnSnapshotDumpProgress func(dumpedRows, totalRows int64)
 	OnSnapshotLoadProgress func(loadedRows int64)
 
@@ -53,15 +51,13 @@ func NewSnapshotReplicateSession(
 	snapshotConcurrency int,
 	s3StoragePath string,
 	startTSO string,
-	credential *credentials.Value,
-	dumplingFileSize string) (*SnapshotReplicateSession, error) {
+	credential *credentials.Value) (*SnapshotReplicateSession, error) {
 	sess := &SnapshotReplicateSession{
 		SFConfig:            sfConfig,
 		TiDBConfig:          tidbConfig,
 		TableFQN:            tableFQN,
 		SnapshotConcurrency: snapshotConcurrency,
 		StartTSO:            startTSO,
-		dumplingFileSize:    dumplingFileSize,
 	}
 	workUri, err := url.Parse(s3StoragePath)
 	if err != nil {
@@ -263,7 +259,7 @@ func (sess *SnapshotReplicateSession) buildDumperConfig() (*export.Config, error
 	conf.S3.Region = sess.ResolvedS3Region
 	conf.Snapshot = sess.StartTSO
 
-	filesize, err := export.ParseFileSize(sess.dumplingFileSize)
+	filesize, err := export.ParseFileSize("5GiB")
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -296,9 +292,8 @@ func StartReplicateSnapshot(
 	snapshotConcurrency int,
 	s3StoragePath string,
 	startTSO string,
-	credential *credentials.Value,
-	dumplingFileSize string) error {
-	session, err := NewSnapshotReplicateSession(sfConfig, tidbConfig, tableFQN, snapshotConcurrency, s3StoragePath, startTSO, credential, dumplingFileSize)
+	credential *credentials.Value) error {
+	session, err := NewSnapshotReplicateSession(sfConfig, tidbConfig, tableFQN, snapshotConcurrency, s3StoragePath, startTSO, credential)
 	if err != nil {
 		return errors.Trace(err)
 	}
