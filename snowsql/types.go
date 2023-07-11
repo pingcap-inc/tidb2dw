@@ -1,9 +1,11 @@
 package snowsql
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
 
 // TiDB2SnowflakeTypeMap is a map from TiDB type to Snowflake type.
@@ -37,11 +39,20 @@ var TiDB2SnowflakeTypeMap map[string]string = map[string]string{
 	"time":       "TIME",
 }
 
-// A safer way to get Snowflake type from TiDB type.
-func GetSnowflakeType(t string) (string, error) {
-	t = strings.ToLower(t)
-	if v, ok := TiDB2SnowflakeTypeMap[t]; ok {
-		return v, nil
+func GetSnowflakeTypeString(column cloudstorage.TableCol) (string, error) {
+	tp := strings.ToLower(column.Tp)
+	switch tp {
+	case "text", "longtext", "mediumtext", "tinytext", "blob", "longblob", "mediumblob", "tinyblob":
+		return fmt.Sprintf("%s %s", column.Name, TiDB2SnowflakeTypeMap[tp]), nil
+	case "int", "mediumint", "bigint", "tinyint", "smallint", "float", "double", "bool", "boolean", "date":
+		return fmt.Sprintf("%s %s", column.Name, TiDB2SnowflakeTypeMap[tp]), nil
+	case "varchar", "char", "binary", "varbinary":
+		return fmt.Sprintf("%s %s(%s)", column.Name, TiDB2SnowflakeTypeMap[tp], column.Precision), nil
+	case "decimal", "numeric":
+		return fmt.Sprintf("%s %s(%s, %s)", column.Name, TiDB2SnowflakeTypeMap[tp], column.Precision, column.Scale), nil
+	case "datetime", "timestamp", "time":
+		return fmt.Sprintf("%s %s(%s)", column.Name, TiDB2SnowflakeTypeMap[tp], column.Precision), nil
+	default:
+		return "", errors.Errorf("Unsupported data type: %s", column.Tp)
 	}
-	return "", errors.Errorf("Unsupported data type: %s", t)
 }

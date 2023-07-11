@@ -190,31 +190,37 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 		if err != nil {
 			return "", errors.Trace(err)
 		}
-		createTableQuery := ""
-		// Refer to:
-		// https://dev.mysql.com/doc/refman/8.0/en/data-types.html
-		// https://docs.snowflake.com/en/sql-reference/intro-summary-data-types
-		switch column.DataType {
-		case "text", "longtext", "mediumtext", "tinytext", "blob", "longblob", "mediumblob", "tinyblob":
-			createTableQuery += fmt.Sprintf("%s %s", column.ColumnName, TiDB2SnowflakeTypeMap[column.DataType])
-		case "int", "mediumint", "bigint", "tinyint", "smallint", "float", "double", "bool", "boolean", "date":
-			createTableQuery += fmt.Sprintf("%s %s", column.ColumnName, TiDB2SnowflakeTypeMap[column.DataType])
-		case "varchar", "char", "binary", "varbinary":
-			createTableQuery += fmt.Sprintf("%s %s(%d)", column.ColumnName, TiDB2SnowflakeTypeMap[column.DataType], *column.CharMaxLength)
-		case "decimal", "numeric":
-			createTableQuery += fmt.Sprintf("%s %s(%d, %d)", column.ColumnName, TiDB2SnowflakeTypeMap[column.DataType], *column.NumPrecision, *column.NumScale)
-		case "datetime", "timestamp", "time":
-			createTableQuery += fmt.Sprintf("%s %s(%d)", column.ColumnName, TiDB2SnowflakeTypeMap[column.DataType], *column.DateTimePrec)
-		default:
-			fmt.Println("Unsupported data type: ", column.DataType)
+		var precision, scale, nullable string
+		if column.NumPrecision != nil {
+			precision = fmt.Sprintf("%d", *column.NumPrecision)
+		} else if column.DateTimePrec != nil {
+			precision = fmt.Sprintf("%d", *column.DateTimePrec)
+		} else if column.CharMaxLength != nil {
+			precision = fmt.Sprintf("%d", *column.CharMaxLength)
 		}
-		if column.IsNullable == "false" {
-			createTableQuery += " NOT NULL"
+		if column.NumScale != nil {
+			scale = fmt.Sprintf("%d", *column.NumScale)
 		}
-		if column.ColumnDefault != nil {
-			createTableQuery += fmt.Sprintf(` DEFAULT '%s'`, *column.ColumnDefault) // FIXME: Escape
+		if column.IsNullable == "YES" {
+			nullable = "true"
 		} else {
-			createTableQuery += " DEFAULT NULL"
+			nullable = "false"
+		}
+		var defaultVal interface{}
+		if column.ColumnDefault != nil {
+			defaultVal = *column.ColumnDefault
+		}
+		tableCol := cloudstorage.TableCol{
+			Name:      column.ColumnName,
+			Tp:        column.DataType,
+			Default:   defaultVal,
+			Precision: precision,
+			Scale:     scale,
+			Nullable:  nullable,
+		}
+		createTableQuery, err := GetSnowflakeColumnString(tableCol)
+		if err != nil {
+			return "", errors.Trace(err)
 		}
 		columnRows = append(columnRows, createTableQuery)
 	}

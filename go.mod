@@ -12,6 +12,7 @@ require (
 	github.com/pingcap/tiflow v0.0.0-20230607052141-d20d6d6667fc
 	github.com/snowflakedb/gosnowflake v1.6.18
 	github.com/spf13/cobra v1.7.0
+	github.com/stretchr/testify v1.8.4
 	github.com/thediveo/enumflag v0.10.1
 	gitlab.com/tymonx/go-formatter v1.5.1
 	go.uber.org/zap v1.24.0
@@ -215,7 +216,6 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spkg/bom v1.0.0 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
-	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/tiancaiamao/gp v0.0.0-20221230034425-4025bc8a4d4a // indirect
 	github.com/tikv/client-go/v2 v2.0.8-0.20230605085112-28247160f497 // indirect
 	github.com/tikv/pd/client v0.0.0-20230419153320-f1d1a80feb95 // indirect

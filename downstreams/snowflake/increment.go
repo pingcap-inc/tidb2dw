@@ -190,11 +190,12 @@ func (c *consumer) syncExecDDLEvents(
 		}
 	} else {
 		if err := c.snowflakeConnectorMap[tableID].ExecDDL(tableDef); err != nil {
+			// FIXME: if there is a DDL before all the DMLs, will return error here.
 			return errors.Annotate(err,
 				fmt.Sprintf("Please check the DDL query, "+
 					"if necessary, please manually execute the DDL query in Snowflake, "+
-					"remove the %s/%s/%s/meta/schema_%d_{hash}.json, "+
-					"and restart the program.",
+					"update the `query` of the %s%s/%s/meta/schema_%d_{hash}.json to empty, "+
+					"and restart the program",
 					c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
 		}
 
