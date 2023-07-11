@@ -121,6 +121,7 @@ func NewSnowflakeCmd() *cobra.Command {
 		cdcPort                int
 		cdcFlushInterval       time.Duration
 		cdcFileSize            int64
+		dumplingFileSize       string
 		timezone               string
 		logFile                string
 		logLevel               string
@@ -183,7 +184,7 @@ func NewSnowflakeCmd() *cobra.Command {
 			if err != nil {
 				return errors.Trace(err)
 			}
-			if err = snowflake.StartReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapS3StoragePath, fmt.Sprint(startTSO), &credValue); err != nil {
+			if err = snowflake.StartReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapS3StoragePath, fmt.Sprint(startTSO), &credValue, dumplingFileSize); err != nil {
 				return errors.Annotate(err, "Failed to replicate snapshot")
 			}
 		} else if !loadinfoExist {
@@ -246,6 +247,7 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().IntVar(&cdcPort, "cdc.port", 8300, "TiCDC server port")
 	cmd.Flags().DurationVar(&cdcFlushInterval, "cdc.flush-interval", 60*time.Second, "")
 	cmd.Flags().Int64Var(&cdcFileSize, "cdc.file-size", 64*1024*1024, "")
+	cmd.Flags().StringVar(&dumplingFileSize, "dumpling.file-size", "5GiB", "approximate size of output file")
 	cmd.Flags().StringVar(&timezone, "tz", "System", "specify time zone of storage consumer")
 	cmd.Flags().StringVar(&logFile, "log.file", "", "log file path")
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
