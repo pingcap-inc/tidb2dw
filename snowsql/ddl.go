@@ -40,49 +40,49 @@ func CompareColumn(lhs, rhs *cloudstorage.TableCol) (columnAction, error) {
 	return UNCHANGE, nil
 }
 
-func GetColumnDiff(before []cloudstorage.TableCol, after []cloudstorage.TableCol) ([]ColumnDiff, error) {
+func GetColumnDiff(prev []cloudstorage.TableCol, curr []cloudstorage.TableCol) ([]ColumnDiff, error) {
 	// Use map to find the column with the same id
-	beforeMap := make(map[int64]*cloudstorage.TableCol, len(before))
-	for i, item := range before {
-		if _, ok := beforeMap[item.ID]; !ok {
-			beforeMap[item.ID] = &before[i]
+	prevMap := make(map[int64]*cloudstorage.TableCol, len(prev))
+	for i, item := range prev {
+		if _, ok := prevMap[item.ID]; !ok {
+			prevMap[item.ID] = &prev[i]
 		}
 	}
-	afterMap := make(map[int64]*cloudstorage.TableCol, len(after))
-	for i, item := range after {
-		if _, ok := afterMap[item.ID]; !ok {
-			afterMap[item.ID] = &after[i]
+	currMap := make(map[int64]*cloudstorage.TableCol, len(curr))
+	for i, item := range curr {
+		if _, ok := currMap[item.ID]; !ok {
+			currMap[item.ID] = &curr[i]
 		}
 	}
-	columnDiff := make([]ColumnDiff, 0, len(after))
-	for i, item := range before {
-		if afterItem, ok := afterMap[item.ID]; !ok {
-			// If the column is in the beforeMap, and the column is not in the afterMap, it means that the column is deleted.
+	columnDiff := make([]ColumnDiff, 0, len(curr))
+	for i, item := range prev {
+		if afterItem, ok := currMap[item.ID]; !ok {
+			// If the column is in the prevMap, and the column is not in the currMap, it means that the column is deleted.
 			columnDiff = append(columnDiff, ColumnDiff{
 				Action: DROP_COLUMN,
-				Before: &before[i],
+				Before: &prev[i],
 				After:  nil,
 			})
 		} else {
-			// If the column is in the beforeMap and the afterMap, it means that the column is modified/rename/unchange.
+			// If the column is in the prevMap and the currMap, it means that the column is modified/rename/unchange.
 			action, err := CompareColumn(&item, afterItem)
 			if err != nil {
 				return nil, errors.Trace(err)
 			}
 			columnDiff = append(columnDiff, ColumnDiff{
 				Action: action,
-				Before: &before[i],
+				Before: &prev[i],
 				After:  afterItem,
 			})
 		}
 	}
-	for i, item := range after {
-		// If the column is not in the beforeMap, and the column is in the afterMap, it means that the column is added.
-		if _, ok := beforeMap[item.ID]; !ok {
+	for i, item := range curr {
+		// If the column is not in the prevMap, and the column is in the currMap, it means that the column is added.
+		if _, ok := prevMap[item.ID]; !ok {
 			columnDiff = append(columnDiff, ColumnDiff{
 				Action: ADD_COLUMN,
 				Before: nil,
-				After:  &after[i],
+				After:  &curr[i],
 			})
 		}
 	}

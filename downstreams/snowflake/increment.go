@@ -27,9 +27,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-const (
-	fakePartitionNumForSchemaFile = -1
-)
+const fakePartitionNumForSchemaFile = -1
 
 // fileIndexRange defines a range of files. eg. CDC000002.csv ~ CDC000005.csv
 type fileIndexRange struct {
@@ -108,7 +106,6 @@ func newConsumer(ctx context.Context, sfConfig *snowsql.SnowflakeConfig, sinkUri
 		errCh:           errCh,
 		tableDMLIdxMap:  make(map[cloudstorage.DmlPathKey]uint64),
 		tableDefMap:     make(map[string]map[uint64]*cloudstorage.TableDefinition),
-		// tableSinkMap:    make(map[model.TableID]tablesink.TableSink),
 		tableIDGenerator: &fakeTableIDGenerator{
 			tableIDs: make(map[string]int64),
 		},
@@ -180,22 +177,57 @@ func (c *consumer) getNewFiles(
 	return tableDMLMap, err
 }
 
-func (c *consumer) waitTableFlushComplete(
+func (c *consumer) syncExecDDLEvents(
 	ctx context.Context,
-	tableID model.TableID,
-	filePath string,
 	tableDef cloudstorage.TableDefinition,
+	tableID int64,
+	key cloudstorage.DmlPathKey,
 ) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-c.errCh:
-		return err
-	default:
-	}
+	if len(tableDef.Query) == 0 {
+		// schema.json file without query is used to initialize the columns.
+		if err := c.snowflakeConnectorMap[tableID].InitColumns(tableDef.Columns); err != nil {
+			return errors.Trace(err)
+		}
+	} else {
+		if err := c.snowflakeConnectorMap[tableID].ExecDDL(tableDef); err != nil {
+			return errors.Annotate(err,
+				fmt.Sprintf("Please check the DDL query, "+
+					"if necessary, please manually execute the DDL query in Snowflake, "+
+					"remove the %s/%s/%s/meta/schema_%d_{hash}.json, "+
+					"and restart the program.",
+					c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
+		}
 
-	if err := c.snowflakeConnectorMap[tableID].MergeFile(tableDef, c.sinkURI, filePath); err != nil {
-		return errors.Trace(err)
+		// The following logic is used to handle pause and resume.
+		// Keep the current table definition file with len(query) == 0 and delete all the outdated files.
+
+		// Delete all the outdated table definition files.
+		for _, item := range c.tableDefMap[key.GetKey()] {
+			if item.TableVersion < tableDef.TableVersion {
+				filePath, err := item.GenerateSchemaFilePath()
+				if err != nil {
+					return errors.Trace(err)
+				}
+				if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
+					return errors.Trace(err)
+				}
+				delete(c.tableDefMap[key.GetKey()], item.TableVersion)
+			}
+		}
+		// clear the query in the current table definition file.
+		tableDef.Query = ""
+		data, err := tableDef.MarshalWithQuery()
+		if err != nil {
+			return errors.Trace(err)
+		}
+		filePath, err := tableDef.GenerateSchemaFilePath()
+		if err != nil {
+			return errors.Trace(err)
+		}
+		// update the current table definition file.
+		if err = c.externalStorage.WriteFile(ctx, filePath, data); err != nil {
+			return errors.Trace(err)
+		}
 	}
 	return nil
 }
@@ -220,11 +252,12 @@ func (c *consumer) syncExecDMLEvents(
 		return nil
 	}
 
-	if err = c.waitTableFlushComplete(ctx, tableID, filePath, tableDef); err != nil {
+	// merge file into snowflake
+	if err := c.snowflakeConnectorMap[tableID].MergeFile(tableDef, c.sinkURI, filePath); err != nil {
 		return errors.Trace(err)
 	}
 
-	// delete file after flush complete in order to avoid duplicate flush
+	// delete file after merge complete in order to avoid duplicate merge when program restarts
 	if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
 		return errors.Trace(err)
 	}
@@ -384,54 +417,9 @@ func (c *consumer) handleNewFiles(
 
 		// if the key is a fake dml path key which is mainly used for
 		// sorting schema.json file before the dml files, which means it is a schema.json file.
-		if key.PartitionNum == fakePartitionNumForSchemaFile &&
-			len(key.Date) == 0 {
-			// schema.json file without query is used to initialize the columns.
-			// Note: this file should not be deleted.
-			if len(tableDef.Query) == 0 {
-				if err := c.snowflakeConnectorMap[tableID].InitColumns(tableDef.Columns); err != nil {
-					return errors.Trace(err)
-				}
-			} else {
-				if err := c.snowflakeConnectorMap[tableID].ExecDDL(tableDef); err != nil {
-					return errors.Annotate(err,
-						fmt.Sprintf("Please check the DDL query, "+
-							"if necessary, please manually execute the DDL query in Snowflake, "+
-							"remove the %s/%s/%s/meta/schema_%d_{hash}.json, "+
-							"and restart the program.",
-							c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
-				}
-
-				// The following logic is used to handle pause and resume.
-				// Keep the current table definition file with len(query) == 0 and delete all the outdated files.
-
-				// Delete all the outdated table definition files.
-				for _, item := range c.tableDefMap[key.GetKey()] {
-					if item.TableVersion < tableDef.TableVersion {
-						filePath, err := item.GenerateSchemaFilePath()
-						if err != nil {
-							return errors.Trace(err)
-						}
-						if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
-							return errors.Trace(err)
-						}
-						delete(c.tableDefMap[key.GetKey()], item.TableVersion)
-					}
-				}
-				// clear the query in the current table definition file.
-				tableDef.Query = ""
-				data, err := tableDef.MarshalWithQuery()
-				if err != nil {
-					return errors.Trace(err)
-				}
-				filePath, err := tableDef.GenerateSchemaFilePath()
-				if err != nil {
-					return errors.Trace(err)
-				}
-				// update the current table definition file.
-				if err = c.externalStorage.WriteFile(ctx, filePath, data); err != nil {
-					return errors.Trace(err)
-				}
+		if key.PartitionNum == fakePartitionNumForSchemaFile && len(key.Date) == 0 {
+			if err := c.syncExecDDLEvents(ctx, tableDef, tableID, key); err != nil {
+				return errors.Trace(err)
 			}
 			continue
 		}
@@ -439,7 +427,7 @@ func (c *consumer) handleNewFiles(
 		fileRange := dmlFileMap[key]
 		for i := fileRange.start; i <= fileRange.end; i++ {
 			if err := c.syncExecDMLEvents(ctx, tableDef, tableID, key, i); err != nil {
-				return err
+				return errors.Trace(err)
 			}
 		}
 	}
