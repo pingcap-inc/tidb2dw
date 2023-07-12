@@ -259,6 +259,12 @@ func (sess *SnapshotReplicateSession) buildDumperConfig() (*export.Config, error
 	conf.S3.Region = sess.ResolvedS3Region
 	conf.Snapshot = sess.StartTSO
 
+	filesize, err := export.ParseFileSize("5GiB")
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	conf.FileSize = filesize
+
 	conf.SpecifiedTables = true
 	tables, err := export.GetConfTables([]string{sess.TableFQN})
 	if err != nil {
