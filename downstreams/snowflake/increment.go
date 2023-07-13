@@ -385,15 +385,11 @@ func (c *consumer) handleNewFiles(
 		// sorting schema.json file before the dml files, then execute the ddl query.
 		if key.PartitionNum == fakePartitionNumForSchemaFile &&
 			len(key.Date) == 0 && len(tableDef.Query) > 0 {
-			if err := c.snowflakeConnectorMap[tableID].ExecDDL(tableDef); err != nil {
-				return errors.Annotate(err,
-					fmt.Sprintf("Please check the DDL query, "+
-						"if necessary, please manually execute the DDL query in Snowflake, "+
-						"remove the %s/%s/%s/meta/schema_%d_{hash}.json, "+
-						"and restart the program.",
-						c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
-			}
-			continue
+			return errors.Errorf("Please check the DDL query: [%s], "+
+				"if necessary, please manually execute the DDL query in Snowflake, "+
+				"remove the %s/%s/%s/meta/schema_%d_{hash}.json, "+
+				"and restart the program.",
+				tableDef.Query, c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion)
 		}
 
 		fileRange := dmlFileMap[key]
@@ -440,7 +436,7 @@ func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partiti
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	key := quotes.QuoteSchema(schema, table)
-	if partition != 0 {
+	if partition > 0 {
 		key = fmt.Sprintf("%s.`%d`", key, partition)
 	}
 	if tableID, ok := g.tableIDs[key]; ok {

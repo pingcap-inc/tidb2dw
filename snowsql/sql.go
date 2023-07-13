@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -155,6 +156,14 @@ ON_ERROR = CONTINUE;
 	return err
 }
 
+func GetDefaultValueString(val string) string {
+	_, err := strconv.ParseFloat(fmt.Sprint(val), 64)
+	if err != nil {
+		return fmt.Sprintf("'%s'", val) // FIXME: escape
+	}
+	return fmt.Sprint(val)
+}
+
 func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) (string, error) {
 	columnQuery := fmt.Sprintf(`SELECT COLUMN_NAME, COLUMN_DEFAULT, IS_NULLABLE, DATA_TYPE, 
 CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION
@@ -206,12 +215,12 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 		default:
 			fmt.Println("Unsupported data type: ", column.DataType)
 		}
-		if column.IsNullable == "NO" {
+		if column.IsNullable == "false" {
 			createTableQuery += " NOT NULL"
 		}
 		if column.ColumnDefault != nil {
-			createTableQuery += fmt.Sprintf(` DEFAULT "%s"`, *column.ColumnDefault) // FIXME: Escape
-		} else {
+			createTableQuery += fmt.Sprintf(` DEFAULT '%s'`, GetDefaultValueString(*column.ColumnDefault))
+		} else if column.IsNullable == "true" {
 			createTableQuery += " DEFAULT NULL"
 		}
 		columnRows = append(columnRows, createTableQuery)
