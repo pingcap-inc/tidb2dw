@@ -28,7 +28,6 @@ jobs:
         arch:
           - amd64
           - arm64
-          - arm64
     steps:
       - name: Check out
         uses: actions/checkout@v3
