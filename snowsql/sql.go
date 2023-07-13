@@ -306,7 +306,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 		(
 			%s
 		)
-		WHEN MATCHED AND S.METADATA$FLAG = 'U' THEN UPDATE SET %s
+		WHEN MATCHED AND S.METADATA$FLAG != 'D' THEN UPDATE SET %s
 		WHEN MATCHED AND S.METADATA$FLAG = 'D' THEN DELETE
 		WHEN NOT MATCHED AND S.METADATA$FLAG != 'D' THEN INSERT (%s) VALUES (%s);`,
 		tableDef.Table,
