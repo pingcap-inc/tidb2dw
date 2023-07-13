@@ -37,6 +37,14 @@ export AWS_SESSION_TOKEN=<SESSION_TOKEN>  # Optional
 # Use --help for details.
 ```
 
-> **Warning**
-> We do not support ddl replication yet. Any ddl operation will cause the incremental replication stop. You need to manually run the DDL on target table and then restart the incremental replication.
-> Restart incremental replication without manually runing DDL on target table may cause data loss.
+## Supported DDL Operations
+
+* Drop column
+* Alter (rename) column
+* Alter column' (default) value
+* Drop/truncate tables
+* Change column type
+* Multi schema change
+* Add table partition
+* 
+
