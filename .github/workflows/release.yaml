@@ -44,7 +44,6 @@ jobs:
           mv bin/tidb2dw bin/tidb2dw-${{ steps.build.outputs.REL_VER }}-${{ matrix.os.name }}-${{ matrix.arch }}
       - name: Upload
         uses: ncipollo/release-action@v1
-        if: github.event_name == 'release'
         with:
           allowUpdates: true
           artifacts: bin/tidb2dw-${{ steps.build.outputs.REL_VER }}-${{ matrix.os.name }}-${{ matrix.arch }}
