@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/pingcap-inc/tidb2dw/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/dumpling/export"
@@ -155,74 +156,17 @@ ON_ERROR = CONTINUE;
 }
 
 func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) (string, error) {
-	columnQuery := fmt.Sprintf(`SELECT COLUMN_NAME, COLUMN_DEFAULT, IS_NULLABLE, DATA_TYPE, 
-CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION
-FROM information_schema.columns
-WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) // FIXME: Escape
-	rows, err := sourceTiDBConn.QueryContext(context.Background(), columnQuery)
+	tableColumns, err := tidbsql.GetTiDBTableColumn(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
 		return "", errors.Trace(err)
 	}
-	// TODO: Confirm with generated column, sequence.
-	defer rows.Close()
-	columnRows := make([]string, 0)
-	for rows.Next() {
-		var column struct {
-			ColumnName    string
-			ColumnDefault *string
-			IsNullable    string
-			DataType      string
-			CharMaxLength *int
-			NumPrecision  *int
-			NumScale      *int
-			DateTimePrec  *int
-		}
-		err = rows.Scan(
-			&column.ColumnName,
-			&column.ColumnDefault,
-			&column.IsNullable,
-			&column.DataType,
-			&column.CharMaxLength,
-			&column.NumPrecision,
-			&column.NumScale,
-			&column.DateTimePrec,
-		)
+	columnRows := make([]string, 0, len(tableColumns))
+	for _, column := range tableColumns {
+		row, err := GetSnowflakeColumnString(column)
 		if err != nil {
 			return "", errors.Trace(err)
 		}
-		var precision, scale, nullable string
-		if column.NumPrecision != nil {
-			precision = fmt.Sprintf("%d", *column.NumPrecision)
-		} else if column.DateTimePrec != nil {
-			precision = fmt.Sprintf("%d", *column.DateTimePrec)
-		} else if column.CharMaxLength != nil {
-			precision = fmt.Sprintf("%d", *column.CharMaxLength)
-		}
-		if column.NumScale != nil {
-			scale = fmt.Sprintf("%d", *column.NumScale)
-		}
-		if column.IsNullable == "YES" {
-			nullable = "true"
-		} else {
-			nullable = "false"
-		}
-		var defaultVal interface{}
-		if column.ColumnDefault != nil {
-			defaultVal = *column.ColumnDefault
-		}
-		tableCol := cloudstorage.TableCol{
-			Name:      column.ColumnName,
-			Tp:        column.DataType,
-			Default:   defaultVal,
-			Precision: precision,
-			Scale:     scale,
-			Nullable:  nullable,
-		}
-		createTableQuery, err := GetSnowflakeColumnString(tableCol)
-		if err != nil {
-			return "", errors.Trace(err)
-		}
-		columnRows = append(columnRows, createTableQuery)
+		columnRows = append(columnRows, row)
 	}
 
 	indexQuery := fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", sourceDatabase, sourceTable) // FIXME: Escape

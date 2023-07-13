@@ -94,7 +94,7 @@ func (sc *SnowflakeConnector) InitColumns(columns []cloudstorage.TableCol) error
 
 func (sc *SnowflakeConnector) ExecDDL(tableDef cloudstorage.TableDefinition) error {
 	if len(sc.columns) == 0 {
-		return errors.New("Columns not initialized")
+		return errors.New("Columns not initialized. Maybe you execute a DDL before all DMLs, which is not supported now. You can restart the task to fix this problem.")
 	}
 	ddls, err := GenDDLViaColumnsDiff(sc.columns, tableDef)
 	if err != nil {
