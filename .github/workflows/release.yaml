@@ -41,7 +41,7 @@ jobs:
           make build
           echo "Build success."
 
-          mv bin/tidb2dw bin/tidb2dw-${{ steps.build.outputs.REL_VER }}-${{ matrix.os.name }}-${{ matrix.arch }}
+          mv bin/tidb2dw bin/tidb2dw-${REL_VER}-${{ matrix.os.name }}-${{ matrix.arch }}
       - name: Upload
         uses: ncipollo/release-action@v1
         with:
