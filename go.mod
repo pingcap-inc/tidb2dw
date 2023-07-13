@@ -8,7 +8,6 @@ require (
 	github.com/pingcap/errors v0.11.5-0.20221009092201-b66cddb77c32
 	github.com/pingcap/log v1.1.1-0.20230317032135-a0d097d16e22
 	github.com/pingcap/tidb v1.1.0-beta.0.20230609033446-1061ed208c94
-	github.com/pingcap/tidb/parser v0.0.0-20230609033446-1061ed208c94
 	github.com/snowflakedb/gosnowflake v1.6.18
 	github.com/spf13/cobra v1.7.0
 	github.com/thediveo/enumflag v0.10.1
@@ -58,6 +57,7 @@ require (
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2 // indirect
 	github.com/philhofer/fwd v1.1.1 // indirect
 	github.com/pingcap/tidb-tools v7.0.0+incompatible // indirect
+	github.com/pingcap/tidb/parser v0.0.0-20230609033446-1061ed208c94 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/shopspring/decimal v1.3.0 // indirect
 	github.com/siddontang/go v0.0.0-20180604090527-bdc77568d726 // indirect
