@@ -18,17 +18,17 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    runs-on: ${{ matrix.os.value }}
     strategy:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-latest
-          - macos-latest
+          - { name: linux, value: ubuntu-latest }
+          - { name: darwin, value: macos-latest }
         arch:
-          - "amd64"
-          - "arm64"
+          - amd64
+          - arm64
+          - arm64
     steps:
       - name: Check out
         uses: actions/checkout@v3
@@ -36,7 +36,7 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: 1.20.x
-      - name: Build for ${{ matrix.os }}-${{ matrix.arch }}
+      - name: Build for ${{ matrix.os.name }}-${{ matrix.arch }}
         env:
           GOARCH: ${{ matrix.arch }}
         run: |

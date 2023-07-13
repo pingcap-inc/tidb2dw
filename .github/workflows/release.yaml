@@ -13,15 +13,16 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-20.04
+    runs-on: ${{ matrix.os.value }}
     strategy:
       fail-fast: false
       matrix:
         os:
-          - "linux"
+          - { name: linux, value: ubuntu-latest }
+          - { name: darwin, value: macos-latest }
         arch:
-          - "amd64"
-          - "arm64"
+          - amd64
+          - arm64
     steps:
       - name: Check out
         uses: actions/checkout@v3
@@ -29,10 +30,9 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: 1.20.x
-      - name: Build for ${{ matrix.os }}-${{ matrix.arch }}
+      - name: Build for ${{ matrix.os.name }}-${{ matrix.arch }}
         id: build
         env:
-          GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
         run: |
           export REL_VER=`git describe --tags --always`
@@ -41,13 +41,13 @@ jobs:
           make build
           echo "Build success."
 
-          mv bin/tidb2dw bin/tidb2dw-${{ steps.build.outputs.REL_VER }}-${{ matrix.os }}-${{ matrix.arch }}
+          mv bin/tidb2dw bin/tidb2dw-${{ steps.build.outputs.REL_VER }}-${{ matrix.os.name }}-${{ matrix.arch }}
       - name: Upload
         uses: ncipollo/release-action@v1
         if: github.event_name == 'release'
         with:
           allowUpdates: true
-          artifacts: bin/tidb2dw-${{ steps.build.outputs.REL_VER }}-${{ matrix.os }}-${{ matrix.arch }}
+          artifacts: bin/tidb2dw-${{ steps.build.outputs.REL_VER }}-${{ matrix.os.name }}-${{ matrix.arch }}
           artifactContentType: application/gzip
           omitBodyDuringUpdate: true
           omitNameDuringUpdate: true
