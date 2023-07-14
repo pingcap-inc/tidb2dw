@@ -160,7 +160,7 @@ func NewSnowflakeCmd() *cobra.Command {
 		var sinkURI *url.URL
 
 		// 2. create changefeed
-		if mode == RunModeFull || sindURIStr == "" {
+		if mode == RunModeFull || (mode == RunModeIncrementalOnly && sindURIStr == "") {
 			increS3StoragePath, err := url.JoinPath(s3StoragePath, "increment")
 			if err != nil {
 				return errors.Trace(err)
@@ -176,9 +176,7 @@ func NewSnowflakeCmd() *cobra.Command {
 			} else {
 				log.Info("Snapshot has been loaded, Changefeed has been created, skip create changefeed")
 			}
-		}
-		// If under incremental-only mode, we should use the sink uri from command line
-		if mode == RunModeIncrementalOnly && sindURIStr != "" {
+		} else if mode == RunModeIncrementalOnly && sindURIStr != "" {
 			uri, err := url.Parse(sindURIStr)
 			if err != nil {
 				return errors.Trace(err)
