@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -23,8 +24,8 @@ import (
 	"go.uber.org/zap"
 )
 
-func genSinkURI(s3StoragePath string, flushInterval time.Duration, fileSize int64) (*url.URL, error) {
-	sinkUri, err := url.Parse(s3StoragePath)
+func genSinkURI(storagePath string, flushInterval time.Duration, fileSize int64) (*url.URL, error) {
+	sinkUri, err := url.Parse(storagePath)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -32,6 +33,7 @@ func genSinkURI(s3StoragePath string, flushInterval time.Duration, fileSize int6
 	values.Add("flush-interval", flushInterval.String())
 	values.Add("file-size", fmt.Sprint(fileSize))
 	values.Add("protocol", "csv")
+	// TODO(lcui2)
 	if sinkUri.Scheme == "s3" {
 		creds := credentials.NewEnvCredentials()
 		credValue, err := creds.Get()
@@ -43,6 +45,14 @@ func genSinkURI(s3StoragePath string, flushInterval time.Duration, fileSize int6
 		if credValue.SessionToken != "" {
 			values.Add("session-token", credValue.SessionToken)
 		}
+	} else if sinkUri.Scheme == "gcs" {
+		credValue, found := syscall.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+		if !found {
+			log.Error("Failed to resolve AWS credential")
+		}
+		values.Add("credentials-file", credValue)
+	} else {
+		return sinkUri, errors.Errorf("get sink uri failed, unsupported uri schema: %s", sinkUri.Scheme)
 	}
 	sinkUri.RawQuery = values.Encode()
 	return sinkUri, nil
@@ -116,7 +126,7 @@ func NewSnowflakeCmd() *cobra.Command {
 		snowflakeConfigFromCli snowsql.SnowflakeConfig
 		tableFQN               string
 		snapshotConcurrency    int
-		s3StoragePath          string
+		storagePath            string
 		cdcHost                string
 		cdcPort                int
 		cdcFlushInterval       time.Duration
@@ -132,7 +142,7 @@ func NewSnowflakeCmd() *cobra.Command {
 	run := func() error {
 		// 0. check status
 		ctx := context.Background()
-		storage, err := putil.GetExternalStorageFromURI(ctx, s3StoragePath)
+		storage, err := putil.GetExternalStorageFromURI(ctx, storagePath)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -160,11 +170,11 @@ func NewSnowflakeCmd() *cobra.Command {
 
 		// 2. create changefeed
 		if mode == RunModeFull || mode == RunModeIncrementalOnly {
-			increS3StoragePath, err := url.JoinPath(s3StoragePath, "increment")
+			increStoragePath, err := url.JoinPath(storagePath, "increment")
 			if err != nil {
 				return errors.Trace(err)
 			}
-			sinkURI, err = genSinkURI(increS3StoragePath, cdcFlushInterval, cdcFileSize)
+			sinkURI, err = genSinkURI(increStoragePath, cdcFlushInterval, cdcFileSize)
 			if err != nil {
 				return errors.Trace(err)
 			}
@@ -179,11 +189,11 @@ func NewSnowflakeCmd() *cobra.Command {
 
 		// 3. run replicate snapshot
 		if (mode == RunModeFull || mode == RunModeSnapshotOnly) && !loadinfoExist {
-			snapS3StoragePath, err := url.JoinPath(s3StoragePath, "snapshot")
+			snapStoragePath, err := url.JoinPath(storagePath, "snapshot")
 			if err != nil {
 				return errors.Trace(err)
 			}
-			if err = snowflake.StartReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapS3StoragePath, fmt.Sprint(startTSO), &credValue); err != nil {
+			if err = snowflake.StartReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapStoragePath, fmt.Sprint(startTSO), &credValue); err != nil {
 				return errors.Annotate(err, "Failed to replicate snapshot")
 			}
 		} else if !loadinfoExist {
@@ -241,7 +251,7 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&snowflakeConfigFromCli.Schema, "snowflake.schema", "", "snowflake schema")
 	cmd.Flags().StringVarP(&tableFQN, "table", "t", "", "table full qualified name: <database>.<table>")
 	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
-	cmd.Flags().StringVarP(&s3StoragePath, "storage", "s", "", "S3 storage path: s3://<bucket>/<path>")
+	cmd.Flags().StringVarP(&storagePath, "storage", "s", "", "storage path: s3://<bucket>/<path> or gs://<bucket>/<path>")
 	cmd.Flags().StringVar(&cdcHost, "cdc.host", "127.0.0.1", "TiCDC server host")
 	cmd.Flags().IntVar(&cdcPort, "cdc.port", 8300, "TiCDC server port")
 	cmd.Flags().DurationVar(&cdcFlushInterval, "cdc.flush-interval", 60*time.Second, "")

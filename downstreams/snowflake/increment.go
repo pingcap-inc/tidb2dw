@@ -471,7 +471,10 @@ func StartReplicateIncrement(sfConfig *snowsql.SnowflakeConfig, sinkUri *url.URL
 	if err != nil {
 		return errors.Annotate(err, "failed to create storage consumer")
 	}
-
+	if consumer.sinkURI.Scheme == "gcs" {
+		log.Info("Skip replicating increment. GCS does not supprt snowflake connector now...")
+		return nil
+	}
 	if err = consumer.run(ctx, flushInterval); err != nil {
 		return errors.Annotate(err, "error occurred while running consumer")
 	}
