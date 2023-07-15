@@ -172,7 +172,7 @@ func NewSnowflakeCmd() *cobra.Command {
 
 		// 2. create changefeed
 		if mode == RunModeFull || (mode == RunModeIncrementalOnly && sindURIStr == "") {
-			increS3StoragePath, err := url.JoinPath(s3StoragePath, "increment")
+			increStoragePath, err := url.JoinPath(storagePath, "increment")
 			if err != nil {
 				return errors.Trace(err)
 			}
