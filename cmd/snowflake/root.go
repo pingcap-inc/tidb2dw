@@ -33,7 +33,7 @@ func genSinkURI(storagePath string, flushInterval time.Duration, fileSize int64)
 	values.Add("flush-interval", flushInterval.String())
 	values.Add("file-size", fmt.Sprint(fileSize))
 	values.Add("protocol", "csv")
-	// TODO(lcui2)
+	// TODO(lcui2) how to conbine ak&sk for s3 and credential file for gcs in one struct
 	if sinkUri.Scheme == "s3" {
 		creds := credentials.NewEnvCredentials()
 		credValue, err := creds.Get()
@@ -49,8 +49,9 @@ func genSinkURI(storagePath string, flushInterval time.Duration, fileSize int64)
 		credValue, found := syscall.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 		if !found {
 			log.Error("Failed to resolve AWS credential")
+		} else {
+			values.Add("credentials-file", credValue)
 		}
-		values.Add("credentials-file", credValue)
 	} else {
 		return sinkUri, errors.Errorf("get sink uri failed, unsupported uri schema: %s", sinkUri.Scheme)
 	}
@@ -223,11 +224,17 @@ func NewSnowflakeCmd() *cobra.Command {
 				panic(err)
 			}
 
-			// resolve aws credential
-			creds := credentials.NewEnvCredentials()
-			credValue, err = creds.Get()
+			uri, err := url.Parse(storagePath)
 			if err != nil {
 				panic(err)
+			}
+			if uri.Scheme == "s3" {
+				// resolve aws credential
+				creds := credentials.NewEnvCredentials()
+				credValue, err = creds.Get()
+				if err != nil {
+					panic(err)
+				}
 			}
 
 			if err = run(); err != nil {
@@ -251,7 +258,7 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&snowflakeConfigFromCli.Schema, "snowflake.schema", "", "snowflake schema")
 	cmd.Flags().StringVarP(&tableFQN, "table", "t", "", "table full qualified name: <database>.<table>")
 	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
-	cmd.Flags().StringVarP(&storagePath, "storage", "s", "", "storage path: s3://<bucket>/<path> or gs://<bucket>/<path>")
+	cmd.Flags().StringVarP(&storagePath, "storage", "s", "", "storage path: s3://<bucket>/<path> or gcs://<bucket>/<path>")
 	cmd.Flags().StringVar(&cdcHost, "cdc.host", "127.0.0.1", "TiCDC server host")
 	cmd.Flags().IntVar(&cdcPort, "cdc.port", 8300, "TiCDC server port")
 	cmd.Flags().DurationVar(&cdcFlushInterval, "cdc.flush-interval", 60*time.Second, "")
