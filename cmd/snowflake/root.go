@@ -136,6 +136,7 @@ func NewSnowflakeCmd() *cobra.Command {
 		logFile                string
 		logLevel               string
 		credValue              credentials.Value
+		sindURIStr             string
 
 		mode RunMode
 	)
@@ -170,8 +171,8 @@ func NewSnowflakeCmd() *cobra.Command {
 		var sinkURI *url.URL
 
 		// 2. create changefeed
-		if mode == RunModeFull || mode == RunModeIncrementalOnly {
-			increStoragePath, err := url.JoinPath(storagePath, "increment")
+		if mode == RunModeFull || (mode == RunModeIncrementalOnly && sindURIStr == "") {
+			increS3StoragePath, err := url.JoinPath(s3StoragePath, "increment")
 			if err != nil {
 				return errors.Trace(err)
 			}
@@ -186,6 +187,12 @@ func NewSnowflakeCmd() *cobra.Command {
 			} else {
 				log.Info("Snapshot has been loaded, Changefeed has been created, skip create changefeed")
 			}
+		} else if mode == RunModeIncrementalOnly && sindURIStr != "" {
+			uri, err := url.Parse(sindURIStr)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			sinkURI = uri
 		}
 
 		// 3. run replicate snapshot
@@ -266,6 +273,7 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&timezone, "tz", "System", "specify time zone of storage consumer")
 	cmd.Flags().StringVar(&logFile, "log.file", "", "log file path")
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
+	cmd.Flags().StringVar(&sindURIStr, "sink-uri", "", "sink uri, only needed under incremental-only mode")
 
 	cmd.MarkFlagRequired("storage")
 	cmd.MarkFlagRequired("table")
