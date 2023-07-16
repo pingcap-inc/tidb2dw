@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -42,6 +43,7 @@ type SnapshotReplicateSession struct {
 	OnSnapshotLoadProgress func(loadedRows int64)
 
 	StorageWorkspaceUri url.URL
+	StorageSchema       string
 }
 
 func NewSnapshotReplicateSession(
@@ -82,44 +84,54 @@ func NewSnapshotReplicateSession(
 		if err != nil {
 			return nil, errors.Annotate(err, "Failed to parse --storage value")
 		}
-		if parsed.Scheme != "s3" {
-			return nil, errors.Errorf("storage must be like s3://...")
-		}
-
-		awsSession, err := session.NewSessionWithOptions(session.Options{
-			SharedConfigState: session.SharedConfigEnable,
-		})
-		if err != nil {
-			return nil, errors.Annotate(err, "Failed to establish AWS session")
-		}
-
-		bucket := parsed.Host
-		log.Debug("Resolving storage region")
-		s3Region, err := s3manager.GetBucketRegion(context.Background(), awsSession, bucket, "us-west-2")
-		if err != nil {
-			if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "NotFound" {
-				return nil, fmt.Errorf("unable to find bucket %s's region not found", bucket)
+		sess.StorageSchema = parsed.Scheme
+		switch sess.StorageSchema {
+		case "s3":
+			awsSession, err := session.NewSessionWithOptions(session.Options{
+				SharedConfigState: session.SharedConfigEnable,
+			})
+			if err != nil {
+				return nil, errors.Annotate(err, "Failed to establish AWS session")
 			}
-			return nil, errors.Annotate(err, "Failed to resolve --storage region")
+
+			bucket := parsed.Host
+			log.Debug("Resolving storage region")
+			s3Region, err := s3manager.GetBucketRegion(context.Background(), awsSession, bucket, "us-west-2")
+			if err != nil {
+				if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "NotFound" {
+					return nil, fmt.Errorf("unable to find bucket %s's region not found", bucket)
+				}
+				return nil, errors.Annotate(err, "Failed to resolve --storage region")
+			}
+			sess.ResolvedS3Region = s3Region
+			log.Info("Resolved storage region", zap.String("region", s3Region))
+		case "gcs":
+		default:
+			return nil, errors.Errorf("storage must be like s3://... or gcs://...")
 		}
-		sess.ResolvedS3Region = s3Region
-		log.Info("Resolved storage region", zap.String("region", s3Region))
 	}
 	{
-		db, err := snowsql.OpenSnowflake(sfConfig)
-		if err != nil {
-			return nil, errors.Trace(err)
+		switch sess.StorageSchema {
+		case "s3":
+			db, err := snowsql.OpenSnowflake(sfConfig)
+			if err != nil {
+				return nil, errors.Trace(err)
+			}
+			connector, err := snowsql.NewSnowflakeConnector(
+				db,
+				fmt.Sprintf("snapshot_stage_%s", sess.SourceTable),
+				&sess.StorageWorkspaceUri,
+				sess.AWSCredential,
+			)
+			if err != nil {
+				return nil, errors.Annotate(err, "Failed to create Snowflake connector")
+			}
+			sess.SnowflakePool = connector
+		case "gcs":
+			sess.SnowflakePool = nil
+			log.Info("Skip connecting to snowflake. GCS does not support snowflake connector now...")
 		}
-		connector, err := snowsql.NewSnowflakeConnector(
-			db,
-			fmt.Sprintf("snapshot_stage_%s", sess.SourceTable),
-			&sess.StorageWorkspaceUri,
-			sess.AWSCredential,
-		)
-		if err != nil {
-			return nil, errors.Annotate(err, "Failed to create Snowflake connector")
-		}
-		sess.SnowflakePool = connector
+
 	}
 	{
 		db, err := tidbsql.OpenTiDB(tidbConfig)
@@ -142,7 +154,10 @@ func NewSnapshotReplicateSession(
 }
 
 func (sess *SnapshotReplicateSession) Close() {
-	sess.SnowflakePool.Close()
+	// no connector for gcs now
+	if sess.SnowflakePool != nil {
+		sess.SnowflakePool.Close()
+	}
 	sess.TiDBPool.Close()
 }
 
@@ -151,9 +166,13 @@ func (sess *SnapshotReplicateSession) Run() error {
 	if err != nil {
 		return errors.Trace(err)
 	}
-
-	if err = sess.SnowflakePool.CopyTableSchema(sess.SourceDatabase, sess.SourceTable, sess.TiDBPool); err != nil {
-		return errors.Trace(err)
+	switch sess.StorageSchema {
+	case "s3":
+		if err = sess.SnowflakePool.CopyTableSchema(sess.SourceDatabase, sess.SourceTable, sess.TiDBPool); err != nil {
+			return errors.Trace(err)
+		}
+	case "gcs":
+		log.Info("Skip snowflake table schema copy. GCS does not supprt snowflake connector now...")
 	}
 
 	wg := sync.WaitGroup{}
@@ -195,6 +214,11 @@ func (sess *SnapshotReplicateSession) Run() error {
 	}
 	status := dumper.GetStatus()
 	log.Info("Successfully dumped table from TiDB, starting to load into Snowflake", zap.Any("status", status))
+
+	if sess.StorageSchema == "gcs" {
+		log.Info("Skip loading. GCS does not supprt snowflake connector now...")
+		return nil
+	}
 
 	startTime := time.Now()
 	if err = sess.loadSnapshotDataIntoSnowflake(); err != nil {
@@ -256,8 +280,19 @@ func (sess *SnapshotReplicateSession) buildDumperConfig() (*export.Config, error
 	conf.EscapeBackslash = true
 	conf.TransactionalConsistency = true
 	conf.OutputDirPath = sess.StorageWorkspaceUri.String()
-	conf.S3.Region = sess.ResolvedS3Region
+
 	conf.Snapshot = sess.StartTSO
+
+	switch sess.StorageSchema {
+	case "s3":
+		conf.S3.Region = sess.ResolvedS3Region
+	case "gcs":
+		credFile, found := syscall.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+		if !found {
+			log.Error("Failed to resolve AWS credential")
+		}
+		conf.GCS.CredentialsFile = credFile
+	}
 
 	filesize, err := export.ParseFileSize("5GiB")
 	if err != nil {
