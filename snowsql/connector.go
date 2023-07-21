@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap/errors"
@@ -48,12 +49,15 @@ func OpenSnowflake(config *SnowflakeConfig) (*sql.DB, error) {
 }
 
 // A Wrapper of snowflake connection.
+// One SnowflakeConnector is responsible for one table.
 // All snowflake related operations should be done through this struct.
 type SnowflakeConnector struct {
 	// db is the connection to snowflake.
 	db *sql.DB
 
 	stageName string
+
+	columns []cloudstorage.TableCol
 }
 
 func NewSnowflakeConnector(db *sql.DB, stageName string, upstreamURI *url.URL, credentials *credentials.Value) (*SnowflakeConnector, error) {
@@ -69,7 +73,49 @@ func NewSnowflakeConnector(db *sql.DB, stageName string, upstreamURI *url.URL, c
 		return nil, errors.Annotate(err, "Failed to create stage")
 	}
 
-	return &SnowflakeConnector{db, stageName}, nil
+	return &SnowflakeConnector{
+		db:        db,
+		stageName: stageName,
+		columns:   nil,
+	}, nil
+}
+
+func (sc *SnowflakeConnector) InitColumns(columns []cloudstorage.TableCol) error {
+	if len(sc.columns) != 0 {
+		return nil
+	}
+	if len(columns) == 0 {
+		return errors.New("Columns in schema is empty")
+	}
+	sc.columns = columns
+	log.Info("table columns initialized", zap.Any("Columns", columns))
+	return nil
+}
+
+func (sc *SnowflakeConnector) ExecDDL(tableDef cloudstorage.TableDefinition) error {
+	if len(sc.columns) == 0 {
+		return errors.New("Columns not initialized. Maybe you execute a DDL before all DMLs, which is not supported now.")
+	}
+	ddls, err := GenDDLViaColumnsDiff(sc.columns, tableDef)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	if len(ddls) == 0 {
+		log.Info("No need to execute this DDL in Snowflake", zap.String("ddl", tableDef.Query))
+		return nil
+	}
+	// One DDL may be rewritten to multiple DDLs
+	for _, ddl := range ddls {
+		_, err := sc.db.Exec(ddl)
+		if err != nil {
+			log.Error("Failed to executed DDL", zap.String("received", tableDef.Query), zap.String("rewritten", strings.Join(ddls, "\n")))
+			return errors.Annotate(err, fmt.Sprint("failed to execute", ddl))
+		}
+	}
+	// update columns
+	sc.columns = tableDef.Columns
+	log.Info("Successfully executed DDL", zap.String("received", tableDef.Query), zap.String("rewritten", strings.Join(ddls, "\n")))
+	return nil
 }
 
 func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {

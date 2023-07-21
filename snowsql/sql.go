@@ -165,75 +165,27 @@ func GetDefaultValueString(val string) string {
 }
 
 func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) (string, error) {
-	columnQuery := fmt.Sprintf(`SELECT COLUMN_NAME, COLUMN_DEFAULT, IS_NULLABLE, DATA_TYPE, 
-CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION
-FROM information_schema.columns
-WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) // FIXME: Escape
-	rows, err := sourceTiDBConn.QueryContext(context.Background(), columnQuery)
+	tableColumns, err := tidbsql.GetTiDBTableColumn(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
-		return "", err
+		return "", errors.Trace(err)
 	}
-	// TODO: Confirm with generated column, sequence.
-	defer rows.Close()
-	columnRows := make([]string, 0)
-	for rows.Next() {
-		var column tidbsql.TiDBColumnInfo
-		err = rows.Scan(
-			&column.ColumnName,
-			&column.ColumnDefault,
-			&column.IsNullable,
-			&column.DataType,
-			&column.CharMaxLength,
-			&column.NumPrecision,
-			&column.NumScale,
-			&column.DateTimePrec,
-		)
+	columnRows := make([]string, 0, len(tableColumns))
+	for _, column := range tableColumns {
+		row, err := GetSnowflakeColumnString(column)
 		if err != nil {
 			return "", errors.Trace(err)
 		}
-		createTableQuery := ""
-		// Refer to:
-		// https://dev.mysql.com/doc/refman/8.0/en/data-types.html
-		// https://docs.snowflake.com/en/sql-reference/intro-summary-data-types
-		switch column.DataType {
-		case "text", "longtext", "mediumtext", "tinytext", "blob", "longblob", "mediumblob", "tinyblob":
-			createTableQuery += fmt.Sprintf("%s %s", column.ColumnName, "TEXT")
-		case "varchar", "char", "binary", "varbinary":
-			createTableQuery += fmt.Sprintf("%s %s(%d)", column.ColumnName, strings.ToUpper(column.DataType), *column.CharMaxLength)
-		case "int", "mediumint":
-			createTableQuery += fmt.Sprintf("%s %s", column.ColumnName, "INT")
-		case "bigint", "tinyint", "smallint", "float", "double":
-			createTableQuery += fmt.Sprintf("%s %s", column.ColumnName, strings.ToUpper(column.DataType))
-		case "decimal", "numeric":
-			createTableQuery += fmt.Sprintf("%s %s(%d, %d)", column.ColumnName, strings.ToUpper(column.DataType), *column.NumPrecision, *column.NumScale)
-		case "bool", "boolean":
-			createTableQuery += fmt.Sprintf("%s %s", column.ColumnName, "BOOLEAN")
-		case "date":
-			createTableQuery += fmt.Sprintf("%s %s", column.ColumnName, "DATE")
-		case "datetime", "timestamp", "time":
-			createTableQuery += fmt.Sprintf("%s %s(%d)", column.ColumnName, strings.ToUpper(column.DataType), *column.DateTimePrec)
-		default:
-			fmt.Println("Unsupported data type: ", column.DataType)
-		}
-		if column.IsNullable == "false" {
-			createTableQuery += " NOT NULL"
-		}
-		if column.ColumnDefault != nil {
-			createTableQuery += fmt.Sprintf(` DEFAULT '%s'`, GetDefaultValueString(*column.ColumnDefault))
-		} else if column.IsNullable == "true" {
-			createTableQuery += " DEFAULT NULL"
-		}
-		columnRows = append(columnRows, createTableQuery)
+		columnRows = append(columnRows, row)
 	}
 
 	indexQuery := fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", sourceDatabase, sourceTable) // FIXME: Escape
 	indexRows, err := sourceTiDBConn.QueryContext(context.Background(), indexQuery)
 	if err != nil {
-		return "", err
+		return "", errors.Trace(err)
 	}
 	indexResults, err := export.GetSpecifiedColumnValuesAndClose(indexRows, "KEY_NAME", "COLUMN_NAME", "SEQ_IN_INDEX")
 	if err != nil {
-		return "", err
+		return "", errors.Trace(err)
 	}
 
 	snowflakePKColumns := make([]string, 0)

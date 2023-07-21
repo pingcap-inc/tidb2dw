@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"os/signal"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -17,7 +16,6 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tiflow/cdc/contextutil"
 	"github.com/pingcap/tiflow/cdc/model"
 	sinkutil "github.com/pingcap/tiflow/cdc/sink/util"
 	"github.com/pingcap/tiflow/pkg/cmd/util"
@@ -26,11 +24,10 @@ import (
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 )
 
-const (
-	fakePartitionNumForSchemaFile = -1
-)
+const fakePartitionNumForSchemaFile = -1
 
 // fileIndexRange defines a range of files. eg. CDC000002.csv ~ CDC000005.csv
 type fileIndexRange struct {
@@ -57,11 +54,13 @@ type consumer struct {
 }
 
 func newConsumer(ctx context.Context, sfConfig *snowsql.SnowflakeConfig, sinkUri *url.URL, configFile, timezone string, credential *credentials.Value) (*consumer, error) {
-	tz, err := putil.GetTimezone(timezone)
+	_, err := putil.GetTimezone(timezone)
 	if err != nil {
 		return nil, errors.Annotate(err, "can not load timezone")
 	}
-	ctx = contextutil.PutTimezoneInCtx(ctx, tz)
+	serverCfg := config.GetGlobalServerConfig().Clone()
+	serverCfg.TZ = timezone
+	config.StoreGlobalServerConfig(serverCfg)
 	replicaConfig := config.GetDefaultReplicaConfig()
 	if len(configFile) > 0 {
 		err := util.StrictDecodeFile(configFile, "storage consumer", replicaConfig)
@@ -107,7 +106,6 @@ func newConsumer(ctx context.Context, sfConfig *snowsql.SnowflakeConfig, sinkUri
 		errCh:           errCh,
 		tableDMLIdxMap:  make(map[cloudstorage.DmlPathKey]uint64),
 		tableDefMap:     make(map[string]map[uint64]*cloudstorage.TableDefinition),
-		// tableSinkMap:    make(map[model.TableID]tablesink.TableSink),
 		tableIDGenerator: &fakeTableIDGenerator{
 			tableIDs: make(map[string]int64),
 		},
@@ -179,22 +177,58 @@ func (c *consumer) getNewFiles(
 	return tableDMLMap, err
 }
 
-func (c *consumer) waitTableFlushComplete(
+func (c *consumer) syncExecDDLEvents(
 	ctx context.Context,
-	tableID model.TableID,
-	filePath string,
 	tableDef cloudstorage.TableDefinition,
+	tableID int64,
+	key cloudstorage.DmlPathKey,
 ) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-c.errCh:
-		return err
-	default:
-	}
+	if len(tableDef.Query) == 0 {
+		// schema.json file without query is used to initialize the columns.
+		if err := c.snowflakeConnectorMap[tableID].InitColumns(tableDef.Columns); err != nil {
+			return errors.Trace(err)
+		}
+	} else {
+		if err := c.snowflakeConnectorMap[tableID].ExecDDL(tableDef); err != nil {
+			// FIXME: if there is a DDL before all the DMLs, will return error here.
+			return errors.Annotate(err,
+				fmt.Sprintf("Please check the DDL query, "+
+					"if necessary, please manually execute the DDL query in Snowflake, "+
+					"update the `query` of the %s%s/%s/meta/schema_%d_{hash}.json to empty, "+
+					"and restart the program",
+					c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
+		}
 
-	if err := c.snowflakeConnectorMap[tableID].MergeFile(tableDef, c.sinkURI, filePath); err != nil {
-		return errors.Trace(err)
+		// The following logic is used to handle pause and resume.
+		// Keep the current table definition file with len(query) == 0 and delete all the outdated files.
+
+		// Delete all the outdated table definition files.
+		for _, item := range c.tableDefMap[key.GetKey()] {
+			if item.TableVersion < tableDef.TableVersion {
+				filePath, err := item.GenerateSchemaFilePath()
+				if err != nil {
+					return errors.Trace(err)
+				}
+				if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
+					return errors.Trace(err)
+				}
+				delete(c.tableDefMap[key.GetKey()], item.TableVersion)
+			}
+		}
+		// clear the query in the current table definition file.
+		tableDef.Query = ""
+		data, err := tableDef.MarshalWithQuery()
+		if err != nil {
+			return errors.Trace(err)
+		}
+		filePath, err := tableDef.GenerateSchemaFilePath()
+		if err != nil {
+			return errors.Trace(err)
+		}
+		// update the current table definition file.
+		if err = c.externalStorage.WriteFile(ctx, filePath, data); err != nil {
+			return errors.Trace(err)
+		}
 	}
 	return nil
 }
@@ -219,11 +253,12 @@ func (c *consumer) syncExecDMLEvents(
 		return nil
 	}
 
-	if err = c.waitTableFlushComplete(ctx, tableID, filePath, tableDef); err != nil {
+	// merge file into snowflake
+	if err := c.snowflakeConnectorMap[tableID].MergeFile(tableDef, c.sinkURI, filePath); err != nil {
 		return errors.Trace(err)
 	}
 
-	// delete file after flush complete in order to avoid duplicate flush
+	// delete file after merge complete in order to avoid duplicate merge when program restarts
 	if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
 		return errors.Trace(err)
 	}
@@ -338,25 +373,25 @@ func (c *consumer) handleNewFiles(
 		keys = append(keys, k)
 	}
 	if len(keys) == 0 {
-		log.Info("no new dml files found since last round")
+		log.Info("no new files found since last round")
 		return nil
 	}
-	log.Info("new dml files found since last round", zap.Any("keys", keys))
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].TableVersion != keys[j].TableVersion {
-			return keys[i].TableVersion < keys[j].TableVersion
+	slices.SortStableFunc(keys, func(x, y cloudstorage.DmlPathKey) bool {
+		if x.TableVersion != y.TableVersion {
+			return x.TableVersion < y.TableVersion
 		}
-		if keys[i].PartitionNum != keys[j].PartitionNum {
-			return keys[i].PartitionNum < keys[j].PartitionNum
+		if x.PartitionNum != y.PartitionNum {
+			return x.PartitionNum < y.PartitionNum
 		}
-		if keys[i].Date != keys[j].Date {
-			return keys[i].Date < keys[j].Date
+		if x.Date != y.Date {
+			return x.Date < y.Date
 		}
-		if keys[i].Schema != keys[j].Schema {
-			return keys[i].Schema < keys[j].Schema
+		if x.Schema != y.Schema {
+			return x.Schema < y.Schema
 		}
-		return keys[i].Table < keys[j].Table
+		return x.Table < y.Table
 	})
+	log.Info("new files found since last round", zap.Any("keys", keys))
 
 	// TODO: support handling dml events of different tables concurrently.
 	// Note: dml events of the same table should be handled sequentially.
@@ -382,20 +417,18 @@ func (c *consumer) handleNewFiles(
 		}
 
 		// if the key is a fake dml path key which is mainly used for
-		// sorting schema.json file before the dml files, then execute the ddl query.
-		if key.PartitionNum == fakePartitionNumForSchemaFile &&
-			len(key.Date) == 0 && len(tableDef.Query) > 0 {
-			return errors.Errorf("Please check the DDL query: [%s], "+
-				"if necessary, please manually execute the DDL query in Snowflake, "+
-				"remove the %s/%s/%s/meta/schema_%d_{hash}.json, "+
-				"and restart the program.",
-				tableDef.Query, c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion)
+		// sorting schema.json file before the dml files, which means it is a schema.json file.
+		if key.PartitionNum == fakePartitionNumForSchemaFile && len(key.Date) == 0 {
+			if err := c.syncExecDDLEvents(ctx, tableDef, tableID, key); err != nil {
+				return errors.Trace(err)
+			}
+			continue
 		}
 
 		fileRange := dmlFileMap[key]
 		for i := fileRange.start; i <= fileRange.end; i++ {
 			if err := c.syncExecDMLEvents(ctx, tableDef, tableID, key, i); err != nil {
-				return err
+				return errors.Trace(err)
 			}
 		}
 	}
