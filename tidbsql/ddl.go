@@ -44,13 +44,13 @@ func GetColumnDiff(prev []cloudstorage.TableCol, curr []cloudstorage.TableCol) (
 	// name -> column
 	prevNameMap := make(map[string]*cloudstorage.TableCol, len(prev))
 	// id -> column
-	prevIDMap := make(map[int64]*cloudstorage.TableCol, len(prev))
+	prevIDMap := make(map[string]*cloudstorage.TableCol, len(prev))
 	for i, item := range prev {
 		prevNameMap[item.Name] = &prev[i]
 		prevIDMap[item.ID] = &prev[i]
 	}
 	currNameMap := make(map[string]*cloudstorage.TableCol, len(curr))
-	currIDMap := make(map[int64]*cloudstorage.TableCol, len(curr))
+	currIDMap := make(map[string]*cloudstorage.TableCol, len(curr))
 	for i, item := range curr {
 		currNameMap[item.Name] = &curr[i]
 		currIDMap[item.ID] = &curr[i]

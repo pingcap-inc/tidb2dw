@@ -9,7 +9,7 @@ require (
 	github.com/pingcap/log v1.1.1-0.20230317032135-a0d097d16e22
 	github.com/pingcap/tidb v1.1.0-beta.0.20230609033446-1061ed208c94
 	github.com/pingcap/tidb/parser v0.0.0-20230609033446-1061ed208c94
-	github.com/pingcap/tiflow v0.0.0-20230607052141-d20d6d6667fc
+	github.com/pingcap/tiflow v0.0.0-20230720025618-1a67111bcb5d
 	github.com/snowflakedb/gosnowflake v1.6.18
 	github.com/spf13/cobra v1.7.0
 	github.com/stretchr/testify v1.8.4
@@ -260,5 +260,3 @@ replace (
 	github.com/ugorji/go => github.com/ugorji/go/codec v1.1.7
 	go.opencensus.io => go.opencensus.io v0.23.1-0.20220331163232-052120675fac
 )
-
-replace github.com/pingcap/tiflow => github.com/Lloyd-Pottiger/tiflow v0.0.0-20230707062523-28bf48038208

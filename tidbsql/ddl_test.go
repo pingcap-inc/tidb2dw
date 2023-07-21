@@ -11,46 +11,46 @@ import (
 func TestGetColumnDiff(t *testing.T) {
 	prev := []cloudstorage.TableCol{
 		{
-			ID:        1,
+			ID:        "1",
 			Name:      "id",
 			Tp:        "int",
 			Precision: "11",
 		},
 		{
-			ID:   2,
+			ID:   "2",
 			Name: "name",
 			Tp:   "varchar",
 		},
 		{
-			ID:   3,
+			ID:   "3",
 			Name: "age",
 			Tp:   "int",
 		},
 		{
-			ID:   4,
+			ID:   "4",
 			Name: "birth",
 			Tp:   "date",
 		},
 	}
 	curr := []cloudstorage.TableCol{
 		{
-			ID:        5,
+			ID:        "5",
 			Name:      "id",
 			Tp:        "char",
 			Precision: "10",
 		},
 		{
-			ID:   2,
+			ID:   "2",
 			Name: "color",
 			Tp:   "varchar",
 		},
 		{
-			ID:   4,
+			ID:   "4",
 			Name: "birth",
 			Tp:   "date",
 		},
 		{
-			ID:   6,
+			ID:   "6",
 			Name: "gender",
 			Tp:   "varchar",
 		},

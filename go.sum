@@ -79,8 +79,6 @@ github.com/Joker/hpp v1.0.0/go.mod h1:8x5n+M1Hp5hC0g8okX3sR3vFQwynaX/UgSOM9MeBKz
 github.com/Joker/jade v1.0.1-0.20190614124447-d475f43051e7/go.mod h1:6E6s8o2AE4KhCrqr6GRJjdC/gNfTdxkIXvuGZZda2VM=
 github.com/KimMachineGun/automemlimit v0.2.4 h1:GBty8TK8k0aJer1Pq5/3Vdt2ef+YpLhcqNo+PSD5CoI=
 github.com/KimMachineGun/automemlimit v0.2.4/go.mod h1:38QAnnnNhnFuAIW3+aPlaVUHqzE9buJYZK3m/jsra8E=
-github.com/Lloyd-Pottiger/tiflow v0.0.0-20230707062523-28bf48038208 h1:/THDjjYICrTBatKvtgN/EQNtQsjBxVhAp2ryz61hk+I=
-github.com/Lloyd-Pottiger/tiflow v0.0.0-20230707062523-28bf48038208/go.mod h1:rMZvgNZUD3EBDPvZjMib6jDO3mlo0AkZ7qrcB4F7EvI=
 github.com/Masterminds/semver v1.5.0 h1:H65muMkzWKEuNDnfl9d70GUjFniHKHRbFPGBuZ3QEww=
 github.com/Masterminds/semver v1.5.0/go.mod h1:MB6lktGJrhw8PrUyiEoblNEGEQ+RzHPF078ddwwvV3Y=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
@@ -720,6 +718,8 @@ github.com/pingcap/tidb-tools v7.0.0+incompatible h1:CHjAva2ON13HZAB0HRNI69fC/1A
 github.com/pingcap/tidb-tools v7.0.0+incompatible/go.mod h1:XGdcy9+yqlDSEMTpOXnwf3hiTeqrV6MN/u1se9N8yIM=
 github.com/pingcap/tidb/parser v0.0.0-20230609033446-1061ed208c94 h1:kNS6FpT1q/Qu3fFB46/EFhzrhL0Bon1M71E3JVYrO9w=
 github.com/pingcap/tidb/parser v0.0.0-20230609033446-1061ed208c94/go.mod h1:F6gt/zER0apYbw9dx1esEW1jlHTHmRi0qRk75yWH7ak=
+github.com/pingcap/tiflow v0.0.0-20230720025618-1a67111bcb5d h1:+SUxHznu3R1IDkOizxkjKrnnTrRvEs1rGSgy9K4dDj8=
+github.com/pingcap/tiflow v0.0.0-20230720025618-1a67111bcb5d/go.mod h1:S3oDynRUDvL2KOoNuhAlqUYUA6DRLT8Mb6a4aNPMZyo=
 github.com/pingcap/tipb v0.0.0-20230602100112-acb7942db1ca h1:J2HQyR5v1AcoBzx5/AYJW9XFSIl6si6YoC6yGI1W89c=
 github.com/pingcap/tipb v0.0.0-20230602100112-acb7942db1ca/go.mod h1:A7mrd7WHBl1o63LE2bIBGEJMTNWXqhgmYiOvMLxozfs=
 github.com/pkg/browser v0.0.0-20180916011732-0a3d74bf9ce4/go.mod h1:4OwLy04Bl9Ef3GJJCoec+30X3LQs/0/m4HFRt/2LUSA=
