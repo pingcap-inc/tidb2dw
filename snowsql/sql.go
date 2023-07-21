@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -155,6 +156,14 @@ ON_ERROR = CONTINUE;
 	return err
 }
 
+func GetDefaultValueString(val string) string {
+	_, err := strconv.ParseFloat(fmt.Sprint(val), 64)
+	if err != nil {
+		return fmt.Sprintf("'%s'", val) // FIXME: escape
+	}
+	return fmt.Sprint(val)
+}
+
 func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) (string, error) {
 	tableColumns, err := tidbsql.GetTiDBTableColumn(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
@@ -258,7 +267,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 		(
 			%s
 		)
-		WHEN MATCHED AND S.METADATA$FLAG = 'U' THEN UPDATE SET %s
+		WHEN MATCHED AND S.METADATA$FLAG != 'D' THEN UPDATE SET %s
 		WHEN MATCHED AND S.METADATA$FLAG = 'D' THEN DELETE
 		WHEN NOT MATCHED AND S.METADATA$FLAG != 'D' THEN INSERT (%s) VALUES (%s);`,
 		tableDef.Table,
