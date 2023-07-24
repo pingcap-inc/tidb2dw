@@ -97,13 +97,12 @@ func newConsumer(ctx context.Context, sfConfig *snowsql.SnowflakeConfig, sinkUri
 		return nil, err
 	}
 
-	errCh := make(chan error, 1)
 	return &consumer{
 		sfConfig:        sfConfig,
 		replicationCfg:  replicaConfig,
 		externalStorage: storage,
 		fileExtension:   extension,
-		errCh:           errCh,
+		errCh:           make(chan error, 1),
 		tableDMLIdxMap:  make(map[cloudstorage.DmlPathKey]uint64),
 		tableDefMap:     make(map[string]map[uint64]*cloudstorage.TableDefinition),
 		tableIDGenerator: &fakeTableIDGenerator{
@@ -189,6 +188,7 @@ func (c *consumer) syncExecDDLEvents(
 			return errors.Trace(err)
 		}
 	} else {
+		// TODO: make this block is atomic
 		if err := c.snowflakeConnectorMap[tableID].ExecDDL(tableDef); err != nil {
 			// FIXME: if there is a DDL before all the DMLs, will return error here.
 			return errors.Annotate(err,
@@ -253,14 +253,16 @@ func (c *consumer) syncExecDMLEvents(
 		return nil
 	}
 
-	// merge file into snowflake
-	if err := c.snowflakeConnectorMap[tableID].MergeFile(tableDef, c.sinkURI, filePath); err != nil {
-		return errors.Trace(err)
-	}
+	{ // TODO: make this block is atomic
+		// merge file into snowflake
+		if err := c.snowflakeConnectorMap[tableID].MergeFile(tableDef, c.sinkURI, filePath); err != nil {
+			return errors.Trace(err)
+		}
 
-	// delete file after merge complete in order to avoid duplicate merge when program restarts
-	if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
-		return errors.Trace(err)
+		// delete file after merge complete in order to avoid duplicate merge when program restarts
+		if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
+			return errors.Trace(err)
+		}
 	}
 
 	return nil

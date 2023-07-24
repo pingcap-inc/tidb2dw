@@ -38,7 +38,7 @@ func genSinkURI(storagePath string, flushInterval time.Duration, fileSize int64)
 		creds := credentials.NewEnvCredentials()
 		credValue, err := creds.Get()
 		if err != nil {
-			log.Error("Failed to resolve AWS credential", zap.Error(err))
+			return nil, errors.Annotate(err, "Failed to resolve AWS credential")
 		}
 		values.Add("access-key", credValue.AccessKeyID)
 		values.Add("secret-access-key", credValue.SecretAccessKey)
@@ -48,12 +48,12 @@ func genSinkURI(storagePath string, flushInterval time.Duration, fileSize int64)
 	} else if sinkUri.Scheme == "gcs" {
 		credValue, found := syscall.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 		if !found {
-			log.Error("Failed to resolve AWS credential")
+			return nil, errors.New("Failed to resolve GCS credential")
 		} else {
 			values.Add("credentials-file", credValue)
 		}
 	} else {
-		return sinkUri, errors.Errorf("get sink uri failed, unsupported uri schema: %s", sinkUri.Scheme)
+		return nil, errors.Errorf("get sink uri failed, unsupported uri schema: %s", sinkUri.Scheme)
 	}
 	sinkUri.RawQuery = values.Encode()
 	return sinkUri, nil
@@ -74,9 +74,10 @@ func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, start
 		sinkConfig["csv"] = csvConfig
 		cloudStorageConfig := make(map[string]interface{})
 		cloudStorageConfig["output_column_id"] = true
-		// TODO: config worker count
 		sinkConfig["cloud_storage_config"] = cloudStorageConfig
 		replicateConfig["sink"] = sinkConfig
+		// CSV protocol must disable old value.
+		replicateConfig["enable_old_value"] = false
 		data["replica_config"] = replicateConfig
 	}
 	if startTSO != 0 {
@@ -105,8 +106,9 @@ func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, start
 	if err = json.Unmarshal(body, &respData); err != nil {
 		return errors.Trace(err)
 	}
-	changefeedID, _ := respData["id"].(string)
-	log.Info("create changefeed success", zap.String("changefeed-id", changefeedID), zap.Any("changefeed-config", respData))
+	changefeedID := respData["id"].(string)
+	replicateConfig := respData["config"].(map[string]interface{})
+	log.Info("create changefeed success", zap.String("changefeed-id", changefeedID), zap.Any("replica-config", replicateConfig))
 
 	return nil
 }
