@@ -72,6 +72,10 @@ func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, start
 		csvConfig["include_commit_ts"] = true
 		sinkConfig := make(map[string]interface{})
 		sinkConfig["csv"] = csvConfig
+		cloudStorageConfig := make(map[string]interface{})
+		cloudStorageConfig["output_column_id"] = true
+		// TODO: config worker count
+		sinkConfig["cloud_storage_config"] = cloudStorageConfig
 		replicateConfig["sink"] = sinkConfig
 		data["replica_config"] = replicateConfig
 	}
