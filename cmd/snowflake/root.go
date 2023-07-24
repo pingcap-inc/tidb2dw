@@ -76,6 +76,8 @@ func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, start
 		cloudStorageConfig["output_column_id"] = true
 		sinkConfig["cloud_storage_config"] = cloudStorageConfig
 		replicateConfig["sink"] = sinkConfig
+		// CSV protocol must disable old value.
+		replicateConfig["enable_old_value"] = false
 		data["replica_config"] = replicateConfig
 	}
 	if startTSO != 0 {
