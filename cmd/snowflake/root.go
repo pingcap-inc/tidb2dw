@@ -202,11 +202,14 @@ func NewSnowflakeCmd() *cobra.Command {
 			sinkURI = uri
 		}
 
-		parts := strings.SplitN(tableFQN, ".", 2)
-		if len(parts) != 2 {
-			return errors.Errorf("table must be a full-qualified name like mydb.mytable")
+		var sourceDatabase, sourceTable string
+		if tableFQN != "" {
+			parts := strings.SplitN(tableFQN, ".", 2)
+			if len(parts) != 2 {
+				return errors.Errorf("table must be a full-qualified name like mydb.mytable")
+			}
+			sourceDatabase, sourceTable = parts[0], parts[1]
 		}
-		sourceDatabase, sourceTable := parts[0], parts[1]
 
 		// 3. run replicate snapshot
 		if (mode == RunModeFull || mode == RunModeSnapshotOnly) && !loadinfoExist {
@@ -319,6 +322,5 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sindURIStr, "sink-uri", "", "sink uri, only needed under incremental-only mode")
 
 	cmd.MarkFlagRequired("storage")
-	cmd.MarkFlagRequired("table")
 	return cmd
 }
