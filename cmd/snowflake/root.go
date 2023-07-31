@@ -8,13 +8,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pingcap-inc/tidb2dw/downstreams/snowflake"
-	"github.com/pingcap-inc/tidb2dw/snowsql"
-	"github.com/pingcap-inc/tidb2dw/tidbsql"
+	"github.com/pingcap-inc/tidb2dw/pkg/snowsql"
+	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
+	"github.com/pingcap-inc/tidb2dw/replicate"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/logutil"
@@ -201,13 +202,36 @@ func NewSnowflakeCmd() *cobra.Command {
 			sinkURI = uri
 		}
 
+		parts := strings.SplitN(tableFQN, ".", 2)
+		if len(parts) != 2 {
+			return errors.Errorf("table must be a full-qualified name like mydb.mytable")
+		}
+		sourceDatabase, sourceTable := parts[0], parts[1]
+
 		// 3. run replicate snapshot
 		if (mode == RunModeFull || mode == RunModeSnapshotOnly) && !loadinfoExist {
 			snapStoragePath, err := url.JoinPath(storagePath, "snapshot")
 			if err != nil {
 				return errors.Trace(err)
 			}
-			if err = snowflake.StartReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapStoragePath, fmt.Sprint(startTSO), &credValue); err != nil {
+			db, err := snowflakeConfigFromCli.OpenDB()
+			if err != nil {
+				return errors.Trace(err)
+			}
+			snapshotURI, err := url.Parse(snapStoragePath)
+			if err != nil {
+				return errors.Annotate(err, "Failed to parse workspace path")
+			}
+			connector, err := snowsql.NewSnowflakeConnector(
+				db,
+				fmt.Sprintf("snapshot_stage_%s", sourceTable),
+				snapshotURI,
+				&credValue,
+			)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			if err = replicate.StartReplicateSnapshot(connector, &tidbConfigFromCli, sourceDatabase, sourceTable, snapshotConcurrency, snapStoragePath, fmt.Sprint(startTSO), &credValue); err != nil {
 				return errors.Annotate(err, "Failed to replicate snapshot")
 			}
 		} else if !loadinfoExist {
@@ -216,7 +240,20 @@ func NewSnowflakeCmd() *cobra.Command {
 
 		// 4. run replicate increment
 		if mode == RunModeFull || mode == RunModeIncrementalOnly {
-			if err = snowflake.StartReplicateIncrement(&snowflakeConfigFromCli, sinkURI, cdcFlushInterval/5, "", timezone, &credValue); err != nil {
+			db, err := snowflakeConfigFromCli.OpenDB()
+			if err != nil {
+				return errors.Trace(err)
+			}
+			connector, err := snowsql.NewSnowflakeConnector(
+				db,
+				fmt.Sprintf("increment_stage_%s", sourceTable),
+				sinkURI,
+				&credValue,
+			)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			if err = replicate.StartReplicateIncrement(connector, sinkURI, cdcFlushInterval/5, "", timezone, &credValue); err != nil {
 				return errors.Annotate(err, "Failed to replicate incremental")
 			}
 		}

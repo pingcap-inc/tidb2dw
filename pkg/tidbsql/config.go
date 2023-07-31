@@ -20,7 +20,10 @@ type TiDBConfig struct {
 	SSLCA string
 }
 
-func OpenTiDB(config *TiDBConfig) (*sql.DB, error) {
+/// implement the Config interface
+
+// func Open opens a connection to TiDB
+func (config *TiDBConfig) OpenDB() (*sql.DB, error) {
 	tidbConfig := mysql.NewConfig()
 	tidbConfig.User = config.User
 	tidbConfig.Passwd = config.Pass

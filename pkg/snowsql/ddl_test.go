@@ -3,7 +3,7 @@ package snowsql_test
 import (
 	"testing"
 
-	"github.com/pingcap-inc/tidb2dw/snowsql"
+	"github.com/pingcap-inc/tidb2dw/pkg/snowsql"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"github.com/stretchr/testify/require"
 )

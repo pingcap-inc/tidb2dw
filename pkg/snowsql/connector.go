@@ -7,50 +7,15 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
-	"github.com/snowflakedb/gosnowflake"
 	"go.uber.org/zap"
 )
 
-type SnowflakeConfig struct {
-	AccountId string
-	Warehouse string
-	User      string
-	Pass      string
-	Database  string
-	Schema    string
-}
-
-func OpenSnowflake(config *SnowflakeConfig) (*sql.DB, error) {
-	sfConfig := gosnowflake.Config{
-		Account:   config.AccountId,
-		User:      config.User,
-		Password:  config.Pass,
-		Database:  config.Database,
-		Schema:    config.Schema,
-		Warehouse: config.Warehouse,
-	}
-	dsn, err := gosnowflake.DSN(&sfConfig)
-	if err != nil {
-		return nil, errors.Annotate(err, "Failed to generate Snowflake DSN")
-	}
-	db, err := sql.Open("snowflake", dsn)
-	if err != nil {
-		return nil, errors.Annotate(err, "Failed to open Snowflake connection")
-	}
-	// make sure the connection is available
-	if err = db.Ping(); err != nil {
-		return nil, errors.Annotate(err, "Failed to ping Snowflake")
-	}
-	log.Info("Snowflake connection established")
-	return db, nil
-}
-
 // A Wrapper of snowflake connection.
-// One SnowflakeConnector is responsible for one table.
-// All snowflake related operations should be done through this struct.
+// It implements the coreinterfaces.Connector interface.
 type SnowflakeConnector struct {
 	// db is the connection to snowflake.
 	db *sql.DB
@@ -60,13 +25,13 @@ type SnowflakeConnector struct {
 	columns []cloudstorage.TableCol
 }
 
-func NewSnowflakeConnector(db *sql.DB, stageName string, upstreamURI *url.URL, credentials *credentials.Value) (*SnowflakeConnector, error) {
+func NewSnowflakeConnector(db *sql.DB, stageName string, storageURI *url.URL, credentials *credentials.Value) (*SnowflakeConnector, error) {
 	// create stage
 	var err error
-	if upstreamURI.Host == "" {
+	if storageURI.Host == "" {
 		err = CreateInternalStage(db, stageName)
 	} else {
-		stageUrl := fmt.Sprintf("%s://%s%s", upstreamURI.Scheme, upstreamURI.Host, upstreamURI.Path)
+		stageUrl := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
 		err = CreateExternalStage(db, stageName, stageUrl, credentials)
 	}
 	if err != nil {
@@ -80,7 +45,7 @@ func NewSnowflakeConnector(db *sql.DB, stageName string, upstreamURI *url.URL, c
 	}, nil
 }
 
-func (sc *SnowflakeConnector) InitColumns(columns []cloudstorage.TableCol) error {
+func (sc *SnowflakeConnector) InitSchema(columns []cloudstorage.TableCol) error {
 	if len(sc.columns) != 0 {
 		return nil
 	}
@@ -141,7 +106,7 @@ func (sc *SnowflakeConnector) LoadSnapshot(targetTable, filePrefix string, onSna
 	return nil
 }
 
-func (sc *SnowflakeConnector) MergeFile(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
+func (sc *SnowflakeConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
 	if uri.Scheme == "file" {
 		// if the file is local, we need to upload it to stage first
 		putQuery := fmt.Sprintf(`PUT file://%s/%s '@%s/%s';`, uri.Path, filePath, sc.stageName, filePath)
@@ -174,11 +139,14 @@ func (sc *SnowflakeConnector) MergeFile(tableDef cloudstorage.TableDefinition, u
 	return nil
 }
 
+func (sc *SnowflakeConnector) Clone(stageName string, storageURI *url.URL, credentials *credentials.Value) (coreinterfaces.Connector, error) {
+	return NewSnowflakeConnector(sc.db, stageName, storageURI, credentials)
+}
+
 func (sc *SnowflakeConnector) Close() {
 	// drop stage
 	if err := DropStage(sc.db, sc.stageName); err != nil {
 		log.Error("fail to drop stage", zap.Error(err))
 	}
-
 	sc.db.Close()
 }

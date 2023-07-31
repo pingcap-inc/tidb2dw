@@ -1,4 +1,4 @@
-package snowflake
+package replicate
 
 import (
 	"context"
@@ -14,8 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/pingcap-inc/tidb2dw/snowsql"
-	"github.com/pingcap-inc/tidb2dw/tidbsql"
+	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
+	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/dumpling/export"
@@ -24,16 +24,14 @@ import (
 )
 
 type SnapshotReplicateSession struct {
-	SFConfig            *snowsql.SnowflakeConfig
 	TiDBConfig          *tidbsql.TiDBConfig
-	TableFQN            string
 	SnapshotConcurrency int
 	ResolvedS3Region    string
 	ResolvedTSO         string // Available after buildDumper()
 
-	AWSCredential *credentials.Value // The resolved credential from current env
-	SnowflakePool *snowsql.SnowflakeConnector
-	TiDBPool      *sql.DB
+	AWSCredential     *credentials.Value // The resolved credential from current env
+	DataWarehousePool coreinterfaces.Connector
+	TiDBPool          *sql.DB
 
 	SourceDatabase string
 	SourceTable    string
@@ -47,44 +45,32 @@ type SnapshotReplicateSession struct {
 }
 
 func NewSnapshotReplicateSession(
-	sfConfig *snowsql.SnowflakeConfig,
+	dwConnector coreinterfaces.Connector,
 	tidbConfig *tidbsql.TiDBConfig,
-	tableFQN string,
+	sourceDatabase, sourceTable string,
 	snapshotConcurrency int,
 	s3StoragePath string,
 	startTSO string,
 	credential *credentials.Value) (*SnapshotReplicateSession, error) {
 	sess := &SnapshotReplicateSession{
-		SFConfig:            sfConfig,
 		TiDBConfig:          tidbConfig,
-		TableFQN:            tableFQN,
+		SourceDatabase:      sourceDatabase,
+		SourceTable:         sourceTable,
 		SnapshotConcurrency: snapshotConcurrency,
 		StartTSO:            startTSO,
 	}
+	sess.DataWarehousePool = dwConnector
 	workUri, err := url.Parse(s3StoragePath)
 	if err != nil {
 		return nil, errors.Annotate(err, "Failed to parse workspace path")
 	}
 	sess.StorageWorkspaceUri = *workUri
-	{
-		parts := strings.SplitN(tableFQN, ".", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("table must be a full-qualified name like mydb.mytable")
-		}
-		sess.SourceDatabase = parts[0]
-		sess.SourceTable = parts[1]
-	}
 	log.Info("Creating replicate session",
 		zap.String("storage", sess.StorageWorkspaceUri.String()),
-		zap.String("source", tableFQN))
+		zap.String("source", fmt.Sprintf("%s.%s", sourceDatabase, sourceTable)))
 	sess.AWSCredential = credential
 	{
-		// Parse s3StoragePath like s3://snowflake-test/dump20230601
-		parsed, err := url.Parse(s3StoragePath)
-		if err != nil {
-			return nil, errors.Annotate(err, "Failed to parse --storage value")
-		}
-		sess.StorageSchema = parsed.Scheme
+		sess.StorageSchema = workUri.Scheme
 		switch sess.StorageSchema {
 		case "s3":
 			awsSession, err := session.NewSessionWithOptions(session.Options{
@@ -94,7 +80,7 @@ func NewSnapshotReplicateSession(
 				return nil, errors.Annotate(err, "Failed to establish AWS session")
 			}
 
-			bucket := parsed.Host
+			bucket := workUri.Host
 			log.Debug("Resolving storage region")
 			s3Region, err := s3manager.GetBucketRegion(context.Background(), awsSession, bucket, "us-west-2")
 			if err != nil {
@@ -111,30 +97,7 @@ func NewSnapshotReplicateSession(
 		}
 	}
 	{
-		switch sess.StorageSchema {
-		case "s3":
-			db, err := snowsql.OpenSnowflake(sfConfig)
-			if err != nil {
-				return nil, errors.Trace(err)
-			}
-			connector, err := snowsql.NewSnowflakeConnector(
-				db,
-				fmt.Sprintf("snapshot_stage_%s", sess.SourceTable),
-				&sess.StorageWorkspaceUri,
-				sess.AWSCredential,
-			)
-			if err != nil {
-				return nil, errors.Annotate(err, "Failed to create Snowflake connector")
-			}
-			sess.SnowflakePool = connector
-		case "gcs":
-			sess.SnowflakePool = nil
-			log.Info("Skip connecting to snowflake. GCS does not support snowflake connector now...")
-		}
-
-	}
-	{
-		db, err := tidbsql.OpenTiDB(tidbConfig)
+		db, err := tidbConfig.OpenDB()
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
@@ -154,11 +117,12 @@ func NewSnapshotReplicateSession(
 }
 
 func (sess *SnapshotReplicateSession) Close() {
-	// no connector for gcs now
-	if sess.SnowflakePool != nil {
-		sess.SnowflakePool.Close()
+	if sess.DataWarehousePool != nil {
+		sess.DataWarehousePool.Close()
 	}
-	sess.TiDBPool.Close()
+	if sess.TiDBPool != nil {
+		sess.TiDBPool.Close()
+	}
 }
 
 func (sess *SnapshotReplicateSession) Run() error {
@@ -168,11 +132,11 @@ func (sess *SnapshotReplicateSession) Run() error {
 	}
 	switch sess.StorageSchema {
 	case "s3":
-		if err = sess.SnowflakePool.CopyTableSchema(sess.SourceDatabase, sess.SourceTable, sess.TiDBPool); err != nil {
+		if err = sess.DataWarehousePool.CopyTableSchema(sess.SourceDatabase, sess.SourceTable, sess.TiDBPool); err != nil {
 			return errors.Trace(err)
 		}
 	case "gcs":
-		log.Info("Skip snowflake table schema copy. GCS does not supprt snowflake connector now...")
+		log.Info("Skip table schema copy. GCS does not supprt data warehouse connector now...")
 	}
 
 	wg := sync.WaitGroup{}
@@ -213,27 +177,27 @@ func (sess *SnapshotReplicateSession) Run() error {
 		return errors.Annotate(err, "Failed to dump table from TiDB")
 	}
 	status := dumper.GetStatus()
-	log.Info("Successfully dumped table from TiDB, starting to load into Snowflake", zap.Any("status", status))
+	log.Info("Successfully dumped table from TiDB, starting to load into data warehouse", zap.Any("status", status))
 
 	if sess.StorageSchema == "gcs" {
-		log.Info("Skip loading. GCS does not supprt snowflake connector now...")
+		log.Info("Skip loading. GCS does not supprt data warehouse connector now...")
 		return nil
 	}
 
 	startTime := time.Now()
-	if err = sess.loadSnapshotDataIntoSnowflake(); err != nil {
-		return errors.Annotate(err, "Failed to load snapshot data into Snowflake")
+	if err = sess.loadSnapshotDataIntoDataWarehouse(); err != nil {
+		return errors.Annotate(err, "Failed to load snapshot data into data warehouse")
 	}
 	endTime := time.Now()
 
 	// Write load info to workspace to record the status of load,
-	// loadinfo exists means the data has been all loaded into snowflake.
+	// loadinfo exists means the data has been all loaded into data warehouse.
 	ctx := context.Background()
 	storage, err := putil.GetExternalStorageFromURI(ctx, sess.StorageWorkspaceUri.String())
 	if err != nil {
 		log.Error("Failed to get external storage", zap.Error(err))
 	}
-	loadinfo := fmt.Sprintf("Copy to snowflake start time: %s\nCopy to snowflake end time: %s", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
+	loadinfo := fmt.Sprintf("Copy to data warehouse start time: %s\nCopy to data warehouse end time: %s", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
 	if err = storage.WriteFile(ctx, "loadinfo", []byte(loadinfo)); err != nil {
 		log.Error("Failed to upload loadinfo", zap.Error(err))
 	}
@@ -301,7 +265,7 @@ func (sess *SnapshotReplicateSession) buildDumperConfig() (*export.Config, error
 	conf.FileSize = filesize
 
 	conf.SpecifiedTables = true
-	tables, err := export.GetConfTables([]string{sess.TableFQN})
+	tables, err := export.GetConfTables([]string{fmt.Sprintf("%s.%s", sess.SourceDatabase, sess.SourceTable)})
 	if err != nil {
 		return nil, errors.Trace(err) // Should not happen
 	}
@@ -310,10 +274,10 @@ func (sess *SnapshotReplicateSession) buildDumperConfig() (*export.Config, error
 	return conf, nil
 }
 
-func (sess *SnapshotReplicateSession) loadSnapshotDataIntoSnowflake() error {
+func (sess *SnapshotReplicateSession) loadSnapshotDataIntoDataWarehouse() error {
 	workspacePrefix := strings.TrimPrefix(sess.StorageWorkspaceUri.Path, "/")
 	dumpFilePrefix := fmt.Sprintf("%s/%s.%s.", workspacePrefix, sess.SourceDatabase, sess.SourceTable)
-	if err := sess.SnowflakePool.LoadSnapshot(sess.SourceTable, dumpFilePrefix, sess.OnSnapshotLoadProgress); err != nil {
+	if err := sess.DataWarehousePool.LoadSnapshot(sess.SourceTable, dumpFilePrefix, sess.OnSnapshotLoadProgress); err != nil {
 		return errors.Trace(err)
 	}
 	// TODO: remove dump files
@@ -321,14 +285,14 @@ func (sess *SnapshotReplicateSession) loadSnapshotDataIntoSnowflake() error {
 }
 
 func StartReplicateSnapshot(
-	sfConfig *snowsql.SnowflakeConfig,
+	dwConnector coreinterfaces.Connector,
 	tidbConfig *tidbsql.TiDBConfig,
-	tableFQN string,
+	sourceDatabase, sourceTable string,
 	snapshotConcurrency int,
 	s3StoragePath string,
 	startTSO string,
 	credential *credentials.Value) error {
-	session, err := NewSnapshotReplicateSession(sfConfig, tidbConfig, tableFQN, snapshotConcurrency, s3StoragePath, startTSO, credential)
+	session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, snapshotConcurrency, s3StoragePath, startTSO, credential)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -337,7 +301,7 @@ func StartReplicateSnapshot(
 	if err = session.Run(); err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Successfully replicated snapshot from TiDB to Snowflake")
+	log.Info("Successfully replicated snapshot from TiDB to Data Warehouse")
 
 	return nil
 }
