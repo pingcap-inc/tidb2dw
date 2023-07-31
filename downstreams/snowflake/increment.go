@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	cfg "github.com/pingcap-inc/tidb2dw/config"
 	"github.com/pingcap-inc/tidb2dw/snowsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
@@ -36,7 +37,7 @@ type fileIndexRange struct {
 }
 
 type consumer struct {
-	sfConfig *snowsql.SnowflakeConfig
+	sfConfig *cfg.SnowflakeConfig
 
 	replicationCfg  *config.ReplicaConfig
 	externalStorage storage.ExternalStorage
@@ -53,7 +54,7 @@ type consumer struct {
 	sinkURI               *url.URL
 }
 
-func newConsumer(ctx context.Context, sfConfig *snowsql.SnowflakeConfig, sinkUri *url.URL, configFile, timezone string, credential *credentials.Value) (*consumer, error) {
+func newConsumer(ctx context.Context, sfConfig *cfg.SnowflakeConfig, sinkUri *url.URL, configFile, timezone string, credential *credentials.Value) (*consumer, error) {
 	_, err := putil.GetTimezone(timezone)
 	if err != nil {
 		return nil, errors.Annotate(err, "can not load timezone")
@@ -482,7 +483,7 @@ func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partiti
 	return g.currentTableID
 }
 
-func StartReplicateIncrement(sfConfig *snowsql.SnowflakeConfig, sinkUri *url.URL, flushInterval time.Duration, configFile, timezone string, credential *credentials.Value) error {
+func StartReplicateIncrement(sfConfig *cfg.SnowflakeConfig, sinkUri *url.URL, flushInterval time.Duration, configFile, timezone string, credential *credentials.Value) error {
 	var consumer *consumer
 	var err error
 

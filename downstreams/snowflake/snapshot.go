@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	cfg "github.com/pingcap-inc/tidb2dw/config"
 	"github.com/pingcap-inc/tidb2dw/snowsql"
 	"github.com/pingcap-inc/tidb2dw/tidbsql"
 	"github.com/pingcap/errors"
@@ -24,7 +25,7 @@ import (
 )
 
 type SnapshotReplicateSession struct {
-	SFConfig            *snowsql.SnowflakeConfig
+	SFConfig            *cfg.SnowflakeConfig
 	TiDBConfig          *tidbsql.TiDBConfig
 	TableFQN            string
 	SnapshotConcurrency int
@@ -47,7 +48,7 @@ type SnapshotReplicateSession struct {
 }
 
 func NewSnapshotReplicateSession(
-	sfConfig *snowsql.SnowflakeConfig,
+	sfConfig *cfg.SnowflakeConfig,
 	tidbConfig *tidbsql.TiDBConfig,
 	tableFQN string,
 	snapshotConcurrency int,
@@ -321,7 +322,7 @@ func (sess *SnapshotReplicateSession) loadSnapshotDataIntoSnowflake() error {
 }
 
 func StartReplicateSnapshot(
-	sfConfig *snowsql.SnowflakeConfig,
+	sfConfig *cfg.SnowflakeConfig,
 	tidbConfig *tidbsql.TiDBConfig,
 	tableFQN string,
 	snapshotConcurrency int,

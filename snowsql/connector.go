@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	cfg "github.com/pingcap-inc/tidb2dw/config"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
@@ -14,16 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type SnowflakeConfig struct {
-	AccountId string
-	Warehouse string
-	User      string
-	Pass      string
-	Database  string
-	Schema    string
-}
-
-func OpenSnowflake(config *SnowflakeConfig) (*sql.DB, error) {
+func OpenSnowflake(config *cfg.SnowflakeConfig) (*sql.DB, error) {
 	sfConfig := gosnowflake.Config{
 		Account:   config.AccountId,
 		User:      config.User,
