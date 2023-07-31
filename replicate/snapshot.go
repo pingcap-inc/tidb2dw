@@ -41,7 +41,6 @@ type SnapshotReplicateSession struct {
 	OnSnapshotLoadProgress func(loadedRows int64)
 
 	StorageWorkspaceUri url.URL
-	StorageSchema       string
 }
 
 func NewSnapshotReplicateSession(
@@ -49,7 +48,7 @@ func NewSnapshotReplicateSession(
 	tidbConfig *tidbsql.TiDBConfig,
 	sourceDatabase, sourceTable string,
 	snapshotConcurrency int,
-	s3StoragePath string,
+	snapshotURI *url.URL,
 	startTSO string,
 	credential *credentials.Value) (*SnapshotReplicateSession, error) {
 	sess := &SnapshotReplicateSession{
@@ -58,20 +57,14 @@ func NewSnapshotReplicateSession(
 		SourceTable:         sourceTable,
 		SnapshotConcurrency: snapshotConcurrency,
 		StartTSO:            startTSO,
+		StorageWorkspaceUri: *snapshotURI,
 	}
-	sess.DataWarehousePool = dwConnector
-	workUri, err := url.Parse(s3StoragePath)
-	if err != nil {
-		return nil, errors.Annotate(err, "Failed to parse workspace path")
-	}
-	sess.StorageWorkspaceUri = *workUri
 	log.Info("Creating replicate session",
 		zap.String("storage", sess.StorageWorkspaceUri.String()),
 		zap.String("source", fmt.Sprintf("%s.%s", sourceDatabase, sourceTable)))
 	sess.AWSCredential = credential
 	{
-		sess.StorageSchema = workUri.Scheme
-		switch sess.StorageSchema {
+		switch sess.StorageWorkspaceUri.Scheme {
 		case "s3":
 			awsSession, err := session.NewSessionWithOptions(session.Options{
 				SharedConfigState: session.SharedConfigEnable,
@@ -79,8 +72,7 @@ func NewSnapshotReplicateSession(
 			if err != nil {
 				return nil, errors.Annotate(err, "Failed to establish AWS session")
 			}
-
-			bucket := workUri.Host
+			bucket := sess.StorageWorkspaceUri.Host
 			log.Debug("Resolving storage region")
 			s3Region, err := s3manager.GetBucketRegion(context.Background(), awsSession, bucket, "us-west-2")
 			if err != nil {
@@ -130,7 +122,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 	if err != nil {
 		return errors.Trace(err)
 	}
-	switch sess.StorageSchema {
+	switch sess.StorageWorkspaceUri.Scheme {
 	case "s3":
 		if err = sess.DataWarehousePool.CopyTableSchema(sess.SourceDatabase, sess.SourceTable, sess.TiDBPool); err != nil {
 			return errors.Trace(err)
@@ -179,7 +171,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 	status := dumper.GetStatus()
 	log.Info("Successfully dumped table from TiDB, starting to load into data warehouse", zap.Any("status", status))
 
-	if sess.StorageSchema == "gcs" {
+	if sess.StorageWorkspaceUri.Scheme == "gcs" {
 		log.Info("Skip loading. GCS does not supprt data warehouse connector now...")
 		return nil
 	}
@@ -247,7 +239,7 @@ func (sess *SnapshotReplicateSession) buildDumperConfig() (*export.Config, error
 
 	conf.Snapshot = sess.StartTSO
 
-	switch sess.StorageSchema {
+	switch sess.StorageWorkspaceUri.Scheme {
 	case "s3":
 		conf.S3.Region = sess.ResolvedS3Region
 	case "gcs":
@@ -289,10 +281,10 @@ func StartReplicateSnapshot(
 	tidbConfig *tidbsql.TiDBConfig,
 	sourceDatabase, sourceTable string,
 	snapshotConcurrency int,
-	s3StoragePath string,
+	snapshotURI *url.URL,
 	startTSO string,
 	credential *credentials.Value) error {
-	session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, snapshotConcurrency, s3StoragePath, startTSO, credential)
+	session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, snapshotConcurrency, snapshotURI, startTSO, credential)
 	if err != nil {
 		return errors.Trace(err)
 	}

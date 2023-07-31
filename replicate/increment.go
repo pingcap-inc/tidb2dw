@@ -402,6 +402,7 @@ func (c *consumer) handleNewFiles(
 		tableDef := c.mustGetTableDef(key.SchemaPathKey)
 		tableID := c.tableIDGenerator.generateFakeTableID(key.Schema, key.Table, key.PartitionNum)
 		if _, ok := c.dwConnectorMap[tableID]; !ok {
+			// create a new connector for the table.
 			connector, err := c.sampleConnector.Clone(
 				fmt.Sprintf("increment_stage_%s", tableDef.Table),
 				c.sinkURI,

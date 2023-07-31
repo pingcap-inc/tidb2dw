@@ -231,7 +231,7 @@ func NewSnowflakeCmd() *cobra.Command {
 			if err != nil {
 				return errors.Trace(err)
 			}
-			if err = replicate.StartReplicateSnapshot(connector, &tidbConfigFromCli, sourceDatabase, sourceTable, snapshotConcurrency, snapStoragePath, fmt.Sprint(startTSO), &credValue); err != nil {
+			if err = replicate.StartReplicateSnapshot(connector, &tidbConfigFromCli, sourceDatabase, sourceTable, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), &credValue); err != nil {
 				return errors.Annotate(err, "Failed to replicate snapshot")
 			}
 		} else if !loadinfoExist {
