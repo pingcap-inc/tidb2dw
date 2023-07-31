@@ -321,6 +321,5 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
 	cmd.Flags().StringVar(&sindURIStr, "sink-uri", "", "sink uri, only needed under incremental-only mode")
 
-	cmd.MarkFlagRequired("storage")
 	return cmd
 }
