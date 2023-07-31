@@ -53,4 +53,4 @@ All DDL which will change the schema of table are supported (except index relate
 > 1. Snowflake does not support partition table, tidb2dw will view table with multiple partitions as ordinary table.
 > 2. Snowflake has a lot of limitations on modifying column type, like Snowflake does not support update column default value, refer to [Snowflake Docs](https://docs.snowflake.com/en/sql-reference/sql/alter-table-column).
 > 3. The type mapping from TiDB to Snowflake is defined [here](./snowsql/types.go).
-> 4. Should execute any DML before DDL or will report error.
+> 4. Should execute at least one DML before DDL or will report error.
