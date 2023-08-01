@@ -7,7 +7,7 @@ import (
 )
 
 func GetCurrentTSO(config *TiDBConfig) (uint64, error) {
-	db, err := OpenTiDB(config)
+	db, err := config.OpenDB()
 	if err != nil {
 		return 0, errors.Trace(err)
 	}

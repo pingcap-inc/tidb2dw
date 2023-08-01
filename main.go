@@ -13,7 +13,7 @@ var rootCmd *cobra.Command
 func init() {
 	rootCmd = &cobra.Command{
 		Use:                "tidb2dw",
-		Short:              "A service to replicate from TiDB to Data Warehouse",
+		Short:              "A service to replicate data changes from TiDB to Data Warehouse in real-time",
 		SilenceErrors:      true,
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
