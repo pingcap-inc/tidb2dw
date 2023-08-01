@@ -18,6 +18,7 @@ import (
 	"github.com/pingcap-inc/tidb2dw/replicate"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	cdcv2 "github.com/pingcap/tiflow/cdc/api/v2"
 	"github.com/pingcap/tiflow/pkg/logutil"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"github.com/spf13/cobra"
@@ -62,35 +63,28 @@ func genSinkURI(storagePath string, flushInterval time.Duration, fileSize int64)
 
 func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, startTSO uint64) error {
 	client := &http.Client{}
-	data := make(map[string]interface{})
-	data["sink_uri"] = sinkURI.String()
-	{
-		replicateConfig := make(map[string]interface{})
-		filterConfig := make(map[string]interface{})
-		filterConfig["rules"] = []string{tableFQN}
-		replicateConfig["filter"] = filterConfig
-		csvConfig := make(map[string]interface{})
-		csvConfig["include_commit_ts"] = true
-		sinkConfig := make(map[string]interface{})
-		sinkConfig["csv"] = csvConfig
-		cloudStorageConfig := make(map[string]interface{})
-		cloudStorageConfig["output_column_id"] = true
-		sinkConfig["cloud_storage_config"] = cloudStorageConfig
-		replicateConfig["sink"] = sinkConfig
-		// CSV protocol must disable old value.
-		replicateConfig["enable_old_value"] = false
-		data["replica_config"] = replicateConfig
+	cfCfg := &cdcv2.ChangefeedConfig{
+		SinkURI: sinkURI.String(),
+		ReplicaConfig: &cdcv2.ReplicaConfig{
+			Filter: &cdcv2.FilterConfig{Rules: []string{tableFQN}},
+			Sink: &cdcv2.SinkConfig{
+				CSVConfig:          &cdcv2.CSVConfig{IncludeCommitTs: true},
+				CloudStorageConfig: &cdcv2.CloudStorageConfig{OutputColumnID: putil.AddressOf(true)},
+			},
+			EnableOldValue: false,
+		},
+		StartTs: 0,
 	}
 	if startTSO != 0 {
-		data["start_ts"] = startTSO
+		cfCfg.StartTs = startTSO
 	}
-	bytesData, _ := json.Marshal(data)
+	bytesData, _ := json.Marshal(cfCfg)
 	url, err := url.JoinPath(cdcServer, "api/v2/changefeeds")
 	if err != nil {
 		return errors.Annotate(err, "join url failed")
 	}
-	req, _ := http.NewRequest("POST", url, bytes.NewReader(bytesData))
-	resp, err := client.Do(req)
+	httpReq, _ := http.NewRequest("POST", url, bytes.NewReader(bytesData))
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return errors.Trace(err)
 	}
