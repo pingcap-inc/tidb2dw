@@ -13,12 +13,12 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	cfg "github.com/pingcap-inc/tidb2dw/config"
 	"github.com/pingcap-inc/tidb2dw/pkg/snowsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/replicate"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	cdcv2 "github.com/pingcap/tiflow/cdc/api/v2"
 	"github.com/pingcap/tiflow/pkg/logutil"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"github.com/spf13/cobra"
@@ -63,13 +63,13 @@ func genSinkURI(storagePath string, flushInterval time.Duration, fileSize int64)
 
 func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, startTSO uint64) error {
 	client := &http.Client{}
-	cfCfg := &cfg.ChangeFeedCfg{
+	cfCfg := &cdcv2.ChangefeedConfig{
 		SinkURI: sinkURI.String(),
-		ReplicaCfg: &cfg.ReplicateCfg{
-			Filter: &cfg.CfFilterCfg{Rules: []string{tableFQN}},
-			Sink: &cfg.SinkCfg{
-				CSV:          &cfg.CSVCfg{IncludeCommitTs: true},
-				CloudStorage: &cfg.CloudStorageCfg{OutputColumnId: true},
+		ReplicaConfig: &cdcv2.ReplicaConfig{
+			Filter: &cdcv2.FilterConfig{Rules: []string{tableFQN}},
+			Sink: &cdcv2.SinkConfig{
+				CSVConfig:          &cdcv2.CSVConfig{IncludeCommitTs: true},
+				CloudStorageConfig: &cdcv2.CloudStorageConfig{OutputColumnID: putil.AddressOf(true)},
 			},
 			EnableOldValue: false,
 		},
