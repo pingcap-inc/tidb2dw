@@ -8,15 +8,17 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pingcap-inc/tidb2dw/downstreams/snowflake"
-	"github.com/pingcap-inc/tidb2dw/snowsql"
-	"github.com/pingcap-inc/tidb2dw/tidbsql"
+	"github.com/pingcap-inc/tidb2dw/pkg/snowsql"
+	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
+	"github.com/pingcap-inc/tidb2dw/replicate"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	cdcv2 "github.com/pingcap/tiflow/cdc/api/v2"
 	"github.com/pingcap/tiflow/pkg/logutil"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"github.com/spf13/cobra"
@@ -38,7 +40,7 @@ func genSinkURI(storagePath string, flushInterval time.Duration, fileSize int64)
 		creds := credentials.NewEnvCredentials()
 		credValue, err := creds.Get()
 		if err != nil {
-			log.Error("Failed to resolve AWS credential", zap.Error(err))
+			return nil, errors.Annotate(err, "Failed to resolve AWS credential")
 		}
 		values.Add("access-key", credValue.AccessKeyID)
 		values.Add("secret-access-key", credValue.SecretAccessKey)
@@ -48,12 +50,12 @@ func genSinkURI(storagePath string, flushInterval time.Duration, fileSize int64)
 	} else if sinkUri.Scheme == "gcs" {
 		credValue, found := syscall.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 		if !found {
-			log.Error("Failed to resolve AWS credential")
+			return nil, errors.New("Failed to resolve GCS credential")
 		} else {
 			values.Add("credentials-file", credValue)
 		}
 	} else {
-		return sinkUri, errors.Errorf("get sink uri failed, unsupported uri schema: %s", sinkUri.Scheme)
+		return nil, errors.Errorf("get sink uri failed, unsupported uri schema: %s", sinkUri.Scheme)
 	}
 	sinkUri.RawQuery = values.Encode()
 	return sinkUri, nil
@@ -61,30 +63,28 @@ func genSinkURI(storagePath string, flushInterval time.Duration, fileSize int64)
 
 func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, startTSO uint64) error {
 	client := &http.Client{}
-	data := make(map[string]interface{})
-	data["sink_uri"] = sinkURI.String()
-	{
-		replicateConfig := make(map[string]interface{})
-		filterConfig := make(map[string]interface{})
-		filterConfig["rules"] = []string{tableFQN}
-		replicateConfig["filter"] = filterConfig
-		csvConfig := make(map[string]interface{})
-		csvConfig["include_commit_ts"] = true
-		sinkConfig := make(map[string]interface{})
-		sinkConfig["csv"] = csvConfig
-		replicateConfig["sink"] = sinkConfig
-		data["replica_config"] = replicateConfig
+	cfCfg := &cdcv2.ChangefeedConfig{
+		SinkURI: sinkURI.String(),
+		ReplicaConfig: &cdcv2.ReplicaConfig{
+			Filter: &cdcv2.FilterConfig{Rules: []string{tableFQN}},
+			Sink: &cdcv2.SinkConfig{
+				CSVConfig:          &cdcv2.CSVConfig{IncludeCommitTs: true},
+				CloudStorageConfig: &cdcv2.CloudStorageConfig{OutputColumnID: putil.AddressOf(true)},
+			},
+			EnableOldValue: false,
+		},
+		StartTs: 0,
 	}
 	if startTSO != 0 {
-		data["start_ts"] = startTSO
+		cfCfg.StartTs = startTSO
 	}
-	bytesData, _ := json.Marshal(data)
+	bytesData, _ := json.Marshal(cfCfg)
 	url, err := url.JoinPath(cdcServer, "api/v2/changefeeds")
 	if err != nil {
 		return errors.Annotate(err, "join url failed")
 	}
-	req, _ := http.NewRequest("POST", url, bytes.NewReader(bytesData))
-	resp, err := client.Do(req)
+	httpReq, _ := http.NewRequest("POST", url, bytes.NewReader(bytesData))
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -101,8 +101,9 @@ func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, start
 	if err = json.Unmarshal(body, &respData); err != nil {
 		return errors.Trace(err)
 	}
-	changefeedID, _ := respData["id"].(string)
-	log.Info("create changefeed success", zap.String("changefeed-id", changefeedID), zap.Any("changefeed-config", respData))
+	changefeedID := respData["id"].(string)
+	replicateConfig := respData["config"].(map[string]interface{})
+	log.Info("create changefeed success", zap.String("changefeed-id", changefeedID), zap.Any("replica-config", replicateConfig))
 
 	return nil
 }
@@ -195,13 +196,39 @@ func NewSnowflakeCmd() *cobra.Command {
 			sinkURI = uri
 		}
 
+		var sourceDatabase, sourceTable string
+		if tableFQN != "" {
+			parts := strings.SplitN(tableFQN, ".", 2)
+			if len(parts) != 2 {
+				return errors.Errorf("table must be a full-qualified name like mydb.mytable")
+			}
+			sourceDatabase, sourceTable = parts[0], parts[1]
+		}
+
 		// 3. run replicate snapshot
 		if (mode == RunModeFull || mode == RunModeSnapshotOnly) && !loadinfoExist {
 			snapStoragePath, err := url.JoinPath(storagePath, "snapshot")
 			if err != nil {
 				return errors.Trace(err)
 			}
-			if err = snowflake.StartReplicateSnapshot(&snowflakeConfigFromCli, &tidbConfigFromCli, tableFQN, snapshotConcurrency, snapStoragePath, fmt.Sprint(startTSO), &credValue); err != nil {
+			db, err := snowflakeConfigFromCli.OpenDB()
+			if err != nil {
+				return errors.Trace(err)
+			}
+			snapshotURI, err := url.Parse(snapStoragePath)
+			if err != nil {
+				return errors.Annotate(err, "Failed to parse workspace path")
+			}
+			connector, err := snowsql.NewSnowflakeConnector(
+				db,
+				fmt.Sprintf("snapshot_stage_%s", sourceTable),
+				snapshotURI,
+				&credValue,
+			)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			if err = replicate.StartReplicateSnapshot(connector, &tidbConfigFromCli, sourceDatabase, sourceTable, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), &credValue); err != nil {
 				return errors.Annotate(err, "Failed to replicate snapshot")
 			}
 		} else if !loadinfoExist {
@@ -210,7 +237,20 @@ func NewSnowflakeCmd() *cobra.Command {
 
 		// 4. run replicate increment
 		if mode == RunModeFull || mode == RunModeIncrementalOnly {
-			if err = snowflake.StartReplicateIncrement(&snowflakeConfigFromCli, sinkURI, cdcFlushInterval/5, "", timezone, &credValue); err != nil {
+			db, err := snowflakeConfigFromCli.OpenDB()
+			if err != nil {
+				return errors.Trace(err)
+			}
+			connector, err := snowsql.NewSnowflakeConnector(
+				db,
+				fmt.Sprintf("increment_stage_%s", sourceTable),
+				sinkURI,
+				&credValue,
+			)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			if err = replicate.StartReplicateIncrement(connector, sinkURI, cdcFlushInterval/5, "", timezone, &credValue); err != nil {
 				return errors.Annotate(err, "Failed to replicate incremental")
 			}
 		}
@@ -275,7 +315,5 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
 	cmd.Flags().StringVar(&sindURIStr, "sink-uri", "", "sink uri, only needed under incremental-only mode")
 
-	cmd.MarkFlagRequired("storage")
-	cmd.MarkFlagRequired("table")
 	return cmd
 }
