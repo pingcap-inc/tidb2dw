@@ -1,6 +1,7 @@
 package redshiftsql
 
 import (
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -38,4 +39,74 @@ func GetRedshiftColumnString(column cloudstorage.TableCol) (string, error) {
 		sb.WriteString(" DEFAULT NULL")
 	}
 	return sb.String(), nil
+}
+
+// something wrong with the DATA_TYPE
+func GetRedshiftTableColumn(db *sql.DB, sourceTable string) ([]cloudstorage.TableCol, error) {
+	columnQuery := fmt.Sprintf(`SELECT COLUMN_NAME, COLUMN_DEFAULT, IS_NULLABLE, DATA_TYPE, 
+CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION
+FROM information_schema.columns
+WHERE table_name = '%s'`, sourceTable) // need to replace "" to ''
+	rows, err := db.Query(columnQuery)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	// TODO: Confirm with generated column, sequence.
+	defer rows.Close()
+	tableColumns := make([]cloudstorage.TableCol, 0)
+	for rows.Next() {
+		var column struct {
+			ColumnName    string
+			ColumnDefault *string
+			IsNullable    string
+			DataType      string
+			CharMaxLength *int
+			NumPrecision  *int
+			NumScale      *int
+			DateTimePrec  *int
+		}
+		err = rows.Scan(
+			&column.ColumnName,
+			&column.ColumnDefault,
+			&column.IsNullable,
+			&column.DataType,
+			&column.CharMaxLength,
+			&column.NumPrecision,
+			&column.NumScale,
+			&column.DateTimePrec,
+		)
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
+		var precision, scale, nullable string
+		if column.NumPrecision != nil {
+			precision = fmt.Sprintf("%d", *column.NumPrecision)
+		} else if column.DateTimePrec != nil {
+			precision = fmt.Sprintf("%d", *column.DateTimePrec)
+		} else if column.CharMaxLength != nil {
+			precision = fmt.Sprintf("%d", *column.CharMaxLength)
+		}
+		if column.NumScale != nil {
+			scale = fmt.Sprintf("%d", *column.NumScale)
+		}
+		if column.IsNullable == "YES" {
+			nullable = "true"
+		} else {
+			nullable = "false"
+		}
+		var defaultVal interface{}
+		if column.ColumnDefault != nil {
+			defaultVal = *column.ColumnDefault
+		}
+		tableCol := cloudstorage.TableCol{
+			Name:      column.ColumnName,
+			Tp:        column.DataType,
+			Default:   defaultVal,
+			Precision: precision,
+			Scale:     scale,
+			Nullable:  nullable,
+		}
+		tableColumns = append(tableColumns, tableCol)
+	}
+	return tableColumns, nil
 }

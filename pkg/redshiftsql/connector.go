@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -15,11 +16,11 @@ import (
 
 type RedshiftConnector struct {
 	// db is the connection to redshift.
-	db *sql.DB
-
+	db         *sql.DB
 	stageName  string
 	storageUrl string
 	credential *credentials.Value
+	iamRole    string
 	columns    []cloudstorage.TableCol
 }
 
@@ -27,10 +28,13 @@ func NewRedshiftConnector(db *sql.DB, stageName string, storageURI *url.URL, cre
 	// create stage
 	var err error
 	storageUrl := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
+	// need iam role to create external schema
+	iamRole := os.Getenv("IAM_ROLE")
 	var mode = strings.Split(stageName, "_")[0]
 	if mode == "increment" {
-		// TODO(lcui2): create external schema, need iam role
-		// TODO(lcui2): create external tabnle, need S3 file location
+		// create external schema, need iam role
+		err = CreateExternalSchema(db, fmt.Sprintf("%s_schema", stageName), fmt.Sprintf("%s_database", stageName), iamRole)
+
 	} else if mode != "snapshot" {
 		return nil, errors.Annotate(err, "Incorrect stage name, only support snapshot_stage_* and increment_stage_")
 	}
@@ -44,6 +48,7 @@ func NewRedshiftConnector(db *sql.DB, stageName string, storageURI *url.URL, cre
 		stageName:  stageName,
 		storageUrl: storageUrl,
 		credential: credentials,
+		iamRole:    iamRole,
 		columns:    nil,
 	}, nil
 }
@@ -90,5 +95,53 @@ func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePrefix string, onSnap
 		return errors.Trace(err)
 	}
 	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
+	return nil
+}
+
+func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
+	if uri.Scheme == "file" {
+		// if the file is local, we need to upload it to stage first
+		putQuery := fmt.Sprintf(`PUT file://%s/%s '@%s/%s';`, uri.Path, filePath, rc.stageName, filePath)
+		_, err := rc.db.Exec(putQuery)
+		if err != nil {
+			return errors.Trace(err)
+		}
+		log.Debug("put file to stage", zap.String("query", putQuery))
+	}
+	// TODO(lcui2): create external table, need S3 manifest file location
+	manifestFilePath := ""
+	externalTableName := fmt.Sprintf("%s", rc.stageName)
+	externalTableSchema := fmt.Sprintf("%s_schema", rc.stageName)
+	err := CreateExternalTable(rc.db, tableDef.Columns, externalTableName, externalTableSchema, manifestFilePath)
+
+	// merge staged file into table
+	err = GenDelete(rc.db, tableDef, rc.stageName)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	err = GenInsert(rc.db, tableDef, rc.stageName)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	deleteExternalTableQuery := fmt.Sprintf("DROP TABLE %s.%s", externalTableSchema, externalTableName)
+	_, err = rc.db.Exec(deleteExternalTableQuery)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	log.Debug("delete external table", zap.String("query", deleteExternalTableQuery))
+
+	if uri.Scheme == "file" {
+		// if the file is local, we need to remove it from stage
+		removeQuery := fmt.Sprintf(`REMOVE '@%s/%s';`, rc.stageName, filePath)
+		_, err = rc.db.Exec(removeQuery)
+		if err != nil {
+			return errors.Trace(err)
+		}
+		log.Debug("remove file from stage", zap.String("query", removeQuery))
+	}
+
+	log.Info("Successfully merge file", zap.String("file", filePath))
 	return nil
 }
