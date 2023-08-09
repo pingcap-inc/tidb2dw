@@ -181,7 +181,7 @@ func CreateExternalTable(db *sql.DB, columns []cloudstorage.TableCol, tableName,
 	return err
 }
 
-func GenDelete(db *sql.DB, tableDef cloudstorage.TableDefinition, stageName string) error {
+func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, stageName string) error {
 	selectStat := make([]string, 0, len(tableDef.Columns)+1)
 	selectStat = append(selectStat, `flag`)
 	for _, col := range tableDef.Columns {
@@ -220,7 +220,7 @@ func GenDelete(db *sql.DB, tableDef cloudstorage.TableDefinition, stageName stri
 	return err
 }
 
-func GenInsert(db *sql.DB, tableDef cloudstorage.TableDefinition, stageName string) error {
+func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, stageName string) error {
 	selectStat := make([]string, 0, len(tableDef.Columns)+1)
 	for _, col := range tableDef.Columns {
 		selectStat = append(selectStat, col.Name)
@@ -256,5 +256,18 @@ func GenInsert(db *sql.DB, tableDef cloudstorage.TableDefinition, stageName stri
 	}
 	log.Info("insert external table into table", zap.String("query", sql))
 	_, err = db.Exec(sql)
+	return err
+}
+
+func DeleteTable(db *sql.DB, tableName, schemaName string) error {
+	sql := fmt.Sprintf("DROP TABLE %s.%s", tableName, schemaName)
+	log.Info("delete table", zap.String("query", sql))
+	_, err := db.Exec(sql)
+	return err
+}
+
+func DropExternalSchema(db *sql.DB, schemaName string) error {
+	sql := fmt.Sprintf("DROP SCHEMA IF EXISTS %s DROP EXTERNAL DATABASE CASCADE", schemaName)
+	_, err := db.Exec(sql)
 	return err
 }

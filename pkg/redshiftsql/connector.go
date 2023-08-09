@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
@@ -25,7 +26,6 @@ type RedshiftConnector struct {
 }
 
 func NewRedshiftConnector(db *sql.DB, stageName string, storageURI *url.URL, credentials *credentials.Value) (*RedshiftConnector, error) {
-	// create stage
 	var err error
 	storageUrl := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
 	// need iam role to create external schema
@@ -65,6 +65,32 @@ func (rc *RedshiftConnector) InitSchema(columns []cloudstorage.TableCol) error {
 	return nil
 }
 
+func (rc *RedshiftConnector) ExecDDL(tableDef cloudstorage.TableDefinition) error {
+	if len(rc.columns) == 0 {
+		return errors.New("Columns not initialized. Maybe you execute a DDL before all DMLs, which is not supported now.")
+	}
+	ddls, err := GenDDLViaColumnsDiff(rc.columns, tableDef)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	if len(ddls) == 0 {
+		log.Info("No need to execute this DDL in Redshift", zap.String("ddl", tableDef.Query))
+		return nil
+	}
+	// One DDL may be rewritten to multiple DDLs
+	for _, ddl := range ddls {
+		_, err := rc.db.Exec(ddl)
+		if err != nil {
+			log.Error("Failed to executed DDL", zap.String("received", tableDef.Query), zap.String("rewritten", strings.Join(ddls, "\n")))
+			return errors.Annotate(err, fmt.Sprint("failed to execute", ddl))
+		}
+	}
+	// update columns
+	rc.columns = tableDef.Columns
+	log.Info("Successfully executed DDL", zap.String("received", tableDef.Query), zap.String("rewritten", strings.Join(ddls, "\n")))
+	return nil
+}
+
 func (rc *RedshiftConnector) CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {
 	dropTableQuery, err := GenDropSchema(sourceTable)
 	if err != nil {
@@ -99,49 +125,44 @@ func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePrefix string, onSnap
 }
 
 func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
-	if uri.Scheme == "file" {
-		// if the file is local, we need to upload it to stage first
-		putQuery := fmt.Sprintf(`PUT file://%s/%s '@%s/%s';`, uri.Path, filePath, rc.stageName, filePath)
-		_, err := rc.db.Exec(putQuery)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		log.Debug("put file to stage", zap.String("query", putQuery))
-	}
-	// TODO(lcui2): create external table, need S3 manifest file location
+	// redshift does not support PUT command
+	// TODO(lcui2): what if uri.Scheme == "file"
+
+	// create external table, need S3 manifest file location
+	// TODO(lcui2): need to check the path for manifest file
 	manifestFilePath := ""
 	externalTableName := fmt.Sprintf("%s", rc.stageName)
 	externalTableSchema := fmt.Sprintf("%s_schema", rc.stageName)
 	err := CreateExternalTable(rc.db, tableDef.Columns, externalTableName, externalTableSchema, manifestFilePath)
 
 	// merge staged file into table
-	err = GenDelete(rc.db, tableDef, rc.stageName)
+	err = DeleteQuery(rc.db, tableDef, rc.stageName)
 	if err != nil {
 		return errors.Trace(err)
 	}
 
-	err = GenInsert(rc.db, tableDef, rc.stageName)
+	err = InsertQuery(rc.db, tableDef, rc.stageName)
 	if err != nil {
 		return errors.Trace(err)
 	}
 
-	deleteExternalTableQuery := fmt.Sprintf("DROP TABLE %s.%s", externalTableSchema, externalTableName)
-	_, err = rc.db.Exec(deleteExternalTableQuery)
+	err = DeleteTable(rc.db, externalTableSchema, externalTableName)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Debug("delete external table", zap.String("query", deleteExternalTableQuery))
-
-	if uri.Scheme == "file" {
-		// if the file is local, we need to remove it from stage
-		removeQuery := fmt.Sprintf(`REMOVE '@%s/%s';`, rc.stageName, filePath)
-		_, err = rc.db.Exec(removeQuery)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		log.Debug("remove file from stage", zap.String("query", removeQuery))
-	}
-
 	log.Info("Successfully merge file", zap.String("file", filePath))
 	return nil
+}
+
+func (rc *RedshiftConnector) Clone(stageName string, storageURI *url.URL, credentials *credentials.Value) (coreinterfaces.Connector, error) {
+	return NewRedshiftConnector(rc.db, stageName, storageURI, credentials)
+}
+
+func (rc *RedshiftConnector) Close() {
+	// drop schema
+	schemaName := fmt.Sprintf("%s_schema", rc.stageName)
+	if err := DropExternalSchema(rc.db, schemaName); err != nil {
+		log.Error("fail to drop schema", zap.Error(err))
+	}
+	rc.db.Close()
 }
