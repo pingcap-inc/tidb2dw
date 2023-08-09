@@ -19,6 +19,7 @@ type RedshiftConfig struct {
 }
 
 // Open a connection to Redshift.
+// can not specify one schema in redshift
 func (config *RedshiftConfig) OpenDB() (*sql.DB, error) {
 	var connStr = fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
@@ -31,12 +32,6 @@ func (config *RedshiftConfig) OpenDB() (*sql.DB, error) {
 	if err = db.Ping(); err != nil {
 		return nil, errors.Annotate(err, "Failed to ping Redshift")
 	}
-	// Set the search path to your desired schema
-	_, err = db.Exec(fmt.Sprintf("SET search_path TO %s", config.Schema))
-	if err != nil {
-		return nil, errors.Annotate(err, "Failed to set Redshift schema")
-	}
-
 	log.Info("Redshift connection established")
 	return db, nil
 }
