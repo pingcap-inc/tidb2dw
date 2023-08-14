@@ -6,7 +6,7 @@ var (
 	// TiDB2DWVerMinor is the minor version of TiDB2DW
 	TiDB2DWVerMinor = 0
 	// TiDB2DWVerPatch is the patch version of TiDB2DW
-	TiDB2DWVerPatch = 1
+	TiDB2DWVerPatch = 2
 	// TiDB2DWVerName is an alternative name of the version
 	TiDB2DWVerName = "TiDB2DW"
 	// GitHash is the current git commit hash
