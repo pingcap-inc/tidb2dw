@@ -27,6 +27,17 @@ func GetServerSideTimestamp(db *sql.DB) (string, error) {
 	return result, nil
 }
 
+func CreateSchema(db *sql.DB, schemaName string) error {
+	sql := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schemaName)
+	_, err := db.Exec(sql)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	sql = fmt.Sprintf("SET search_path TO %s", schemaName)
+	_, err = db.Exec(sql)
+	return err
+}
+
 // redshift currently can not support ROWS_PRODUCED function
 // use csv file path for stageUrl, like s3://tidbbucket/snapshot/stock.csv
 func LoadSnapshotFromStage(db *sql.DB, targetTable, storageUrl, filePrefix string, credential *credentials.Value, onSnapshotLoadProgress func(loadedRows int64)) error {
@@ -118,7 +129,7 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 
 func CreateExternalSchema(db *sql.DB, schemaName, databaseName, iamRole string) error {
 	sql, err := formatter.Format(`
-	CREATE EXTERNAL SCHEMA {schemaName}
+	CREATE EXTERNAL SCHEMA IF NOT EXISTS {schemaName}
 	FROM DATA CATALOG
 	DATABASE '{databaseName}'
 	IAM_ROLE '{iamRole}'

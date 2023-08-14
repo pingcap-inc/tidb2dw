@@ -80,14 +80,8 @@ func GenDDLViaColumnsDiff(prevColumns []cloudstorage.TableCol, curTableDef cloud
 		case tidbsql.DROP_COLUMN:
 			ddl += fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", curTableDef.Table, item.Before.Name)
 		// redshift does not support direct data type modify
-		// TODO(lcui2): add new column, copy, delete, rename?
 		case tidbsql.MODIFY_COLUMN:
-			ddl += fmt.Sprintf("ALTER TABLE %s MODIFY ", curTableDef.Table)
-			modifyStr, err := GetColumnModifyString(&item)
-			if err != nil {
-				return nil, errors.Trace(err)
-			}
-			ddl += modifyStr
+			return nil, errors.New("Received modify column ddl, which is not supported by redshift yet")
 		case tidbsql.RENAME_COLUMN:
 			ddl += fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", curTableDef.Table, item.Before.Name, item.After.Name)
 		default:
