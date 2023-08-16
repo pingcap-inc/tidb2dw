@@ -7,7 +7,7 @@ memory-quota = 4294967296
 case-sensitive = true
 
 # 是否输出 old value，从 v4.0.5 开始支持，从 v5.0 开始默认为 true
-enable-old-value = true
+enable-old-value = false
 
 # 是否开启 Syncpoint 功能，从 v6.3.0 开始支持，该功能默认关闭。
 # 从 v6.4.0 开始，使用 Syncpoint 功能需要同步任务拥有下游集群的 SYSTEM_VARIABLES_ADMIN 或者 SUPER 权限。
@@ -104,3 +104,7 @@ include-commit-ts = true
 integrity-check-level = "none"
 # 当单行数据的 Checksum 校验失败时，Changefeed 打印错误行数据相关日志的级别。默认值为 "warn"，可选值为 "warn" 和 "error"。
 corruption-handle-level = "warn"
+
+[sink.cloud-storage-config]
+# 是否在 DDL JSON 文件中包含 column-id。默认值为 false。
+output-column-id = true
