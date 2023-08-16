@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	rsCmd "github.com/pingcap-inc/tidb2dw/cmd/redshift"
 	sfCmd "github.com/pingcap-inc/tidb2dw/cmd/snowflake"
 	"github.com/pingcap-inc/tidb2dw/version"
 	"github.com/spf13/cobra"
@@ -36,6 +37,7 @@ func init() {
 
 	rootCmd.AddCommand(
 		sfCmd.NewSnowflakeCmd(),
+		rsCmd.NewRedshiftCmd(),
 	)
 }
 
