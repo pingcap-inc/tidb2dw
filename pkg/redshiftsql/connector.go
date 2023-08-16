@@ -4,9 +4,11 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
@@ -16,6 +18,7 @@ import (
 type RedshiftConnector struct {
 	// db is the connection to redshift.
 	db            *sql.DB
+	schemaName    string
 	stageName     string
 	storageUrl    string
 	s3Credentials *credentials.Value
@@ -31,7 +34,7 @@ func NewRedshiftConnector(db *sql.DB, schemaName, stageName, iamRole string, sto
 	if err != nil {
 		return nil, errors.Annotate(err, "Failed to create schema")
 	}
-	storageUrl := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
+	storageUrl := fmt.Sprintf("%s://%s", storageURI.Scheme, storageURI.Host)
 	// need iam role to create external schema
 	var mode = strings.Split(stageName, "_")[0]
 	if mode == "increment" {
@@ -44,6 +47,7 @@ func NewRedshiftConnector(db *sql.DB, schemaName, stageName, iamRole string, sto
 	}
 	return &RedshiftConnector{
 		db:            db,
+		schemaName:    schemaName,
 		stageName:     stageName,
 		storageUrl:    storageUrl,
 		s3Credentials: s3Credentials,
@@ -92,25 +96,14 @@ func (rc *RedshiftConnector) ExecDDL(tableDef cloudstorage.TableDefinition) erro
 }
 
 func (rc *RedshiftConnector) CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {
-	dropTableQuery, err := GenDropSchema(sourceTable)
+	err := DropTable(sourceTable, rc.db)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Dropping table in Redshift if exists", zap.String("query", dropTableQuery))
-	_, err = rc.db.Exec(dropTableQuery)
+	err = CreateTable(sourceDatabase, sourceTable, sourceTiDBConn, rc.db)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	createTableQuery, err := GenCreateSchema(sourceDatabase, sourceTable, sourceTiDBConn)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	log.Info("Creating table in Redshift", zap.String("query", createTableQuery))
-	_, err = rc.db.Exec(createTableQuery)
-	if err != nil {
-		return errors.Trace(err)
-	}
-
 	log.Info("Successfully copying table scheme", zap.String("database", sourceDatabase), zap.String("table", sourceTable))
 	return nil
 }
@@ -128,7 +121,9 @@ func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 	// create external table, need S3 manifest file location
 	externalTableName := fmt.Sprintf("%s", rc.stageName)
 	externalTableSchema := fmt.Sprintf("%s_schema", rc.stageName)
-	err := CreateExternalTable(rc.db, tableDef.Columns, externalTableName, externalTableSchema, filePath)
+	fileSuffix := filepath.Ext(filePath)
+	manifestFilePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, strings.TrimSuffix(filePath, fileSuffix)+".manifest")
+	err := CreateExternalTable(rc.db, tableDef.Columns, externalTableName, externalTableSchema, manifestFilePath)
 
 	// merge staged file into table
 	err = DeleteQuery(rc.db, tableDef, rc.stageName)
@@ -149,9 +144,9 @@ func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 	return nil
 }
 
-// func (rc *RedshiftConnector) Clone(stageName string, storageURI *url.URL, credentials *credentials.Value) (coreinterfaces.Connector, error) {
-// 	return NewRedshiftConnector(rc.db, stageName, storageURI, credentials)
-// }
+func (rc *RedshiftConnector) Clone(stageName string, storageURI *url.URL, s3credentials *credentials.Value) (coreinterfaces.Connector, error) {
+	return NewRedshiftConnector(rc.db, rc.schemaName, stageName, rc.iamRole, storageURI, s3credentials, rc.rsCredentials)
+}
 
 func (rc *RedshiftConnector) Close() {
 	// drop schema

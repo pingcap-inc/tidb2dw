@@ -1,4 +1,4 @@
-package snowflake
+package redshift
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pingcap-inc/tidb2dw/pkg/snowsql"
+	"github.com/pingcap-inc/tidb2dw/pkg/redshiftsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/replicate"
 	"github.com/pingcap/errors"
@@ -67,7 +67,7 @@ func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, start
 		ReplicaConfig: &cdcv2.ReplicaConfig{
 			Filter: &cdcv2.FilterConfig{Rules: []string{tableFQN}},
 			Sink: &cdcv2.SinkConfig{
-				CSVConfig:          &cdcv2.CSVConfig{IncludeCommitTs: true, Delimiter: ","},
+				CSVConfig:          &cdcv2.CSVConfig{IncludeCommitTs: true, Quote: "", Delimiter: ","},
 				CloudStorageConfig: &cdcv2.CloudStorageConfig{OutputColumnID: putil.AddressOf(true)},
 			},
 			EnableOldValue: false,
@@ -121,22 +121,22 @@ var RunModeIds = map[RunMode][]string{
 	RunModeIncrementalOnly: {"incremental-only"},
 }
 
-func NewSnowflakeCmd() *cobra.Command {
+func NewRedshiftCmd() *cobra.Command {
 	var (
-		tidbConfigFromCli      tidbsql.TiDBConfig
-		snowflakeConfigFromCli snowsql.SnowflakeConfig
-		tableFQN               string
-		snapshotConcurrency    int
-		storagePath            string
-		cdcHost                string
-		cdcPort                int
-		cdcFlushInterval       time.Duration
-		cdcFileSize            int64
-		timezone               string
-		logFile                string
-		logLevel               string
-		credValue              credentials.Value
-		sindURIStr             string
+		tidbConfigFromCli     tidbsql.TiDBConfig
+		redshiftConfigFromCli redshiftsql.RedshiftConfig
+		tableFQN              string
+		snapshotConcurrency   int
+		storagePath           string
+		cdcHost               string
+		cdcPort               int
+		cdcFlushInterval      time.Duration
+		cdcFileSize           int64
+		timezone              string
+		logFile               string
+		logLevel              string
+		credValue             credentials.Value
+		sindURIStr            string
 
 		mode RunMode
 	)
@@ -169,7 +169,6 @@ func NewSnowflakeCmd() *cobra.Command {
 		}
 
 		var sinkURI *url.URL
-
 		// 2. create changefeed
 		if mode == RunModeFull || (mode == RunModeIncrementalOnly && sindURIStr == "") {
 			increStoragePath, err := url.JoinPath(storagePath, "increment")
@@ -210,7 +209,7 @@ func NewSnowflakeCmd() *cobra.Command {
 			if err != nil {
 				return errors.Trace(err)
 			}
-			db, err := snowflakeConfigFromCli.OpenDB()
+			db, err := redshiftConfigFromCli.OpenDB()
 			if err != nil {
 				return errors.Trace(err)
 			}
@@ -218,10 +217,13 @@ func NewSnowflakeCmd() *cobra.Command {
 			if err != nil {
 				return errors.Annotate(err, "Failed to parse workspace path")
 			}
-			connector, err := snowsql.NewSnowflakeConnector(
+			connector, err := redshiftsql.NewRedshiftConnector(
 				db,
+				redshiftConfigFromCli.Schema,
 				fmt.Sprintf("snapshot_stage_%s", sourceTable),
+				redshiftConfigFromCli.Role,
 				snapshotURI,
+				&credValue,
 				&credValue,
 			)
 			if err != nil {
@@ -236,14 +238,17 @@ func NewSnowflakeCmd() *cobra.Command {
 
 		// 4. run replicate increment
 		if mode == RunModeFull || mode == RunModeIncrementalOnly {
-			db, err := snowflakeConfigFromCli.OpenDB()
+			db, err := redshiftConfigFromCli.OpenDB()
 			if err != nil {
 				return errors.Trace(err)
 			}
-			connector, err := snowsql.NewSnowflakeConnector(
+			connector, err := redshiftsql.NewRedshiftConnector(
 				db,
+				redshiftConfigFromCli.Schema,
 				fmt.Sprintf("increment_stage_%s", sourceTable),
+				redshiftConfigFromCli.Role,
 				sinkURI,
+				&credValue,
 				&credValue,
 			)
 			if err != nil {
@@ -258,8 +263,8 @@ func NewSnowflakeCmd() *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:   "snowflake",
-		Short: "Replicate snapshot and incremental data from TiDB to Snowflake",
+		Use:   "redshift",
+		Short: "Replicate snapshot and incremental data from TiDB to Redshift",
 		Run: func(_ *cobra.Command, _ []string) {
 			// init logger
 			err := logutil.InitLogger(&logutil.Config{
@@ -284,7 +289,7 @@ func NewSnowflakeCmd() *cobra.Command {
 			}
 
 			if err = run(); err != nil {
-				log.Error("Error running snowflake replication", zap.Error(err))
+				log.Error("Error running redshift replication", zap.Error(err))
 			}
 		},
 	}
@@ -296,12 +301,13 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&tidbConfigFromCli.User, "tidb.user", "u", "root", "TiDB user")
 	cmd.Flags().StringVarP(&tidbConfigFromCli.Pass, "tidb.pass", "p", "", "TiDB password")
 	cmd.Flags().StringVar(&tidbConfigFromCli.SSLCA, "tidb.ssl-ca", "", "TiDB SSL CA")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.AccountId, "snowflake.account-id", "", "snowflake accound id: <organization>-<account>")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.Warehouse, "snowflake.warehouse", "COMPUTE_WH", "")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.User, "snowflake.user", "", "snowflake user")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.Pass, "snowflake.pass", "", "snowflake password")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.Database, "snowflake.database", "", "snowflake database")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.Schema, "snowflake.schema", "", "snowflake schema")
+	cmd.Flags().StringVar(&redshiftConfigFromCli.Host, "redshift.host", "redshift-cluster-1.cph4e20x7btf.us-east-1.redshift.amazonaws.com", "redshift host")
+	cmd.Flags().IntVar(&redshiftConfigFromCli.Port, "redshift.port", 5439, "redshift port")
+	cmd.Flags().StringVar(&redshiftConfigFromCli.User, "redshift.user", "", "redshift user")
+	cmd.Flags().StringVar(&redshiftConfigFromCli.Pass, "redshift.pass", "", "redshift password")
+	cmd.Flags().StringVar(&redshiftConfigFromCli.Database, "redshift.database", "", "redshift database")
+	cmd.Flags().StringVar(&redshiftConfigFromCli.Schema, "redshift.schema", "", "redshift schema")
+	cmd.Flags().StringVar(&redshiftConfigFromCli.Role, "redshift.role", "", "iam role for redshift")
 	cmd.Flags().StringVarP(&tableFQN, "table", "t", "", "table full qualified name: <database>.<table>")
 	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
 	cmd.Flags().StringVarP(&storagePath, "storage", "s", "", "storage path: s3://<bucket>/<path> or gcs://<bucket>/<path>")

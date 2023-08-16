@@ -56,28 +56,30 @@ func LoadSnapshotFromStage(db *sql.DB, targetTable, storageUrl, filePrefix strin
 	if err != nil {
 		return errors.Trace(err)
 	}
-
+	log.Info("Loading snapshot data from external table", zap.String("query", sql))
 	ctx := context.Background()
 	_, err = db.ExecContext(ctx, sql)
 
 	return err
 }
 
-func GenDropSchema(sourceTable string) (string, error) {
+func DropTable(sourceTable string, db *sql.DB) error {
 	sql := fmt.Sprintf("DROP TABLE IF EXISTS %s", sourceTable)
-	return sql, nil
+	log.Info("Dropping table in Redshift if exists", zap.String("query", sql))
+	_, err := db.Exec(sql)
+	return err
 }
 
-func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) (string, error) {
+func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, db *sql.DB) error {
 	tableColumns, err := tidbsql.GetTiDBTableColumn(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
-		return "", errors.Trace(err)
+		return errors.Trace(err)
 	}
 	columnRows := make([]string, 0, len(tableColumns))
 	for _, column := range tableColumns {
 		row, err := GetRedshiftColumnString(column)
 		if err != nil {
-			return "", errors.Trace(err)
+			return errors.Trace(err)
 		}
 		columnRows = append(columnRows, row)
 	}
@@ -85,11 +87,11 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	indexQuery := fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", sourceDatabase, sourceTable) // FIXME: Escape
 	indexRows, err := sourceTiDBConn.QueryContext(context.Background(), indexQuery)
 	if err != nil {
-		return "", errors.Trace(err)
+		return errors.Trace(err)
 	}
 	indexResults, err := export.GetSpecifiedColumnValuesAndClose(indexRows, "KEY_NAME", "COLUMN_NAME", "SEQ_IN_INDEX")
 	if err != nil {
-		return "", errors.Trace(err)
+		return errors.Trace(err)
 	}
 
 	redshiftPKColumns := make([]string, 0)
@@ -124,7 +126,10 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	sql = append(sql, strings.Join(sqlRows, ",\n"))
 	sql = append(sql, ")")
 
-	return strings.Join(sql, "\n"), nil
+	query := strings.Join(sql, "\n")
+	log.Info("Creating table in Redshift", zap.String("query", query))
+	_, err = db.Exec(query)
+	return err
 }
 
 func CreateExternalSchema(db *sql.DB, schemaName, databaseName, iamRole string) error {
@@ -161,11 +166,7 @@ func CreateExternalTable(db *sql.DB, columns []cloudstorage.TableCol, tableName,
 	}
 	sqlRows := make([]string, 0, len(columnRows)+1)
 	sqlRows = append(sqlRows, columnRows...)
-	for i := range columnRows {
-		log.Info("curr column info:", zap.String("col:", columnRows[i]))
-	}
 
-	// sql := []string{}
 	sql, err := formatter.Format(`
 	CREATE EXTERNAL TABLE {schemaName}.{tableName} (
 		FLAG VARCHAR(10),
@@ -249,7 +250,8 @@ func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, stageName st
 		{selectStat}
 	FROM (
 	SELECT
-		flag, {selectStat}
+		flag, 
+		{selectStat}
 		FROM {externalSchema}.{externalTable} WHERE tablename IS NOT NULL
 		QUALIFY row_number() OVER (PARTITION BY {pkStat} ORDER BY timestamp DESC) = 1
 	) AS S

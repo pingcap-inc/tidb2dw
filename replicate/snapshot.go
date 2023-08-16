@@ -52,6 +52,7 @@ func NewSnapshotReplicateSession(
 	startTSO string,
 	credential *credentials.Value) (*SnapshotReplicateSession, error) {
 	sess := &SnapshotReplicateSession{
+		DataWarehousePool:   dwConnector,
 		TiDBConfig:          tidbConfig,
 		SourceDatabase:      sourceDatabase,
 		SourceTable:         sourceTable,
