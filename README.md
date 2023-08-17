@@ -3,7 +3,7 @@
 A tool to replicate data change from TiDB to Data Warehouses in real-time.
 
 > **Note**
-> Only support TiDB v7.1.0 or later, and only support Snowflake as target Data Warehouse now.
+> Only support TiDB v7.1.0 or later, and only support Snowflake and Redshift as target Data Warehouse now.
 > To support DDL, TiDB v7.3.0 or later is required.
 
 ## Build
@@ -13,6 +13,7 @@ make build
 ```
 
 ## Getting Started
+
 ### Snowflake
 To replicate snapshot and incremental data of a TiDB Table to Snowflake:
 

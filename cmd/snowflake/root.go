@@ -1,111 +1,25 @@
 package snowflake
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/pingcap-inc/tidb2dw/pkg/cdc"
 	"github.com/pingcap-inc/tidb2dw/pkg/snowsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/replicate"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	cdcv2 "github.com/pingcap/tiflow/cdc/api/v2"
 	"github.com/pingcap/tiflow/pkg/logutil"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"github.com/spf13/cobra"
 	"github.com/thediveo/enumflag"
 	"go.uber.org/zap"
 )
-
-func genSinkURI(storagePath string, flushInterval time.Duration, fileSize int64) (*url.URL, error) {
-	sinkUri, err := url.Parse(storagePath)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-	values := sinkUri.Query()
-	values.Add("flush-interval", flushInterval.String())
-	values.Add("file-size", fmt.Sprint(fileSize))
-	values.Add("protocol", "csv")
-	if sinkUri.Scheme == "s3" {
-		creds := credentials.NewEnvCredentials()
-		credValue, err := creds.Get()
-		if err != nil {
-			return nil, errors.Annotate(err, "Failed to resolve AWS credential")
-		}
-		values.Add("access-key", credValue.AccessKeyID)
-		values.Add("secret-access-key", credValue.SecretAccessKey)
-		if credValue.SessionToken != "" {
-			values.Add("session-token", credValue.SessionToken)
-		}
-	} else if sinkUri.Scheme == "gcs" {
-		credValue, found := syscall.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-		if !found {
-			return nil, errors.New("Failed to resolve GCS credential")
-		} else {
-			values.Add("credentials-file", credValue)
-		}
-	} else {
-		return nil, errors.Errorf("get sink uri failed, unsupported uri schema: %s", sinkUri.Scheme)
-	}
-	sinkUri.RawQuery = values.Encode()
-	return sinkUri, nil
-}
-
-func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, startTSO uint64) error {
-	client := &http.Client{}
-	cfCfg := &cdcv2.ChangefeedConfig{
-		SinkURI: sinkURI.String(),
-		ReplicaConfig: &cdcv2.ReplicaConfig{
-			Filter: &cdcv2.FilterConfig{Rules: []string{tableFQN}},
-			Sink: &cdcv2.SinkConfig{
-				CSVConfig:          &cdcv2.CSVConfig{IncludeCommitTs: true, Delimiter: ",", BinaryEncodingMethod: "hex"},
-				CloudStorageConfig: &cdcv2.CloudStorageConfig{OutputColumnID: putil.AddressOf(true)},
-			},
-			EnableOldValue: false,
-		},
-		StartTs: 0,
-	}
-	if startTSO != 0 {
-		cfCfg.StartTs = startTSO
-	}
-	bytesData, _ := json.Marshal(cfCfg)
-	url, err := url.JoinPath(cdcServer, "api/v2/changefeeds")
-	if err != nil {
-		return errors.Annotate(err, "join url failed")
-	}
-	httpReq, _ := http.NewRequest("POST", url, bytes.NewReader(bytesData))
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("create changefeed failed, status code: %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	respData := make(map[string]interface{})
-	if err = json.Unmarshal(body, &respData); err != nil {
-		return errors.Trace(err)
-	}
-	changefeedID := respData["id"].(string)
-	replicateConfig := respData["config"].(map[string]interface{})
-	log.Info("create changefeed success", zap.String("changefeed-id", changefeedID), zap.Any("replica-config", replicateConfig))
-
-	return nil
-}
 
 type RunMode enumflag.Flag
 
@@ -176,12 +90,13 @@ func NewSnowflakeCmd() *cobra.Command {
 			if err != nil {
 				return errors.Trace(err)
 			}
-			sinkURI, err = genSinkURI(increStoragePath, cdcFlushInterval, cdcFileSize)
+			cdcConnector, err := cdc.NewCDCConnector(cdcHost, cdcPort, tableFQN, startTSO, increStoragePath, cdcFlushInterval, cdcFileSize, &credValue)
+			sinkURI = cdcConnector.SinkURI
 			if err != nil {
 				return errors.Trace(err)
 			}
 			if !loadinfoExist || !metadataExist {
-				if err = createChangefeed(fmt.Sprintf("http://%s:%d", cdcHost, cdcPort), sinkURI, tableFQN, startTSO); err != nil {
+				if err = cdcConnector.CreateChangefeed(); err != nil {
 					return errors.Annotate(err, "Failed to create changefeed")
 				}
 			} else {

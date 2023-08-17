@@ -19,7 +19,7 @@ type RedshiftConnector struct {
 	// db is the connection to redshift.
 	db            *sql.DB
 	schemaName    string
-	stageName     string
+	tableName     string
 	storageUrl    string
 	s3Credentials *credentials.Value
 	rsCredentials *credentials.Value
@@ -48,7 +48,7 @@ func NewRedshiftConnector(db *sql.DB, schemaName, stageName, iamRole string, sto
 	return &RedshiftConnector{
 		db:            db,
 		schemaName:    schemaName,
-		stageName:     stageName,
+		tableName:     stageName,
 		storageUrl:    storageUrl,
 		s3Credentials: s3Credentials,
 		rsCredentials: rsCredentials,
@@ -119,19 +119,19 @@ func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePrefix string, onSnap
 
 func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
 	// create external table, need S3 manifest file location
-	externalTableName := fmt.Sprintf("%s", rc.stageName)
-	externalTableSchema := fmt.Sprintf("%s_schema", rc.stageName)
+	externalTableName := fmt.Sprintf("%s", rc.tableName)
+	externalTableSchema := fmt.Sprintf("%s_schema", rc.tableName)
 	fileSuffix := filepath.Ext(filePath)
 	manifestFilePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, strings.TrimSuffix(filePath, fileSuffix)+".manifest")
 	err := CreateExternalTable(rc.db, tableDef.Columns, externalTableName, externalTableSchema, manifestFilePath)
 
 	// merge staged file into table
-	err = DeleteQuery(rc.db, tableDef, rc.stageName)
+	err = DeleteQuery(rc.db, tableDef, rc.tableName)
 	if err != nil {
 		return errors.Trace(err)
 	}
 
-	err = InsertQuery(rc.db, tableDef, rc.stageName)
+	err = InsertQuery(rc.db, tableDef, rc.tableName)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -150,7 +150,7 @@ func (rc *RedshiftConnector) Clone(stageName string, storageURI *url.URL, s3cred
 
 func (rc *RedshiftConnector) Close() {
 	// drop schema
-	schemaName := fmt.Sprintf("%s_schema", rc.stageName)
+	schemaName := fmt.Sprintf("%s_schema", rc.tableName)
 	if err := DropExternalSchema(rc.db, schemaName); err != nil {
 		log.Error("fail to drop schema", zap.Error(err))
 	}

@@ -27,7 +27,7 @@ func GetColumnModifyString(diff *tidbsql.ColumnDiff) (string, error) {
 		if diff.After.Default == nil {
 			strs = append(strs, fmt.Sprintf("COLUMN %s DROP DEFAULT", diff.After.Name))
 		} else {
-			log.Warn("Snowflake does not support update column default value", zap.String("column", diff.After.Name), zap.Any("before", diff.Before.Default), zap.Any("after", diff.After.Default))
+			log.Warn("Redshift does not support update column default value", zap.String("column", diff.After.Name), zap.Any("before", diff.Before.Default), zap.Any("after", diff.After.Default))
 		}
 	}
 	if diff.Before.Nullable != diff.After.Nullable {
