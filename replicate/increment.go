@@ -171,8 +171,16 @@ func (c *consumer) getNewFiles(
 				return nil
 			}
 			// manifest
-			if err = c.GenManifestFile(ctx, path, size); err != nil {
-				return nil
+			manifestFileName := strings.TrimSuffix(path, c.fileExtension) + ".manifest"
+			// check if manifest already exists
+			exist, err := c.externalStorage.FileExists(ctx, manifestFileName)
+			if err != nil {
+				return err
+			}
+			if !exist {
+				if err = c.GenManifestFile(ctx, path, size); err != nil {
+					return nil
+				}
 			}
 		} else {
 			log.Debug("ignore handling file", zap.String("path", path))
@@ -272,6 +280,11 @@ func (c *consumer) syncExecDMLEvents(
 
 		// delete file after merge complete in order to avoid duplicate merge when program restarts
 		if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
+			return errors.Trace(err)
+		}
+		// delete manifest file after merge complete
+		manifestFilePath := strings.TrimSuffix(filePath, c.fileExtension) + ".manifest"
+		if err = c.externalStorage.DeleteFile(ctx, manifestFilePath); err != nil {
 			return errors.Trace(err)
 		}
 	}
