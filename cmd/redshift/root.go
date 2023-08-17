@@ -67,7 +67,7 @@ func createChangefeed(cdcServer string, sinkURI *url.URL, tableFQN string, start
 		ReplicaConfig: &cdcv2.ReplicaConfig{
 			Filter: &cdcv2.FilterConfig{Rules: []string{tableFQN}},
 			Sink: &cdcv2.SinkConfig{
-				CSVConfig:          &cdcv2.CSVConfig{IncludeCommitTs: true, Quote: "", Delimiter: ","},
+				CSVConfig:          &cdcv2.CSVConfig{IncludeCommitTs: true, Quote: "", Delimiter: ",", BinaryEncodingMethod: "hex"},
 				CloudStorageConfig: &cdcv2.CloudStorageConfig{OutputColumnID: putil.AddressOf(true)},
 			},
 			EnableOldValue: false,
