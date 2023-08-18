@@ -39,16 +39,16 @@ func CreateSchema(db *sql.DB, schemaName string) error {
 }
 
 // redshift currently can not support ROWS_PRODUCED function
-// use csv file path for stageUrl, like s3://tidbbucket/snapshot/stock.csv
-func LoadSnapshotFromStage(db *sql.DB, targetTable, storageUrl, filePrefix string, credential *credentials.Value, onSnapshotLoadProgress func(loadedRows int64)) error {
+// use csv file path for storageUrl, like s3://tidbbucket/snapshot/stock.csv
+func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUrl, filePrefix string, credential *credentials.Value, onSnapshotLoadProgress func(loadedRows int64)) error {
 	sql, err := formatter.Format(`
 	COPY {targetTable}
-	FROM '{stageName}/{filePrefix}'
+	FROM '{storageUrl}/{filePrefix}'
 	CREDENTIALS 'aws_access_key_id={accessId};aws_secret_access_key={accessKey}'
 	FORMAT AS CSV DELIMITER ',' QUOTE '"';
 	`, formatter.Named{
 		"targetTable": snowsql.EscapeString(targetTable),
-		"stageName":   snowsql.EscapeString(storageUrl),
+		"storageUrl":  snowsql.EscapeString(storageUrl),
 		"filePrefix":  snowsql.EscapeString(filePrefix), // TODO: Verify
 		"accessId":    credential.AccessKeyID,
 		"accessKey":   credential.SecretAccessKey,
@@ -193,7 +193,7 @@ func CreateExternalTable(db *sql.DB, columns []cloudstorage.TableCol, tableName,
 	return err
 }
 
-func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, stageName string) error {
+func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTableName string) error {
 	selectStat := make([]string, 0, len(tableDef.Columns)+1)
 	selectStat = append(selectStat, `flag`)
 	for _, col := range tableDef.Columns {
@@ -218,8 +218,8 @@ func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, stageName st
 		{onStat};
 	`, formatter.Named{
 		"tableName":      tableDef.Table,
-		"externalSchema": fmt.Sprintf("%s_schema", stageName),
-		"externalTable":  fmt.Sprintf("%s", stageName),
+		"externalSchema": fmt.Sprintf("%s_schema", externalTableName),
+		"externalTable":  fmt.Sprintf("%s", externalTableName),
 		"selectStat":     strings.Join(selectStat, ",\n"),
 		"pkStat":         strings.Join(pkColumn, ", "),
 		"onStat":         strings.Join(onStat, " AND "),
@@ -232,7 +232,7 @@ func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, stageName st
 	return err
 }
 
-func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, stageName string) error {
+func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTableName string) error {
 	selectStat := make([]string, 0, len(tableDef.Columns)+1)
 	for _, col := range tableDef.Columns {
 		selectStat = append(selectStat, col.Name)
@@ -259,8 +259,8 @@ func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, stageName st
 		S.flag != 'D'
 	`, formatter.Named{
 		"tableName":      tableDef.Table,
-		"externalSchema": fmt.Sprintf("%s_schema", stageName),
-		"externalTable":  fmt.Sprintf("%s", stageName),
+		"externalSchema": fmt.Sprintf("%s_schema", externalTableName),
+		"externalTable":  fmt.Sprintf("%s", externalTableName),
 		"selectStat":     strings.Join(selectStat, ",\n"),
 		"pkStat":         strings.Join(pkColumn, ", "),
 	})

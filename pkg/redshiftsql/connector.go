@@ -27,7 +27,7 @@ type RedshiftConnector struct {
 	columns       []cloudstorage.TableCol
 }
 
-func NewRedshiftConnector(db *sql.DB, schemaName, stageName, iamRole string, storageURI *url.URL, s3Credentials, rsCredentials *credentials.Value) (*RedshiftConnector, error) {
+func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName, iamRole string, storageURI *url.URL, s3Credentials, rsCredentials *credentials.Value) (*RedshiftConnector, error) {
 	var err error
 	// create schema
 	err = CreateSchema(db, schemaName)
@@ -36,19 +36,19 @@ func NewRedshiftConnector(db *sql.DB, schemaName, stageName, iamRole string, sto
 	}
 	storageUrl := fmt.Sprintf("%s://%s", storageURI.Scheme, storageURI.Host)
 	// need iam role to create external schema
-	var mode = strings.Split(stageName, "_")[0]
+	var mode = strings.Split(externalTableName, "_")[0]
 	if mode == "increment" {
-		err = CreateExternalSchema(db, fmt.Sprintf("%s_schema", stageName), fmt.Sprintf("%s_database", stageName), iamRole)
+		err = CreateExternalSchema(db, fmt.Sprintf("%s_schema", externalTableName), fmt.Sprintf("%s_database", externalTableName), iamRole)
 		if err != nil {
 			return nil, errors.Annotate(err, "Failed to create external table")
 		}
 	} else if mode != "snapshot" {
-		return nil, errors.Annotate(err, "Incorrect stage name, only support snapshot_stage_* and increment_stage_")
+		return nil, errors.Annotate(err, "Incorrect external table name, only support snapshot_* and increment_*")
 	}
 	return &RedshiftConnector{
 		db:            db,
 		schemaName:    schemaName,
-		tableName:     stageName,
+		tableName:     externalTableName,
 		storageUrl:    storageUrl,
 		s3Credentials: s3Credentials,
 		rsCredentials: rsCredentials,
@@ -110,7 +110,7 @@ func (rc *RedshiftConnector) CopyTableSchema(sourceDatabase string, sourceTable 
 
 // filePrefix should be
 func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
-	if err := LoadSnapshotFromStage(rc.db, targetTable, rc.storageUrl, filePrefix, rc.s3Credentials, onSnapshotLoadProgress); err != nil {
+	if err := LoadSnapshotFromS3(rc.db, targetTable, rc.storageUrl, filePrefix, rc.s3Credentials, onSnapshotLoadProgress); err != nil {
 		return errors.Trace(err)
 	}
 	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
@@ -125,7 +125,7 @@ func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 	manifestFilePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, strings.TrimSuffix(filePath, fileSuffix)+".manifest")
 	err := CreateExternalTable(rc.db, tableDef.Columns, externalTableName, externalTableSchema, manifestFilePath)
 
-	// merge staged file into table
+	// merge external table file into table
 	err = DeleteQuery(rc.db, tableDef, rc.tableName)
 	if err != nil {
 		return errors.Trace(err)
@@ -144,8 +144,8 @@ func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 	return nil
 }
 
-func (rc *RedshiftConnector) Clone(stageName string, storageURI *url.URL, s3credentials *credentials.Value) (coreinterfaces.Connector, error) {
-	return NewRedshiftConnector(rc.db, rc.schemaName, stageName, rc.iamRole, storageURI, s3credentials, rc.rsCredentials)
+func (rc *RedshiftConnector) Clone(externalTableName string, storageURI *url.URL, s3credentials *credentials.Value) (coreinterfaces.Connector, error) {
+	return NewRedshiftConnector(rc.db, rc.schemaName, externalTableName, rc.iamRole, storageURI, s3credentials, rc.rsCredentials)
 }
 
 func (rc *RedshiftConnector) Close() {
