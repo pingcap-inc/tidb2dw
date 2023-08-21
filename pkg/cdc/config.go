@@ -40,7 +40,7 @@ type ChangefeedConfig struct {
 }
 
 type SinkURIConfig struct {
-	storagePath   string
+	storageUri    *url.URL
 	flushInterval time.Duration
 	fileSize      int64
 	protocol      string
@@ -48,14 +48,10 @@ type SinkURIConfig struct {
 }
 
 func (s *SinkURIConfig) genSinkURI() (*url.URL, error) {
-	sinkUri, err := url.Parse(s.storagePath)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-	if sinkUri.Scheme != "s3" {
+	if s.storageUri.Scheme != "s3" {
 		return nil, errors.Errorf("Only support s3 storage")
 	}
-	values := sinkUri.Query()
+	values := s.storageUri.Query()
 	values.Add("flush-interval", s.flushInterval.String())
 	values.Add("file-size", fmt.Sprint(s.fileSize))
 	values.Add("protocol", s.protocol)
@@ -64,6 +60,6 @@ func (s *SinkURIConfig) genSinkURI() (*url.URL, error) {
 	if s.cred.SessionToken != "" {
 		values.Add("session-token", s.cred.SessionToken)
 	}
-	sinkUri.RawQuery = values.Encode()
-	return sinkUri, nil
+	s.storageUri.RawQuery = values.Encode()
+	return s.storageUri, nil
 }

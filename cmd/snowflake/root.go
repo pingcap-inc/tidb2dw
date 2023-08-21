@@ -50,7 +50,6 @@ func NewSnowflakeCmd() *cobra.Command {
 		logFile                string
 		logLevel               string
 		credValue              credentials.Value
-		sindURIStr             string
 
 		mode RunMode
 	)
@@ -82,16 +81,19 @@ func NewSnowflakeCmd() *cobra.Command {
 			log.Info("Snapshot data is all loaded, skip get current TSO")
 		}
 
-		var sinkURI *url.URL
+		var incrementURI *url.URL
 
 		// 2. create changefeed
-		if mode == RunModeFull || (mode == RunModeIncrementalOnly && sindURIStr == "") {
+		if mode == RunModeFull || mode == RunModeIncrementalOnly {
 			increStoragePath, err := url.JoinPath(storagePath, "increment")
 			if err != nil {
 				return errors.Trace(err)
 			}
-			cdcConnector, err := cdc.NewCDCConnector(cdcHost, cdcPort, tableFQN, startTSO, increStoragePath, cdcFlushInterval, cdcFileSize, &credValue)
-			sinkURI = cdcConnector.SinkURI
+			incrementURI, err = url.Parse(increStoragePath)
+			if err != nil {
+				return errors.Annotate(err, "Failed to parse workspace path")
+			}
+			cdcConnector, err := cdc.NewCDCConnector(cdcHost, cdcPort, tableFQN, startTSO, incrementURI, cdcFlushInterval, cdcFileSize, &credValue)
 			if err != nil {
 				return errors.Trace(err)
 			}
@@ -102,12 +104,6 @@ func NewSnowflakeCmd() *cobra.Command {
 			} else {
 				log.Info("Snapshot has been loaded, Changefeed has been created, skip create changefeed")
 			}
-		} else if mode == RunModeIncrementalOnly && sindURIStr != "" {
-			uri, err := url.Parse(sindURIStr)
-			if err != nil {
-				return errors.Trace(err)
-			}
-			sinkURI = uri
 		}
 
 		var sourceDatabase, sourceTable string
@@ -125,13 +121,13 @@ func NewSnowflakeCmd() *cobra.Command {
 			if err != nil {
 				return errors.Trace(err)
 			}
-			db, err := snowflakeConfigFromCli.OpenDB()
-			if err != nil {
-				return errors.Trace(err)
-			}
 			snapshotURI, err := url.Parse(snapStoragePath)
 			if err != nil {
 				return errors.Annotate(err, "Failed to parse workspace path")
+			}
+			db, err := snowflakeConfigFromCli.OpenDB()
+			if err != nil {
+				return errors.Trace(err)
 			}
 			connector, err := snowsql.NewSnowflakeConnector(
 				db,
@@ -158,13 +154,13 @@ func NewSnowflakeCmd() *cobra.Command {
 			connector, err := snowsql.NewSnowflakeConnector(
 				db,
 				fmt.Sprintf("increment_stage_%s", sourceTable),
-				sinkURI,
+				incrementURI,
 				&credValue,
 			)
 			if err != nil {
 				return errors.Trace(err)
 			}
-			if err = replicate.StartReplicateIncrement(connector, sinkURI, cdcFlushInterval/5, "", timezone, &credValue); err != nil {
+			if err = replicate.StartReplicateIncrement(connector, incrementURI, cdcFlushInterval/5, "", timezone, &credValue); err != nil {
 				return errors.Annotate(err, "Failed to replicate incremental")
 			}
 		}
@@ -227,7 +223,8 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&timezone, "tz", "System", "specify time zone of storage consumer")
 	cmd.Flags().StringVar(&logFile, "log.file", "", "log file path")
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
-	cmd.Flags().StringVar(&sindURIStr, "sink-uri", "", "sink uri, only needed under incremental-only mode")
+
+	cmd.MarkFlagRequired("storage")
 
 	return cmd
 }

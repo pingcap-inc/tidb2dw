@@ -48,7 +48,7 @@ func NewSnapshotReplicateSession(
 	tidbConfig *tidbsql.TiDBConfig,
 	sourceDatabase, sourceTable string,
 	snapshotConcurrency int,
-	snapshotURI *url.URL,
+	storageUri *url.URL,
 	startTSO string,
 	credential *credentials.Value) (*SnapshotReplicateSession, error) {
 	sess := &SnapshotReplicateSession{
@@ -58,7 +58,7 @@ func NewSnapshotReplicateSession(
 		SourceTable:         sourceTable,
 		SnapshotConcurrency: snapshotConcurrency,
 		StartTSO:            startTSO,
-		StorageWorkspaceUri: *snapshotURI,
+		StorageWorkspaceUri: *storageUri,
 	}
 	log.Info("Creating replicate session",
 		zap.String("storage", sess.StorageWorkspaceUri.String()),
@@ -282,10 +282,10 @@ func StartReplicateSnapshot(
 	tidbConfig *tidbsql.TiDBConfig,
 	sourceDatabase, sourceTable string,
 	snapshotConcurrency int,
-	snapshotURI *url.URL,
+	storageUri *url.URL,
 	startTSO string,
 	credential *credentials.Value) error {
-	session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, snapshotConcurrency, snapshotURI, startTSO, credential)
+	session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, snapshotConcurrency, storageUri, startTSO, credential)
 	if err != nil {
 		return errors.Trace(err)
 	}
