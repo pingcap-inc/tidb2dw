@@ -502,6 +502,11 @@ func StartReplicateIncrement(
 	var consumer *consumer
 	var err error
 
+	if storageUri.Scheme == "gcs" {
+		log.Error("Skip replicating increment. GCS does not supprt data warehouse connector now...")
+		return nil
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	deferFunc := func() int {
 		stop()
@@ -521,10 +526,6 @@ func StartReplicateIncrement(
 	consumer, err = newConsumer(ctx, dwConnector, storageUri, configFile, timezone, credential)
 	if err != nil {
 		return errors.Annotate(err, "failed to create storage consumer")
-	}
-	if consumer.storageURI.Scheme == "gcs" {
-		log.Error("Skip replicating increment. GCS does not supprt data warehouse connector now...")
-		return nil
 	}
 	if err = consumer.run(ctx, flushInterval); err != nil {
 		return errors.Annotate(err, "error occurred while running consumer")
