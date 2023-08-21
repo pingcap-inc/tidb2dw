@@ -22,12 +22,11 @@ type RedshiftConnector struct {
 	tableName     string
 	storageUrl    string
 	s3Credentials *credentials.Value
-	rsCredentials *credentials.Value
 	iamRole       string
 	columns       []cloudstorage.TableCol
 }
 
-func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName, iamRole string, storageURI *url.URL, s3Credentials, rsCredentials *credentials.Value) (*RedshiftConnector, error) {
+func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName, iamRole string, storageURI *url.URL, s3Credentials *credentials.Value) (*RedshiftConnector, error) {
 	var err error
 	// create schema
 	err = CreateSchema(db, schemaName)
@@ -51,7 +50,6 @@ func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName, iamRole str
 		tableName:     externalTableName,
 		storageUrl:    storageUrl,
 		s3Credentials: s3Credentials,
-		rsCredentials: rsCredentials,
 		iamRole:       iamRole,
 		columns:       nil,
 	}, nil
@@ -119,11 +117,14 @@ func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePrefix string, onSnap
 
 func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
 	// create external table, need S3 manifest file location
-	externalTableName := fmt.Sprintf("%s", rc.tableName)
+	externalTableName := rc.tableName
 	externalTableSchema := fmt.Sprintf("%s_schema", rc.tableName)
 	fileSuffix := filepath.Ext(filePath)
-	manifestFilePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, strings.TrimSuffix(filePath, fileSuffix)+".manifest")
+	manifestFilePath := fmt.Sprintf("%s://%s%s/%s.manifest", uri.Scheme, uri.Host, uri.Path, strings.TrimSuffix(filePath, fileSuffix))
 	err := CreateExternalTable(rc.db, tableDef.Columns, externalTableName, externalTableSchema, manifestFilePath)
+	if err != nil {
+		return errors.Trace(err)
+	}
 
 	// merge external table file into table
 	err = DeleteQuery(rc.db, tableDef, rc.tableName)
@@ -145,7 +146,7 @@ func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 }
 
 func (rc *RedshiftConnector) Clone(externalTableName string, storageURI *url.URL, s3credentials *credentials.Value) (coreinterfaces.Connector, error) {
-	return NewRedshiftConnector(rc.db, rc.schemaName, externalTableName, rc.iamRole, storageURI, s3credentials, rc.rsCredentials)
+	return NewRedshiftConnector(rc.db, rc.schemaName, externalTableName, rc.iamRole, storageURI, s3credentials)
 }
 
 func (rc *RedshiftConnector) Close() {

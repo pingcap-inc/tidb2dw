@@ -139,7 +139,6 @@ func NewRedshiftCmd() *cobra.Command {
 				redshiftConfigFromCli.Role,
 				snapshotURI,
 				&credValue,
-				&credValue,
 			)
 			if err != nil {
 				return errors.Trace(err)
@@ -163,7 +162,6 @@ func NewRedshiftCmd() *cobra.Command {
 				fmt.Sprintf("increment_stage_%s", sourceTable),
 				redshiftConfigFromCli.Role,
 				sinkURI,
-				&credValue,
 				&credValue,
 			)
 			if err != nil {

@@ -18,15 +18,6 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func GetServerSideTimestamp(db *sql.DB) (string, error) {
-	var result string
-	err := db.QueryRow("SELECT GETDATE();").Scan(&result)
-	if err != nil {
-		return "", errors.Trace(err)
-	}
-	return result, nil
-}
-
 func CreateSchema(db *sql.DB, schemaName string) error {
 	sql := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schemaName)
 	_, err := db.Exec(sql)
@@ -219,7 +210,7 @@ func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTabl
 	`, formatter.Named{
 		"tableName":      tableDef.Table,
 		"externalSchema": fmt.Sprintf("%s_schema", externalTableName),
-		"externalTable":  fmt.Sprintf("%s", externalTableName),
+		"externalTable":  externalTableName,
 		"selectStat":     strings.Join(selectStat, ",\n"),
 		"pkStat":         strings.Join(pkColumn, ", "),
 		"onStat":         strings.Join(onStat, " AND "),
@@ -260,7 +251,7 @@ func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTabl
 	`, formatter.Named{
 		"tableName":      tableDef.Table,
 		"externalSchema": fmt.Sprintf("%s_schema", externalTableName),
-		"externalTable":  fmt.Sprintf("%s", externalTableName),
+		"externalTable":  externalTableName,
 		"selectStat":     strings.Join(selectStat, ",\n"),
 		"pkStat":         strings.Join(pkColumn, ", "),
 	})
