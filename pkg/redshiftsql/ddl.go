@@ -1,44 +1,15 @@
 package redshiftsql
 
 import (
-	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
-	"github.com/pingcap/log"
 	timodel "github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
-	"go.uber.org/zap"
 )
-
-func GetColumnModifyString(diff *tidbsql.ColumnDiff) (string, error) {
-	strs := make([]string, 0, 3)
-	if diff.Before.Tp != diff.After.Tp || diff.Before.Precision != diff.After.Precision || diff.Before.Scale != diff.After.Scale {
-		colStr, err := GetRedshiftTypeString(*diff.After)
-		if err != nil {
-			return "", errors.Trace(err)
-		}
-		strs = append(strs, fmt.Sprintf("COLUMN %s", colStr))
-	}
-	if diff.Before.Default != diff.After.Default {
-		if diff.After.Default == nil {
-			strs = append(strs, fmt.Sprintf("COLUMN %s DROP DEFAULT", diff.After.Name))
-		} else {
-			log.Warn("Redshift does not support update column default value", zap.String("column", diff.After.Name), zap.Any("before", diff.Before.Default), zap.Any("after", diff.After.Default))
-		}
-	}
-	if diff.Before.Nullable != diff.After.Nullable {
-		if diff.After.Nullable == "true" {
-			strs = append(strs, fmt.Sprintf("COLUMN %s DROP NOT NULL", diff.After.Name))
-		} else {
-			strs = append(strs, fmt.Sprintf("COLUMN %s SET NOT NULL", diff.After.Name))
-		}
-	}
-	return strings.Join(strs, ", "), nil
-}
 
 func GenDDLViaColumnsDiff(prevColumns []cloudstorage.TableCol, curTableDef cloudstorage.TableDefinition) ([]string, error) {
 	if curTableDef.Type == timodel.ActionTruncateTable {
@@ -126,74 +97,4 @@ func GetRedshiftColumnString(column cloudstorage.TableCol) (string, error) {
 		sb.WriteString(" DEFAULT NULL")
 	}
 	return sb.String(), nil
-}
-
-// something wrong with the DATA_TYPE
-func GetRedshiftTableColumn(db *sql.DB, sourceTable string) ([]cloudstorage.TableCol, error) {
-	columnQuery := fmt.Sprintf(`SELECT COLUMN_NAME, COLUMN_DEFAULT, IS_NULLABLE, DATA_TYPE, 
-CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION
-FROM information_schema.columns
-WHERE table_name = '%s'`, sourceTable) // need to replace "" to ''
-	rows, err := db.Query(columnQuery)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-	// TODO: Confirm with generated column, sequence.
-	defer rows.Close()
-	tableColumns := make([]cloudstorage.TableCol, 0)
-	for rows.Next() {
-		var column struct {
-			ColumnName    string
-			ColumnDefault *string
-			IsNullable    string
-			DataType      string
-			CharMaxLength *int
-			NumPrecision  *int
-			NumScale      *int
-			DateTimePrec  *int
-		}
-		err = rows.Scan(
-			&column.ColumnName,
-			&column.ColumnDefault,
-			&column.IsNullable,
-			&column.DataType,
-			&column.CharMaxLength,
-			&column.NumPrecision,
-			&column.NumScale,
-			&column.DateTimePrec,
-		)
-		if err != nil {
-			return nil, errors.Trace(err)
-		}
-		var precision, scale, nullable string
-		if column.NumPrecision != nil {
-			precision = fmt.Sprintf("%d", *column.NumPrecision)
-		} else if column.DateTimePrec != nil {
-			precision = fmt.Sprintf("%d", *column.DateTimePrec)
-		} else if column.CharMaxLength != nil {
-			precision = fmt.Sprintf("%d", *column.CharMaxLength)
-		}
-		if column.NumScale != nil {
-			scale = fmt.Sprintf("%d", *column.NumScale)
-		}
-		if column.IsNullable == "YES" {
-			nullable = "true"
-		} else {
-			nullable = "false"
-		}
-		var defaultVal interface{}
-		if column.ColumnDefault != nil {
-			defaultVal = *column.ColumnDefault
-		}
-		tableCol := cloudstorage.TableCol{
-			Name:      column.ColumnName,
-			Tp:        column.DataType,
-			Default:   defaultVal,
-			Precision: precision,
-			Scale:     scale,
-			Nullable:  nullable,
-		}
-		tableColumns = append(tableColumns, tableCol)
-	}
-	return tableColumns, nil
 }
