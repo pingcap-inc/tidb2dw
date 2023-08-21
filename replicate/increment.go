@@ -136,6 +136,13 @@ func diffDMLMaps(
 	return resMap
 }
 
+func (c *consumer) GenManifestFile(ctx context.Context, path string, size int64) error {
+	fileName := strings.TrimSuffix(path, c.fileExtension) + ".manifest"
+	content := fmt.Sprintf("{\"entries\":[{\"url\":\"%s%s\",\"mandatory\":true, \"meta\": { \"content_length\": %d } }]}", c.externalStorage.URI(), path, size)
+	c.externalStorage.WriteFile(ctx, fileName, []byte(content))
+	return nil
+}
+
 // getNewFiles returns newly created dml files in specific ranges
 func (c *consumer) getNewFiles(
 	ctx context.Context,
@@ -162,6 +169,18 @@ func (c *consumer) getNewFiles(
 				log.Error("failed to parse dml file path", zap.Error(err))
 				// skip handling this file
 				return nil
+			}
+			// manifest
+			manifestFileName := strings.TrimSuffix(path, c.fileExtension) + ".manifest"
+			// check if manifest already exists
+			exist, err := c.externalStorage.FileExists(ctx, manifestFileName)
+			if err != nil {
+				return err
+			}
+			if !exist {
+				if err = c.GenManifestFile(ctx, path, size); err != nil {
+					return nil
+				}
 			}
 		} else {
 			log.Debug("ignore handling file", zap.String("path", path))
@@ -261,6 +280,11 @@ func (c *consumer) syncExecDMLEvents(
 
 		// delete file after merge complete in order to avoid duplicate merge when program restarts
 		if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
+			return errors.Trace(err)
+		}
+		// delete manifest file after merge complete
+		manifestFilePath := strings.TrimSuffix(filePath, c.fileExtension) + ".manifest"
+		if err = c.externalStorage.DeleteFile(ctx, manifestFilePath); err != nil {
 			return errors.Trace(err)
 		}
 	}
@@ -444,7 +468,6 @@ func (c *consumer) run(ctx context.Context, flushInterval time.Duration) error {
 			return err
 		case <-ticker.C:
 		}
-
 		dmlFileMap, err := c.getNewFiles(ctx)
 		if err != nil {
 			return errors.Trace(err)

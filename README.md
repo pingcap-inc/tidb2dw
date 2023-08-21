@@ -3,7 +3,7 @@
 A tool to replicate data change from TiDB to Data Warehouses in real-time.
 
 > **Note**
-> Only support TiDB v7.1.0 or later, and only support Snowflake as target Data Warehouse now.
+> Only support TiDB v7.1.0 or later, and only support Snowflake and Redshift as target Data Warehouse now.
 > To support DDL, TiDB v7.3.0 or later is required.
 
 ## Build
@@ -14,6 +14,7 @@ make build
 
 ## Getting Started
 
+### Snowflake
 To replicate snapshot and incremental data of a TiDB Table to Snowflake:
 
 ```shell
@@ -37,9 +38,32 @@ export AWS_SESSION_TOKEN=<SESSION_TOKEN>  # Optional
 #   --tidb.pass <pass>
 # Use --help for details.
 ```
+### Redshift
+To replicate snapshot and incremental data of a TiDB Table to Redshift:
+```shell
+export AWS_ACCESS_KEY_ID=<ACCESS_KEY>
+export AWS_SECRET_ACCESS_KEY=<SECRET_KEY>
+export AWS_SESSION_TOKEN=<SESSION_TOKEN>  # Optional
 
+./tidb2dw redshift \
+    --storage s3://my-demo-bucket/prefix \
+    --table <database_name>.<table_name> \
+    --redshift.host <hostname>.<region>.redshift.amazonaws.com \
+    --redshift.port <port> \
+    --redshift.user <username> \
+    --redshift.pass <password> \
+    --redshift.database <database> \
+    --redshift.schema <schema> \
+
+# Note that you may also need to specify these parameters:
+#   --cdc.host x.x.x.x
+#   --tidb.host x.x.x.x
+#   --tidb.user <user>
+#   --tidb.pass <pass>
+# Use --help for details.
+```
 ## Supported DDL Operations
-
+### Snowflake
 All DDL which will change the schema of table are supported (except index related), including:
 
 - Add column
@@ -54,3 +78,16 @@ All DDL which will change the schema of table are supported (except index relate
 > 2. Snowflake has a lot of limitations on modifying column type, like Snowflake does not support update column default value, refer to [Snowflake Docs](https://docs.snowflake.com/en/sql-reference/sql/alter-table-column).
 > 3. The type mapping from TiDB to Snowflake is defined [here](./pkg/snowsql/types.go).
 > 4. Should execute at least one DML before DDL or will report error.
+
+### Redshift
+All DDL which will change the schema of table are supported (except index related), including:
+
+- Add column
+- Drop column
+- Rename column
+- Drop table
+- Truncate table
+
+> **Note**
+> 1. The type mapping from TiDB to Redshift is defined [here](./pkg/redshiftsql/types.go).
+> 2. Should execute at least one DML before DDL or will report error.

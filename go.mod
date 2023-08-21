@@ -185,6 +185,7 @@ require (
 	github.com/lestrrat-go/iter v1.0.2 // indirect
 	github.com/lestrrat-go/jwx/v2 v2.0.6 // indirect
 	github.com/lestrrat-go/option v1.0.0 // indirect
+	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.11.1 // indirect
 	github.com/lufia/plan9stats v0.0.0-20230326075908-cb1d2100619a // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
