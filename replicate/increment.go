@@ -50,10 +50,10 @@ type consumer struct {
 	// dwConnectorMap maintains a map of <TableID, dwConnector>, each table has a dwConnector
 	dwConnectorMap map[model.TableID]coreinterfaces.Connector
 	awsCredential  *credentials.Value // aws credential, resolved from current env
-	sinkURI        *url.URL
+	storageURI     *url.URL
 }
 
-func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, sinkUri *url.URL, configFile, timezone string, credential *credentials.Value) (*consumer, error) {
+func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, storageUri *url.URL, configFile, timezone string, credential *credentials.Value) (*consumer, error) {
 	_, err := putil.GetTimezone(timezone)
 	if err != nil {
 		return nil, errors.Annotate(err, "can not load timezone")
@@ -68,11 +68,6 @@ func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, sink
 			log.Error("failed to decode config file", zap.Error(err))
 			return nil, err
 		}
-	}
-
-	if err = replicaConfig.ValidateAndAdjust(sinkUri); err != nil {
-		log.Error("failed to validate replica config", zap.Error(err))
-		return nil, err
 	}
 
 	switch putil.GetOrZero(replicaConfig.Sink.Protocol) {
@@ -91,7 +86,7 @@ func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, sink
 	}
 	extension := sinkutil.GetFileExtension(protocol)
 
-	storage, err := putil.GetExternalStorageFromURI(ctx, sinkUri.String())
+	storage, err := putil.GetExternalStorageFromURI(ctx, storageUri.String())
 	if err != nil {
 		log.Error("failed to create external storage", zap.Error(err))
 		return nil, err
@@ -110,7 +105,7 @@ func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, sink
 		sampleConnector: dwConnector,
 		dwConnectorMap:  make(map[model.TableID]coreinterfaces.Connector),
 		awsCredential:   credential,
-		sinkURI:         sinkUri,
+		storageURI:      storageUri,
 	}, nil
 }
 
@@ -274,7 +269,7 @@ func (c *consumer) syncExecDMLEvents(
 
 	{ // TODO: make this block is atomic
 		// merge file into data warehouse
-		if err := c.dwConnectorMap[tableID].LoadIncrement(tableDef, c.sinkURI, filePath); err != nil {
+		if err := c.dwConnectorMap[tableID].LoadIncrement(tableDef, c.storageURI, filePath); err != nil {
 			return errors.Trace(err)
 		}
 
@@ -429,7 +424,7 @@ func (c *consumer) handleNewFiles(
 			// create a new connector for the table.
 			connector, err := c.sampleConnector.Clone(
 				fmt.Sprintf("increment_stage_%s", tableDef.Table),
-				c.sinkURI,
+				c.storageURI,
 				c.awsCredential,
 			)
 			if err != nil {
@@ -501,9 +496,16 @@ func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partiti
 	return g.currentTableID
 }
 
-func StartReplicateIncrement(dwConnector coreinterfaces.Connector, sinkUri *url.URL, flushInterval time.Duration, configFile, timezone string, credential *credentials.Value) error {
+func StartReplicateIncrement(
+	dwConnector coreinterfaces.Connector, storageUri *url.URL, flushInterval time.Duration, configFile, timezone string, credential *credentials.Value,
+) error {
 	var consumer *consumer
 	var err error
+
+	if storageUri.Scheme == "gcs" {
+		log.Error("Skip replicating increment. GCS does not supprt data warehouse connector now...")
+		return nil
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	deferFunc := func() int {
@@ -521,13 +523,9 @@ func StartReplicateIncrement(dwConnector coreinterfaces.Connector, sinkUri *url.
 	}
 	defer deferFunc()
 
-	consumer, err = newConsumer(ctx, dwConnector, sinkUri, configFile, timezone, credential)
+	consumer, err = newConsumer(ctx, dwConnector, storageUri, configFile, timezone, credential)
 	if err != nil {
 		return errors.Annotate(err, "failed to create storage consumer")
-	}
-	if consumer.sinkURI.Scheme == "gcs" {
-		log.Error("Skip replicating increment. GCS does not supprt data warehouse connector now...")
-		return nil
 	}
 	if err = consumer.run(ctx, flushInterval); err != nil {
 		return errors.Annotate(err, "error occurred while running consumer")

@@ -24,9 +24,9 @@ type CDCConnector struct {
 	SinkURI       *url.URL
 }
 
-func NewCDCConnector(cdcHost string, cdcPort int, tableFQN string, startTSO uint64, storagePath string, flushInterval time.Duration, fileSize int64, cred *credentials.Value) (*CDCConnector, error) {
+func NewCDCConnector(cdcHost string, cdcPort int, tableFQN string, startTSO uint64, storageUri *url.URL, flushInterval time.Duration, fileSize int64, cred *credentials.Value) (*CDCConnector, error) {
 	sinkURIConfig := &SinkURIConfig{
-		storagePath:   storagePath,
+		storageUri:    storageUri,
 		flushInterval: flushInterval,
 		fileSize:      fileSize,
 		protocol:      "csv",
