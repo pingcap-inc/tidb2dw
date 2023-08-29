@@ -18,13 +18,13 @@ import (
 
 type CDCConnector struct {
 	cdcServer     string
-	tableFQN      string
+	tables        []string
 	startTSO      uint64
 	sinkURIConfig *SinkURIConfig
 	SinkURI       *url.URL
 }
 
-func NewCDCConnector(cdcHost string, cdcPort int, tableFQN string, startTSO uint64, storageUri *url.URL, flushInterval time.Duration, fileSize int64, cred *credentials.Value) (*CDCConnector, error) {
+func NewCDCConnector(cdcHost string, cdcPort int, tables []string, startTSO uint64, storageUri *url.URL, flushInterval time.Duration, fileSize int64, cred *credentials.Value) (*CDCConnector, error) {
 	sinkURIConfig := &SinkURIConfig{
 		storageUri:    storageUri,
 		flushInterval: flushInterval,
@@ -38,7 +38,7 @@ func NewCDCConnector(cdcHost string, cdcPort int, tableFQN string, startTSO uint
 	}
 	return &CDCConnector{
 		cdcServer:     fmt.Sprintf("http://%s:%d", cdcHost, cdcPort),
-		tableFQN:      tableFQN,
+		tables:        tables,
 		startTSO:      startTSO,
 		sinkURIConfig: sinkURIConfig,
 		SinkURI:       sinkURI,
@@ -50,7 +50,7 @@ func (c *CDCConnector) CreateChangefeed() error {
 	cfCfg := &ChangefeedConfig{
 		SinkURI: c.SinkURI.String(),
 		ReplicaConfig: &ReplicaConfig{
-			Filter: &FilterConfig{Rules: []string{c.tableFQN}},
+			Filter: &FilterConfig{Rules: c.tables},
 			Sink: &SinkConfig{
 				CSVConfig:          &CSVConfig{IncludeCommitTs: true, Quote: ""},
 				CloudStorageConfig: &CloudStorageConfig{OutputColumnID: putil.AddressOf(true)},

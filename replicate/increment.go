@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -16,11 +15,9 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tiflow/cdc/model"
 	sinkutil "github.com/pingcap/tiflow/cdc/sink/util"
 	"github.com/pingcap/tiflow/pkg/cmd/util"
 	"github.com/pingcap/tiflow/pkg/config"
-	"github.com/pingcap/tiflow/pkg/quotes"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
@@ -42,18 +39,21 @@ type consumer struct {
 	// tableDMLIdxMap maintains a map of <dmlPathKey, max file index>
 	tableDMLIdxMap map[cloudstorage.DmlPathKey]uint64
 	// tableDefMap maintains a map of <`schema`.`table`, tableDef slice sorted by TableVersion>
-	tableDefMap      map[string]map[uint64]*cloudstorage.TableDefinition
-	tableIDGenerator *fakeTableIDGenerator
-	errCh            chan error
-	// sampleConnector is used to create Connector for dwConnectorMap
-	sampleConnector coreinterfaces.Connector
-	// dwConnectorMap maintains a map of <TableID, dwConnector>, each table has a dwConnector
-	dwConnectorMap map[model.TableID]coreinterfaces.Connector
+	tableDefMap map[string]map[uint64]*cloudstorage.TableDefinition
+	errCh       chan error
+	// dwConnectorMap maintains a map of <tableName, dwConnector>, each table has a dwConnector
+	dwConnectorMap map[string]coreinterfaces.Connector
 	awsCredential  *credentials.Value // aws credential, resolved from current env
 	storageURI     *url.URL
 }
 
-func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, storageUri *url.URL, configFile, timezone string, credential *credentials.Value) (*consumer, error) {
+func newConsumer(
+	ctx context.Context,
+	dwConnectors map[string]coreinterfaces.Connector,
+	storageUri *url.URL,
+	configFile, timezone string,
+	credential *credentials.Value,
+) (*consumer, error) {
 	_, err := putil.GetTimezone(timezone)
 	if err != nil {
 		return nil, errors.Annotate(err, "can not load timezone")
@@ -99,11 +99,7 @@ func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, stor
 		errCh:           make(chan error, 1),
 		tableDMLIdxMap:  make(map[cloudstorage.DmlPathKey]uint64),
 		tableDefMap:     make(map[string]map[uint64]*cloudstorage.TableDefinition),
-		tableIDGenerator: &fakeTableIDGenerator{
-			tableIDs: make(map[string]int64),
-		},
-		sampleConnector: dwConnector,
-		dwConnectorMap:  make(map[model.TableID]coreinterfaces.Connector),
+		dwConnectorMap:  dwConnectors,
 		awsCredential:   credential,
 		storageURI:      storageUri,
 	}, nil
@@ -193,17 +189,17 @@ func (c *consumer) getNewFiles(
 func (c *consumer) syncExecDDLEvents(
 	ctx context.Context,
 	tableDef cloudstorage.TableDefinition,
-	tableID int64,
+	tableFQN string,
 	key cloudstorage.DmlPathKey,
 ) error {
 	if len(tableDef.Query) == 0 {
 		// schema.json file without query is used to initialize the schema.
-		if err := c.dwConnectorMap[tableID].InitSchema(tableDef.Columns); err != nil {
+		if err := c.dwConnectorMap[tableFQN].InitSchema(tableDef.Columns); err != nil {
 			return errors.Trace(err)
 		}
 	} else {
 		// TODO: make this block is atomic
-		if err := c.dwConnectorMap[tableID].ExecDDL(tableDef); err != nil {
+		if err := c.dwConnectorMap[tableFQN].ExecDDL(tableDef); err != nil {
 			// FIXME: if there is a DDL before all the DMLs, will return error here.
 			return errors.Annotate(err,
 				fmt.Sprintf("Please check the DDL query, "+
@@ -250,7 +246,7 @@ func (c *consumer) syncExecDDLEvents(
 func (c *consumer) syncExecDMLEvents(
 	ctx context.Context,
 	tableDef cloudstorage.TableDefinition,
-	tableID int64,
+	tableFQN string,
 	key cloudstorage.DmlPathKey,
 	fileIdx uint64,
 ) error {
@@ -269,7 +265,7 @@ func (c *consumer) syncExecDMLEvents(
 
 	{ // TODO: make this block is atomic
 		// merge file into data warehouse
-		if err := c.dwConnectorMap[tableID].LoadIncrement(tableDef, c.storageURI, filePath); err != nil {
+		if err := c.dwConnectorMap[tableFQN].LoadIncrement(tableDef, c.storageURI, filePath); err != nil {
 			return errors.Trace(err)
 		}
 
@@ -419,24 +415,16 @@ func (c *consumer) handleNewFiles(
 	//       so we can not just pipeline this loop.
 	for _, key := range keys {
 		tableDef := c.mustGetTableDef(key.SchemaPathKey)
-		tableID := c.tableIDGenerator.generateFakeTableID(key.Schema, key.Table, key.PartitionNum)
-		if _, ok := c.dwConnectorMap[tableID]; !ok {
-			// create a new connector for the table.
-			connector, err := c.sampleConnector.Clone(
-				fmt.Sprintf("increment_stage_%s", tableDef.Table),
-				c.storageURI,
-				c.awsCredential,
-			)
-			if err != nil {
-				return errors.Trace(err)
-			}
-			c.dwConnectorMap[tableID] = connector
+		tableFQN := fmt.Sprintf("%s.%s", key.Schema, key.Table)
+
+		if _, ok := c.dwConnectorMap[tableFQN]; !ok {
+			return errors.Errorf("table %s not found in data warehouse", tableFQN)
 		}
 
 		// if the key is a fake dml path key which is mainly used for
 		// sorting schema.json file before the dml files, which means it is a schema.json file.
 		if key.PartitionNum == fakePartitionNumForSchemaFile && len(key.Date) == 0 {
-			if err := c.syncExecDDLEvents(ctx, tableDef, tableID, key); err != nil {
+			if err := c.syncExecDDLEvents(ctx, tableDef, tableFQN, key); err != nil {
 				return errors.Trace(err)
 			}
 			continue
@@ -444,7 +432,7 @@ func (c *consumer) handleNewFiles(
 
 		fileRange := dmlFileMap[key]
 		for i := fileRange.start; i <= fileRange.end; i++ {
-			if err := c.syncExecDMLEvents(ctx, tableDef, tableID, key, i); err != nil {
+			if err := c.syncExecDMLEvents(ctx, tableDef, tableFQN, key, i); err != nil {
 				return errors.Trace(err)
 			}
 		}
@@ -474,30 +462,12 @@ func (c *consumer) run(ctx context.Context, flushInterval time.Duration) error {
 	}
 }
 
-// copied from kafka-consumer
-type fakeTableIDGenerator struct {
-	tableIDs       map[string]int64
-	currentTableID int64
-	mu             sync.Mutex
-}
-
-func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partition int64) int64 {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	key := quotes.QuoteSchema(schema, table)
-	if partition > 0 {
-		key = fmt.Sprintf("%s.`%d`", key, partition)
-	}
-	if tableID, ok := g.tableIDs[key]; ok {
-		return tableID
-	}
-	g.currentTableID++
-	g.tableIDs[key] = g.currentTableID
-	return g.currentTableID
-}
-
 func StartReplicateIncrement(
-	dwConnector coreinterfaces.Connector, storageUri *url.URL, flushInterval time.Duration, configFile, timezone string, credential *credentials.Value,
+	dwConnectors map[string]coreinterfaces.Connector,
+	storageUri *url.URL,
+	flushInterval time.Duration,
+	configFile, timezone string,
+	credential *credentials.Value,
 ) error {
 	var consumer *consumer
 	var err error
@@ -523,7 +493,7 @@ func StartReplicateIncrement(
 	}
 	defer deferFunc()
 
-	consumer, err = newConsumer(ctx, dwConnector, storageUri, configFile, timezone, credential)
+	consumer, err = newConsumer(ctx, dwConnectors, storageUri, configFile, timezone, credential)
 	if err != nil {
 		return errors.Annotate(err, "failed to create storage consumer")
 	}

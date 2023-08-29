@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
@@ -143,10 +142,6 @@ func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 	}
 	log.Info("Successfully merge file", zap.String("file", filePath))
 	return nil
-}
-
-func (rc *RedshiftConnector) Clone(externalTableName string, storageURI *url.URL, s3credentials *credentials.Value) (coreinterfaces.Connector, error) {
-	return NewRedshiftConnector(rc.db, rc.schemaName, externalTableName, rc.iamRole, storageURI, s3credentials)
 }
 
 func (rc *RedshiftConnector) Close() {

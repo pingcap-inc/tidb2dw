@@ -3,8 +3,7 @@ package main
 import (
 	"fmt"
 
-	rsCmd "github.com/pingcap-inc/tidb2dw/cmd/redshift"
-	sfCmd "github.com/pingcap-inc/tidb2dw/cmd/snowflake"
+	"github.com/pingcap-inc/tidb2dw/cmd"
 	"github.com/pingcap-inc/tidb2dw/version"
 	"github.com/spf13/cobra"
 )
@@ -36,8 +35,8 @@ func init() {
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version of tidb2dw")
 
 	rootCmd.AddCommand(
-		sfCmd.NewSnowflakeCmd(),
-		rsCmd.NewRedshiftCmd(),
+		cmd.NewSnowflakeCmd(),
+		cmd.NewRedshiftCmd(),
 	)
 }
 
