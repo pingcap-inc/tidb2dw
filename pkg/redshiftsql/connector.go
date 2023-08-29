@@ -19,7 +19,7 @@ type RedshiftConnector struct {
 	db            *sql.DB
 	schemaName    string
 	tableName     string
-	storageUrl    string
+	storageUrl    *url.URL
 	s3Credentials *credentials.Value
 	iamRole       string
 	columns       []cloudstorage.TableCol
@@ -32,7 +32,6 @@ func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName, iamRole str
 	if err != nil {
 		return nil, errors.Annotate(err, "Failed to create schema")
 	}
-	storageUrl := fmt.Sprintf("%s://%s", storageURI.Scheme, storageURI.Host)
 	// need iam role to create external schema
 	var mode = strings.Split(externalTableName, "_")[0]
 	if mode == "increment" {
@@ -47,7 +46,7 @@ func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName, iamRole str
 		db:            db,
 		schemaName:    schemaName,
 		tableName:     externalTableName,
-		storageUrl:    storageUrl,
+		storageUrl:    storageURI,
 		s3Credentials: s3Credentials,
 		iamRole:       iamRole,
 		columns:       nil,
@@ -107,19 +106,20 @@ func (rc *RedshiftConnector) CopyTableSchema(sourceDatabase string, sourceTable 
 
 // filePrefix should be
 func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
-	if err := LoadSnapshotFromS3(rc.db, targetTable, rc.storageUrl, filePrefix, rc.s3Credentials, onSnapshotLoadProgress); err != nil {
+	filePrefix = fmt.Sprintf("%s://%s/%s", rc.storageUrl.Scheme, rc.storageUrl.Host, filePrefix)
+	if err := LoadSnapshotFromS3(rc.db, targetTable, filePrefix, rc.s3Credentials, onSnapshotLoadProgress); err != nil {
 		return errors.Trace(err)
 	}
 	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
 	return nil
 }
 
-func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
+func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, filePath string) error {
 	// create external table, need S3 manifest file location
 	externalTableName := rc.tableName
 	externalTableSchema := fmt.Sprintf("%s_schema", rc.tableName)
 	fileSuffix := filepath.Ext(filePath)
-	manifestFilePath := fmt.Sprintf("%s://%s%s/%s.manifest", uri.Scheme, uri.Host, uri.Path, strings.TrimSuffix(filePath, fileSuffix))
+	manifestFilePath := fmt.Sprintf("%s://%s%s/%s.manifest", rc.storageUrl.Scheme, rc.storageUrl.Host, rc.storageUrl.Path, strings.TrimSuffix(filePath, fileSuffix))
 	err := CreateExternalTable(rc.db, tableDef.Columns, externalTableName, externalTableSchema, manifestFilePath)
 	if err != nil {
 		return errors.Trace(err)

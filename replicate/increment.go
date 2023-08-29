@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
@@ -43,8 +42,6 @@ type consumer struct {
 	errCh       chan error
 	// dwConnectorMap maintains a map of <tableName, dwConnector>, each table has a dwConnector
 	dwConnectorMap map[string]coreinterfaces.Connector
-	awsCredential  *credentials.Value // aws credential, resolved from current env
-	storageURI     *url.URL
 }
 
 func newConsumer(
@@ -52,7 +49,6 @@ func newConsumer(
 	dwConnectors map[string]coreinterfaces.Connector,
 	storageUri *url.URL,
 	configFile, timezone string,
-	credential *credentials.Value,
 ) (*consumer, error) {
 	_, err := putil.GetTimezone(timezone)
 	if err != nil {
@@ -100,8 +96,6 @@ func newConsumer(
 		tableDMLIdxMap:  make(map[cloudstorage.DmlPathKey]uint64),
 		tableDefMap:     make(map[string]map[uint64]*cloudstorage.TableDefinition),
 		dwConnectorMap:  dwConnectors,
-		awsCredential:   credential,
-		storageURI:      storageUri,
 	}, nil
 }
 
@@ -265,7 +259,7 @@ func (c *consumer) syncExecDMLEvents(
 
 	{ // TODO: make this block is atomic
 		// merge file into data warehouse
-		if err := c.dwConnectorMap[tableFQN].LoadIncrement(tableDef, c.storageURI, filePath); err != nil {
+		if err := c.dwConnectorMap[tableFQN].LoadIncrement(tableDef, filePath); err != nil {
 			return errors.Trace(err)
 		}
 
@@ -467,7 +461,6 @@ func StartReplicateIncrement(
 	storageUri *url.URL,
 	flushInterval time.Duration,
 	configFile, timezone string,
-	credential *credentials.Value,
 ) error {
 	var consumer *consumer
 	var err error
@@ -493,7 +486,7 @@ func StartReplicateIncrement(
 	}
 	defer deferFunc()
 
-	consumer, err = newConsumer(ctx, dwConnectors, storageUri, configFile, timezone, credential)
+	consumer, err = newConsumer(ctx, dwConnectors, storageUri, configFile, timezone)
 	if err != nil {
 		return errors.Annotate(err, "failed to create storage consumer")
 	}

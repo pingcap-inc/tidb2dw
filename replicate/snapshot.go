@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
@@ -20,10 +19,8 @@ import (
 )
 
 type SnapshotReplicateSession struct {
-	TiDBConfig          *tidbsql.TiDBConfig
-	SnapshotConcurrency int
+	TiDBConfig *tidbsql.TiDBConfig
 
-	AWSCredential     *credentials.Value // The resolved credential from current env
 	DataWarehousePool coreinterfaces.Connector
 	TiDBPool          *sql.DB
 
@@ -31,7 +28,6 @@ type SnapshotReplicateSession struct {
 	SourceTable    string
 	StartTSO       string
 
-	OnSnapshotDumpProgress func(dumpedRows, totalRows int64)
 	OnSnapshotLoadProgress func(loadedRows int64)
 
 	StorageWorkspaceUri url.URL
@@ -41,23 +37,20 @@ func NewSnapshotReplicateSession(
 	dwConnector coreinterfaces.Connector,
 	tidbConfig *tidbsql.TiDBConfig,
 	sourceDatabase, sourceTable string,
-	snapshotConcurrency int,
 	storageUri *url.URL,
 	startTSO string,
-	credential *credentials.Value) (*SnapshotReplicateSession, error) {
+) (*SnapshotReplicateSession, error) {
 	sess := &SnapshotReplicateSession{
 		DataWarehousePool:   dwConnector,
 		TiDBConfig:          tidbConfig,
 		SourceDatabase:      sourceDatabase,
 		SourceTable:         sourceTable,
-		SnapshotConcurrency: snapshotConcurrency,
 		StartTSO:            startTSO,
 		StorageWorkspaceUri: *storageUri,
 	}
 	log.Info("Creating replicate session",
 		zap.String("storage", sess.StorageWorkspaceUri.String()),
 		zap.String("source", fmt.Sprintf("%s.%s", sourceDatabase, sourceTable)))
-	sess.AWSCredential = credential
 	{
 		db, err := tidbConfig.OpenDB()
 		if err != nil {
@@ -65,14 +58,9 @@ func NewSnapshotReplicateSession(
 		}
 		sess.TiDBPool = db
 	}
-	{
-		// Setup progress reporters
-		sess.OnSnapshotLoadProgress = func(loadedRows int64) {
-			log.Info("Snapshot load progress", zap.Int64("loadedRows", loadedRows))
-		}
-		sess.OnSnapshotDumpProgress = func(dumpedRows, totalRows int64) {
-			log.Info("Snapshot dump progress", zap.Int64("dumpedRows", dumpedRows), zap.Int64("estimatedTotalRows", totalRows))
-		}
+	// Setup progress reporters
+	sess.OnSnapshotLoadProgress = func(loadedRows int64) {
+		log.Info("Snapshot load progress", zap.Int64("loadedRows", loadedRows))
 	}
 
 	return sess, nil
@@ -132,10 +120,9 @@ func StartReplicateSnapshot(
 	dwConnectors map[string]coreinterfaces.Connector,
 	tidbConfig *tidbsql.TiDBConfig,
 	tableNames []string,
-	snapshotConcurrency int,
 	storageUri *url.URL,
 	startTSO string,
-	credential *credentials.Value) error {
+) error {
 
 	errChan := make(chan error, len(tableNames))
 	var wg sync.WaitGroup
@@ -146,7 +133,7 @@ func StartReplicateSnapshot(
 			defer wg.Done()
 
 			sourceDatabase, sourceTable := utils.SplitTableFQN(tableName)
-			session, err := NewSnapshotReplicateSession(dwConnectors[tableName], tidbConfig, sourceDatabase, sourceTable, snapshotConcurrency, storageUri, startTSO, credential)
+			session, err := NewSnapshotReplicateSession(dwConnectors[tableName], tidbConfig, sourceDatabase, sourceTable, storageUri, startTSO)
 			if err != nil {
 				errChan <- errors.Trace(err)
 				return

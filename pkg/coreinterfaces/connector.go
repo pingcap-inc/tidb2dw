@@ -2,7 +2,6 @@ package coreinterfaces
 
 import (
 	"database/sql"
-	"net/url"
 
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
@@ -22,7 +21,7 @@ type Connector interface {
 	// ExecDDL executes the DDL statements in Data Warehouse
 	ExecDDL(tableDef cloudstorage.TableDefinition) error
 	// LoadIncrement loads the increment data into the Data Warehouse
-	LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error
+	LoadIncrement(tableDef cloudstorage.TableDefinition, filePath string) error
 	// Close closes the connection to the Data Warehouse
 	Close()
 }

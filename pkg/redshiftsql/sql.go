@@ -31,16 +31,15 @@ func CreateSchema(db *sql.DB, schemaName string) error {
 
 // redshift currently can not support ROWS_PRODUCED function
 // use csv file path for storageUrl, like s3://tidbbucket/snapshot/stock.csv
-func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUrl, filePrefix string, credential *credentials.Value, onSnapshotLoadProgress func(loadedRows int64)) error {
+func LoadSnapshotFromS3(db *sql.DB, targetTable, filePath string, credential *credentials.Value, onSnapshotLoadProgress func(loadedRows int64)) error {
 	sql, err := formatter.Format(`
 	COPY {targetTable}
-	FROM '{storageUrl}/{filePrefix}'
+	FROM '{filePath}'
 	CREDENTIALS 'aws_access_key_id={accessId};aws_secret_access_key={accessKey}'
 	FORMAT AS CSV DELIMITER ',' QUOTE '"';
 	`, formatter.Named{
 		"targetTable": snowsql.EscapeString(targetTable),
-		"storageUrl":  snowsql.EscapeString(storageUrl),
-		"filePrefix":  snowsql.EscapeString(filePrefix), // TODO: Verify
+		"filePath":    snowsql.EscapeString(filePath),
 		"accessId":    credential.AccessKeyID,
 		"accessKey":   credential.SecretAccessKey,
 	})

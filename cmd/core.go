@@ -33,6 +33,11 @@ var RunModeIds = map[RunMode][]string{
 	RunModeIncrementalOnly: {"incremental-only"},
 }
 
+// o => dump snapshot => create changefeed =>   load snapshot   => incremental load
+//
+//	^                 ^                    ^ 				    ^
+//	|			      |				       |				    |
+//	+-------init------+--snapshot-dumped---+-changefeed-created-+-snapshot-loaded-+
 type Stage string
 
 const (
@@ -151,14 +156,14 @@ func Replicate(
 		fallthrough
 	case StageChangefeedCreated:
 		if mode != RunModeIncrementalOnly {
-			if err = replicate.StartReplicateSnapshot(dwSnapConnectors, tidbConfig, tableNames, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), &credValue); err != nil {
+			if err = replicate.StartReplicateSnapshot(dwSnapConnectors, tidbConfig, tableNames, snapshotURI, fmt.Sprint(startTSO)); err != nil {
 				return errors.Annotate(err, "Failed to replicate snapshot")
 			}
 		}
 		fallthrough
 	case StageSnapshotLoaded:
 		if mode != RunModeSnapshotOnly {
-			if err = replicate.StartReplicateIncrement(dwIncreConnectors, incrementURI, cdcFlushInterval/5, "", timezone, &credValue); err != nil {
+			if err = replicate.StartReplicateIncrement(dwIncreConnectors, incrementURI, cdcFlushInterval/5, "", timezone); err != nil {
 				return errors.Annotate(err, "Failed to replicate incremental")
 			}
 		}
