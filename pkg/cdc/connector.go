@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	"github.com/pingcap/tiflow/pkg/config"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
 )
@@ -54,6 +55,7 @@ func (c *CDCConnector) CreateChangefeed() error {
 			Sink: &SinkConfig{
 				CSVConfig:          &CSVConfig{IncludeCommitTs: true, Quote: ""},
 				CloudStorageConfig: &CloudStorageConfig{OutputColumnID: putil.AddressOf(true)},
+				DateSeparator:      config.DateSeparatorDay.String(),
 			},
 			EnableOldValue: false,
 		},
