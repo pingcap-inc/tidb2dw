@@ -57,17 +57,17 @@ func checkStage(storagePath string) (Stage, error) {
 		return stage, err
 	}
 	if exist, err := storage.FileExists(ctx, "increment/metadata"); err != nil || !exist {
-		return stage, err
+		return stage, errors.Wrap(err, "Failed to check increment metadata")
 	} else {
 		stage = StageChangefeedCreated
 	}
 	if exist, err := storage.FileExists(ctx, "snapshot/metadata"); err != nil || !exist {
-		return stage, err
+		return stage, errors.Wrap(err, "Failed to check snapshot metadata")
 	} else {
 		stage = StageSnapshotDumped
 	}
 	if exist, err := storage.FileExists(ctx, "snapshot/loadinfo"); err != nil && !exist {
-		return stage, err
+		return stage, errors.Wrap(err, "Failed to check snapshot loadinfo")
 	} else {
 		stage = StageSnapshotLoaded
 	}
