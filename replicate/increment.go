@@ -18,7 +18,6 @@ import (
 	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tiflow/cdc/model"
 	sinkutil "github.com/pingcap/tiflow/cdc/sink/util"
-	"github.com/pingcap/tiflow/pkg/cmd/util"
 	"github.com/pingcap/tiflow/pkg/config"
 	"github.com/pingcap/tiflow/pkg/quotes"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
@@ -53,7 +52,7 @@ type consumer struct {
 	storageURI     *url.URL
 }
 
-func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, storageUri *url.URL, configFile, timezone string, credential *credentials.Value) (*consumer, error) {
+func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, storageUri *url.URL, timezone string, credential *credentials.Value) (*consumer, error) {
 	_, err := putil.GetTimezone(timezone)
 	if err != nil {
 		return nil, errors.Annotate(err, "can not load timezone")
@@ -62,13 +61,6 @@ func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, stor
 	serverCfg.TZ = timezone
 	config.StoreGlobalServerConfig(serverCfg)
 	replicaConfig := config.GetDefaultReplicaConfig()
-	if len(configFile) > 0 {
-		err := util.StrictDecodeFile(configFile, "storage consumer", replicaConfig)
-		if err != nil {
-			log.Error("failed to decode config file", zap.Error(err))
-			return nil, err
-		}
-	}
 
 	switch putil.GetOrZero(replicaConfig.Sink.Protocol) {
 	case config.ProtocolCsv.String():
@@ -497,7 +489,7 @@ func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partiti
 }
 
 func StartReplicateIncrement(
-	dwConnector coreinterfaces.Connector, storageUri *url.URL, flushInterval time.Duration, configFile, timezone string, credential *credentials.Value,
+	dwConnector coreinterfaces.Connector, storageUri *url.URL, flushInterval time.Duration, timezone string, credential *credentials.Value,
 ) error {
 	var consumer *consumer
 	var err error
@@ -523,7 +515,7 @@ func StartReplicateIncrement(
 	}
 	defer deferFunc()
 
-	consumer, err = newConsumer(ctx, dwConnector, storageUri, configFile, timezone, credential)
+	consumer, err = newConsumer(ctx, dwConnector, storageUri, timezone, credential)
 	if err != nil {
 		return errors.Annotate(err, "failed to create storage consumer")
 	}
