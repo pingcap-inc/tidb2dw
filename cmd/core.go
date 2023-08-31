@@ -56,13 +56,19 @@ func checkStage(storagePath string) (Stage, error) {
 	if err != nil {
 		return stage, err
 	}
-	if exist, err := storage.FileExists(ctx, "increment/metadata"); err == nil && exist {
+	if exist, err := storage.FileExists(ctx, "increment/metadata"); err != nil || !exist {
+		return stage, err
+	} else {
 		stage = StageChangefeedCreated
 	}
-	if exist, err := storage.FileExists(ctx, "snapshot/metadata"); err == nil && exist {
+	if exist, err := storage.FileExists(ctx, "snapshot/metadata"); err != nil || !exist {
+		return stage, err
+	} else {
 		stage = StageSnapshotDumped
 	}
-	if exist, err := storage.FileExists(ctx, "snapshot/loadinfo"); err == nil && exist {
+	if exist, err := storage.FileExists(ctx, "snapshot/loadinfo"); err != nil && !exist {
+		return stage, err
+	} else {
 		stage = StageSnapshotLoaded
 	}
 	return stage, nil
