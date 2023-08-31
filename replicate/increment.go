@@ -35,7 +35,6 @@ type fileIndexRange struct {
 }
 
 type consumer struct {
-	replicationCfg  *config.ReplicaConfig
 	externalStorage storage.ExternalStorage
 	fileExtension   string
 	// tableDMLIdxMap maintains a map of <dmlPathKey, max file index>
@@ -60,23 +59,7 @@ func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, stor
 	serverCfg := config.GetGlobalServerConfig().Clone()
 	serverCfg.TZ = timezone
 	config.StoreGlobalServerConfig(serverCfg)
-	replicaConfig := config.GetDefaultReplicaConfig()
-
-	switch putil.GetOrZero(replicaConfig.Sink.Protocol) {
-	case config.ProtocolCsv.String():
-	case config.ProtocolCanalJSON.String():
-	default:
-		return nil, fmt.Errorf(
-			"data encoded in protocol %s is not supported yet",
-			putil.GetOrZero(replicaConfig.Sink.Protocol),
-		)
-	}
-
-	protocol, err := config.ParseSinkProtocolFromString(putil.GetOrZero(replicaConfig.Sink.Protocol))
-	if err != nil {
-		return nil, err
-	}
-	extension := sinkutil.GetFileExtension(protocol)
+	extension := sinkutil.GetFileExtension(config.ProtocolCsv)
 
 	storage, err := putil.GetExternalStorageFromURI(ctx, storageUri.String())
 	if err != nil {
@@ -85,7 +68,6 @@ func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, stor
 	}
 
 	return &consumer{
-		replicationCfg:  replicaConfig,
 		externalStorage: storage,
 		fileExtension:   extension,
 		errCh:           make(chan error, 1),
@@ -282,7 +264,7 @@ func (c *consumer) syncExecDMLEvents(
 func (c *consumer) parseDMLFilePath(_ context.Context, path string) error {
 	var dmlkey cloudstorage.DmlPathKey
 	fileIdx, err := dmlkey.ParseDMLFilePath(
-		putil.GetOrZero(c.replicationCfg.Sink.DateSeparator),
+		config.DateSeparatorDay.String(),
 		path,
 	)
 	if err != nil {

@@ -56,13 +56,13 @@ func checkStage(storagePath string) (Stage, error) {
 	if err != nil {
 		return stage, err
 	}
-	if exist, err := storage.FileExists(ctx, "increment/metadata"); err != nil && exist {
+	if exist, err := storage.FileExists(ctx, "increment/metadata"); err == nil && exist {
 		stage = StageChangefeedCreated
 	}
-	if exist, err := storage.FileExists(ctx, "snapshot/metadata"); err != nil && exist {
+	if exist, err := storage.FileExists(ctx, "snapshot/metadata"); err == nil && exist {
 		stage = StageSnapshotDumped
 	}
-	if exist, err := storage.FileExists(ctx, "snapshot/loadinfo"); err != nil && exist {
+	if exist, err := storage.FileExists(ctx, "snapshot/loadinfo"); err == nil && exist {
 		stage = StageSnapshotLoaded
 	}
 	return stage, nil
@@ -123,6 +123,7 @@ func Replicate(
 	if err != nil {
 		return errors.Trace(err)
 	}
+	log.Info("Current stage", zap.String("stage", string(stage)))
 
 	startTSO, err := tidbsql.GetCurrentTSO(tidbConfig)
 	if err != nil {
