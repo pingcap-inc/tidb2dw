@@ -25,6 +25,7 @@ type CloudStorageConfig struct {
 type SinkConfig struct {
 	CSVConfig          *CSVConfig          `json:"csv,omitempty"`
 	CloudStorageConfig *CloudStorageConfig `json:"cloud_storage_config,omitempty"`
+	DateSeparator      string              `json:"date_separator,omitempty"`
 }
 
 type ReplicaConfig struct {

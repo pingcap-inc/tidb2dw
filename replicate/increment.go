@@ -18,7 +18,6 @@ import (
 	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tiflow/cdc/model"
 	sinkutil "github.com/pingcap/tiflow/cdc/sink/util"
-	"github.com/pingcap/tiflow/pkg/cmd/util"
 	"github.com/pingcap/tiflow/pkg/config"
 	"github.com/pingcap/tiflow/pkg/quotes"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
@@ -36,7 +35,6 @@ type fileIndexRange struct {
 }
 
 type consumer struct {
-	replicationCfg  *config.ReplicaConfig
 	externalStorage storage.ExternalStorage
 	fileExtension   string
 	// tableDMLIdxMap maintains a map of <dmlPathKey, max file index>
@@ -53,7 +51,7 @@ type consumer struct {
 	storageURI     *url.URL
 }
 
-func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, storageUri *url.URL, configFile, timezone string, credential *credentials.Value) (*consumer, error) {
+func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, storageUri *url.URL, timezone string, credential *credentials.Value) (*consumer, error) {
 	_, err := putil.GetTimezone(timezone)
 	if err != nil {
 		return nil, errors.Annotate(err, "can not load timezone")
@@ -61,30 +59,7 @@ func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, stor
 	serverCfg := config.GetGlobalServerConfig().Clone()
 	serverCfg.TZ = timezone
 	config.StoreGlobalServerConfig(serverCfg)
-	replicaConfig := config.GetDefaultReplicaConfig()
-	if len(configFile) > 0 {
-		err := util.StrictDecodeFile(configFile, "storage consumer", replicaConfig)
-		if err != nil {
-			log.Error("failed to decode config file", zap.Error(err))
-			return nil, err
-		}
-	}
-
-	switch putil.GetOrZero(replicaConfig.Sink.Protocol) {
-	case config.ProtocolCsv.String():
-	case config.ProtocolCanalJSON.String():
-	default:
-		return nil, fmt.Errorf(
-			"data encoded in protocol %s is not supported yet",
-			putil.GetOrZero(replicaConfig.Sink.Protocol),
-		)
-	}
-
-	protocol, err := config.ParseSinkProtocolFromString(putil.GetOrZero(replicaConfig.Sink.Protocol))
-	if err != nil {
-		return nil, err
-	}
-	extension := sinkutil.GetFileExtension(protocol)
+	extension := sinkutil.GetFileExtension(config.ProtocolCsv)
 
 	storage, err := putil.GetExternalStorageFromURI(ctx, storageUri.String())
 	if err != nil {
@@ -93,7 +68,6 @@ func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, stor
 	}
 
 	return &consumer{
-		replicationCfg:  replicaConfig,
 		externalStorage: storage,
 		fileExtension:   extension,
 		errCh:           make(chan error, 1),
@@ -290,7 +264,7 @@ func (c *consumer) syncExecDMLEvents(
 func (c *consumer) parseDMLFilePath(_ context.Context, path string) error {
 	var dmlkey cloudstorage.DmlPathKey
 	fileIdx, err := dmlkey.ParseDMLFilePath(
-		putil.GetOrZero(c.replicationCfg.Sink.DateSeparator),
+		config.DateSeparatorDay.String(),
 		path,
 	)
 	if err != nil {
@@ -497,7 +471,7 @@ func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partiti
 }
 
 func StartReplicateIncrement(
-	dwConnector coreinterfaces.Connector, storageUri *url.URL, flushInterval time.Duration, configFile, timezone string, credential *credentials.Value,
+	dwConnector coreinterfaces.Connector, storageUri *url.URL, flushInterval time.Duration, timezone string, credential *credentials.Value,
 ) error {
 	var consumer *consumer
 	var err error
@@ -523,7 +497,7 @@ func StartReplicateIncrement(
 	}
 	defer deferFunc()
 
-	consumer, err = newConsumer(ctx, dwConnector, storageUri, configFile, timezone, credential)
+	consumer, err = newConsumer(ctx, dwConnector, storageUri, timezone, credential)
 	if err != nil {
 		return errors.Annotate(err, "failed to create storage consumer")
 	}
