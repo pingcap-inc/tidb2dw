@@ -66,7 +66,7 @@ func checkStage(storagePath string) (Stage, error) {
 	} else {
 		stage = StageSnapshotDumped
 	}
-	if exist, err := storage.FileExists(ctx, "snapshot/loadinfo"); err != nil && !exist {
+	if exist, err := storage.FileExists(ctx, "snapshot/loadinfo"); err != nil || !exist {
 		return stage, errors.Wrap(err, "Failed to check snapshot loadinfo")
 	} else {
 		stage = StageSnapshotLoaded
@@ -102,10 +102,7 @@ func resolveAWSCredential(storagePath string) (*credentials.Value, error) {
 	if uri.Scheme == "s3" {
 		creds := credentials.NewEnvCredentials()
 		credValue, err := creds.Get()
-		if err != nil {
-			return nil, err
-		}
-		return &credValue, nil
+		return &credValue, err
 	}
 	return nil, errors.New("Not a s3 storage")
 }
@@ -129,11 +126,14 @@ func Replicate(
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Current stage", zap.String("stage", string(stage)))
+	log.Info("Start Replicate", zap.String("stage", string(stage)), zap.String("mode", RunModeIds[mode][0]))
 
-	startTSO, err := tidbsql.GetCurrentTSO(tidbConfig)
-	if err != nil {
-		return errors.Annotate(err, "Failed to get current TSO")
+	startTSO := uint64(0)
+	if mode == RunModeFull {
+		startTSO, err = tidbsql.GetCurrentTSO(tidbConfig)
+		if err != nil {
+			return errors.Annotate(err, "Failed to get current TSO")
+		}
 	}
 	snapshotURI, incrementURI, err := genURI(storagePath)
 	if err != nil {
@@ -165,7 +165,7 @@ func Replicate(
 		fallthrough
 	case StageSnapshotDumped:
 		if mode != RunModeIncrementalOnly {
-			if err = replicate.StartReplicateSnapshot(snapConnector, tidbConfig, tableName, snapshotURI, fmt.Sprint(startTSO)); err != nil {
+			if err = replicate.StartReplicateSnapshot(snapConnector, tidbConfig, tableName, snapshotURI); err != nil {
 				return errors.Annotate(err, "Failed to replicate snapshot")
 			}
 		}

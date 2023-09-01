@@ -36,7 +36,9 @@ func buildDumperConfig(
 	conf.EscapeBackslash = true
 	conf.TransactionalConsistency = true
 	conf.OutputDirPath = storageURI.String()
-	conf.Snapshot = snapshotTSO
+	if snapshotTSO != "0" {
+		conf.Snapshot = snapshotTSO
+	}
 
 	switch storageURI.Scheme {
 	case "s3":
@@ -99,11 +101,11 @@ func RunDump(
 	tidbConfig *tidbsql.TiDBConfig,
 	concurrency int,
 	storageURI *url.URL,
-	snapshot string,
+	snapshotTSO string,
 	tableNames []string,
 	onSnapshotDumpProgress func(dumpedRows, totalRows int64),
 ) error {
-	dumpConfig, err := buildDumperConfig(tidbConfig, concurrency, storageURI, snapshot, tableNames)
+	dumpConfig, err := buildDumperConfig(tidbConfig, concurrency, storageURI, snapshotTSO, tableNames)
 	if err != nil {
 		return errors.Trace(err)
 	}
