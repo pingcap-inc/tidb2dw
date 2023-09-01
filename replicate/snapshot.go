@@ -25,7 +25,6 @@ type SnapshotReplicateSession struct {
 
 	SourceDatabase string
 	SourceTable    string
-	StartTSO       string
 
 	OnSnapshotLoadProgress func(loadedRows int64)
 
@@ -37,14 +36,12 @@ func NewSnapshotReplicateSession(
 	tidbConfig *tidbsql.TiDBConfig,
 	sourceDatabase, sourceTable string,
 	storageUri *url.URL,
-	startTSO string,
 ) (*SnapshotReplicateSession, error) {
 	sess := &SnapshotReplicateSession{
 		DataWarehousePool:   dwConnector,
 		TiDBConfig:          tidbConfig,
 		SourceDatabase:      sourceDatabase,
 		SourceTable:         sourceTable,
-		StartTSO:            startTSO,
 		StorageWorkspaceUri: *storageUri,
 	}
 	log.Info("Creating replicate session",
@@ -120,10 +117,9 @@ func StartReplicateSnapshot(
 	tidbConfig *tidbsql.TiDBConfig,
 	tableFQN string,
 	storageUri *url.URL,
-	startTSO string,
 ) error {
 	sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
-	session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, storageUri, startTSO)
+	session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, storageUri)
 	if err != nil {
 		return errors.Trace(err)
 	}
