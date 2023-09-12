@@ -10,17 +10,25 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tidb/dumpling/export"
+	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
 )
 
 func buildDumperConfig(
-	tidbConfig *tidbsql.TiDBConfig, concurrency int, storageURI *url.URL, snapshotTSO string, tableNames []string,
+	tidbConfig *tidbsql.TiDBConfig,
+	concurrency int,
+	storageURI *url.URL,
+	snapshotTSO string,
+	tableNames []string,
+	credValue credentials.Value,
 ) (*export.Config, error) {
 	conf := export.DefaultConfig()
 	conf.Logger = log.L()
@@ -79,6 +87,18 @@ func buildDumperConfig(
 	}
 	conf.Tables = tables
 
+	opts := &storage.BackendOptions{
+		S3: storage.S3BackendOptions{
+			AccessKey:       credValue.AccessKeyID,
+			SecretAccessKey: credValue.SecretAccessKey,
+		},
+	}
+	externalStorage, err := putil.GetExternalStorage(context.Background(), storageURI.String(), opts, putil.DefaultS3Retryer())
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	conf.ExtStorage = externalStorage
+
 	return conf, nil
 }
 
@@ -104,8 +124,9 @@ func RunDump(
 	snapshotTSO string,
 	tableNames []string,
 	onSnapshotDumpProgress func(dumpedRows, totalRows int64),
+	credValue credentials.Value,
 ) error {
-	dumpConfig, err := buildDumperConfig(tidbConfig, concurrency, storageURI, snapshotTSO, tableNames)
+	dumpConfig, err := buildDumperConfig(tidbConfig, concurrency, storageURI, snapshotTSO, tableNames, credValue)
 	if err != nil {
 		return errors.Trace(err)
 	}

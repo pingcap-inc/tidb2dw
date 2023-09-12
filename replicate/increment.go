@@ -61,14 +61,20 @@ func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, stor
 	config.StoreGlobalServerConfig(serverCfg)
 	extension := sinkutil.GetFileExtension(config.ProtocolCsv)
 
-	storage, err := putil.GetExternalStorageFromURI(ctx, storageUri.String())
+	opts := &storage.BackendOptions{
+		S3: storage.S3BackendOptions{
+			AccessKey:       credential.AccessKeyID,
+			SecretAccessKey: credential.SecretAccessKey,
+		},
+	}
+	externalStorage, err := putil.GetExternalStorage(ctx, storageUri.String(), opts, putil.DefaultS3Retryer())
 	if err != nil {
 		log.Error("failed to create external storage", zap.Error(err))
 		return nil, err
 	}
 
 	return &consumer{
-		externalStorage: storage,
+		externalStorage: externalStorage,
 		fileExtension:   extension,
 		errCh:           make(chan error, 1),
 		tableDMLIdxMap:  make(map[cloudstorage.DmlPathKey]uint64),
