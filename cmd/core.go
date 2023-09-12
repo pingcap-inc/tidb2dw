@@ -14,6 +14,7 @@ import (
 	"github.com/pingcap-inc/tidb2dw/replicate"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	"github.com/pingcap/tidb/br/pkg/storage"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"github.com/thediveo/enumflag"
 	"go.uber.org/zap"
@@ -49,10 +50,16 @@ const (
 	StageSnapshotLoaded    Stage = "snapshot-loaded"
 )
 
-func checkStage(storagePath string) (Stage, error) {
+func checkStage(storagePath string, credValue credentials.Value) (Stage, error) {
 	stage := StageInit
 	ctx := context.Background()
-	storage, err := putil.GetExternalStorageFromURI(ctx, storagePath)
+	opts := &storage.BackendOptions{
+		S3: storage.S3BackendOptions{
+			AccessKey:       credValue.AccessKeyID,
+			SecretAccessKey: credValue.SecretAccessKey,
+		},
+	}
+	storage, err := putil.GetExternalStorage(ctx, storagePath, opts, putil.DefaultS3Retryer())
 	if err != nil {
 		return stage, err
 	}
@@ -122,7 +129,7 @@ func Replicate(
 	timezone string,
 	mode RunMode,
 ) error {
-	stage, err := checkStage(storagePath)
+	stage, err := checkStage(storagePath, credValue)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -158,14 +165,14 @@ func Replicate(
 		fallthrough
 	case StageChangefeedCreated:
 		if mode != RunModeIncrementalOnly && mode != RunModeCloud {
-			if err := dumpling.RunDump(tidbConfig, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), []string{tableName}, onSnapshotDumpProgress); err != nil {
+			if err := dumpling.RunDump(tidbConfig, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), []string{tableName}, onSnapshotDumpProgress, credValue); err != nil {
 				return errors.Trace(err)
 			}
 		}
 		fallthrough
 	case StageSnapshotDumped:
 		if mode != RunModeIncrementalOnly {
-			if err = replicate.StartReplicateSnapshot(snapConnector, tidbConfig, tableName, snapshotURI); err != nil {
+			if err = replicate.StartReplicateSnapshot(snapConnector, tidbConfig, tableName, snapshotURI, credValue); err != nil {
 				return errors.Annotate(err, "Failed to replicate snapshot")
 			}
 		}

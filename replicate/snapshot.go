@@ -8,11 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	"github.com/pingcap/tidb/br/pkg/storage"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
 )
@@ -29,6 +31,7 @@ type SnapshotReplicateSession struct {
 	OnSnapshotLoadProgress func(loadedRows int64)
 
 	StorageWorkspaceUri url.URL
+	externalStorage     storage.ExternalStorage
 }
 
 func NewSnapshotReplicateSession(
@@ -36,6 +39,7 @@ func NewSnapshotReplicateSession(
 	tidbConfig *tidbsql.TiDBConfig,
 	sourceDatabase, sourceTable string,
 	storageUri *url.URL,
+	credValue credentials.Value,
 ) (*SnapshotReplicateSession, error) {
 	sess := &SnapshotReplicateSession{
 		DataWarehousePool:   dwConnector,
@@ -54,11 +58,25 @@ func NewSnapshotReplicateSession(
 		}
 		sess.TiDBPool = db
 	}
-	// Setup progress reporters
-	sess.OnSnapshotLoadProgress = func(loadedRows int64) {
-		log.Info("Snapshot load progress", zap.Int64("loadedRows", loadedRows))
+	{
+		// Setup progress reporters
+		sess.OnSnapshotLoadProgress = func(loadedRows int64) {
+			log.Info("Snapshot load progress", zap.Int64("loadedRows", loadedRows))
+		}
 	}
-
+	{
+		opts := &storage.BackendOptions{
+			S3: storage.S3BackendOptions{
+				AccessKey:       credValue.AccessKeyID,
+				SecretAccessKey: credValue.SecretAccessKey,
+			},
+		}
+		externalStorage, err := putil.GetExternalStorage(context.Background(), storageUri.String(), opts, putil.DefaultS3Retryer())
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
+		sess.externalStorage = externalStorage
+	}
 	return sess, nil
 }
 
@@ -90,13 +108,8 @@ func (sess *SnapshotReplicateSession) Run() error {
 
 	// Write load info to workspace to record the status of load,
 	// loadinfo exists means the data has been all loaded into data warehouse.
-	ctx := context.Background()
-	storage, err := putil.GetExternalStorageFromURI(ctx, sess.StorageWorkspaceUri.String())
-	if err != nil {
-		log.Error("Failed to get external storage", zap.Error(err))
-	}
 	loadinfo := fmt.Sprintf("Copy to data warehouse start time: %s\nCopy to data warehouse end time: %s\n", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
-	if err = storage.WriteFile(ctx, "loadinfo", []byte(loadinfo)); err != nil {
+	if err := sess.externalStorage.WriteFile(context.Background(), "loadinfo", []byte(loadinfo)); err != nil {
 		log.Error("Failed to upload loadinfo", zap.Error(err))
 	}
 	log.Info("Successfully upload loadinfo", zap.String("loadinfo", loadinfo))
@@ -117,9 +130,10 @@ func StartReplicateSnapshot(
 	tidbConfig *tidbsql.TiDBConfig,
 	tableFQN string,
 	storageUri *url.URL,
+	credValue credentials.Value,
 ) error {
 	sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
-	session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, storageUri)
+	session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, storageUri, credValue)
 	if err != nil {
 		return errors.Trace(err)
 	}
