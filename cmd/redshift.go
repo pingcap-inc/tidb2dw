@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/pingcap-inc/tidb2dw/pkg/apiservice"
 	"github.com/pingcap-inc/tidb2dw/pkg/redshiftsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
@@ -34,10 +35,32 @@ func NewRedshiftCmd() *cobra.Command {
 		awsSecretKey          string
 		credValue             *credentials.Value
 
-		mode RunMode
+		mode          RunMode
+		apiListenHost string
+		apiListenPort int
 	)
 
 	run := func() error {
+		err := logutil.InitLogger(&logutil.Config{
+			Level: logLevel,
+			File:  logFile,
+		})
+		if err != nil {
+			return errors.Trace(err)
+		}
+
+		if awsAccessKey != "" && awsSecretKey != "" {
+			credValue = &credentials.Value{
+				AccessKeyID:     awsAccessKey,
+				SecretAccessKey: awsSecretKey,
+			}
+		} else {
+			credValue, err = resolveAWSCredential(storagePath)
+			if err != nil {
+				return errors.Trace(err)
+			}
+		}
+
 		snapshotURI, incrementURI, err := genURI(storagePath)
 		if err != nil {
 			return errors.Trace(err)
@@ -76,35 +99,19 @@ func NewRedshiftCmd() *cobra.Command {
 		Use:   "redshift",
 		Short: "Replicate snapshot and incremental data from TiDB to Redshift",
 		Run: func(_ *cobra.Command, _ []string) {
-			// init logger
-			err := logutil.InitLogger(&logutil.Config{
-				Level: logLevel,
-				File:  logFile,
+			runWithServer(mode == RunModeCloud, fmt.Sprintf("%s:%d", apiListenHost, apiListenPort), func() {
+				if err := run(); err != nil {
+					apiservice.GlobalInstance.APIInfo.SetStatusFatalError(err)
+					log.Error("Fatal error running redshift replication", zap.Error(err))
+				}
 			})
-			if err != nil {
-				panic(err)
-			}
-
-			if awsAccessKey != "" && awsSecretKey != "" {
-				credValue = &credentials.Value{
-					AccessKeyID:     awsAccessKey,
-					SecretAccessKey: awsSecretKey,
-				}
-			} else {
-				credValue, err = resolveAWSCredential(storagePath)
-				if err != nil {
-					panic(err)
-				}
-			}
-
-			if err = run(); err != nil {
-				log.Error("Error running redshift replication", zap.Error(err))
-			}
 		},
 	}
 
 	cmd.PersistentFlags().BoolP("help", "", false, "help for this command")
 	cmd.Flags().Var(enumflag.New(&mode, "mode", RunModeIds, enumflag.EnumCaseInsensitive), "mode", "replication mode: full, snapshot-only, incremental-only, cloud")
+	cmd.Flags().StringVar(&apiListenHost, "api.host", "0.0.0.0", "API service listen host, only available in --mode=cloud")
+	cmd.Flags().IntVar(&apiListenPort, "api.port", 8185, "API service listen port, only available in --mode=cloud")
 	cmd.Flags().StringVarP(&tidbConfigFromCli.Host, "tidb.host", "h", "127.0.0.1", "TiDB host")
 	cmd.Flags().IntVarP(&tidbConfigFromCli.Port, "tidb.port", "P", 4000, "TiDB port")
 	cmd.Flags().StringVarP(&tidbConfigFromCli.User, "tidb.user", "u", "root", "TiDB user")

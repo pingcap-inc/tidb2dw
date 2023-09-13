@@ -312,12 +312,13 @@ func (c *consumer) parseSchemaFilePath(ctx context.Context, path string) error {
 		return errors.Trace(err)
 	}
 	if checksumInMem != checksumInFile || schemaKey.TableVersion != tableDef.TableVersion {
-		log.Panic("checksum mismatch",
+		log.Error("checksum mismatch",
 			zap.Uint32("checksumInMem", checksumInMem),
 			zap.Uint32("checksumInFile", checksumInFile),
 			zap.Uint64("tableversionInMem", schemaKey.TableVersion),
 			zap.Uint64("tableversionInFile", tableDef.TableVersion),
 			zap.String("path", path))
+		return errors.Errorf("checksum mismatch")
 	}
 
 	// Update tableDefMap.

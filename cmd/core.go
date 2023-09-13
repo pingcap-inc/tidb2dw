@@ -3,10 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/pingcap-inc/tidb2dw/pkg/apiservice"
 	"github.com/pingcap-inc/tidb2dw/pkg/cdc"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/dumpling"
@@ -186,4 +188,25 @@ func Replicate(
 
 	}
 	return nil
+}
+
+func runWithServer(startServer bool, addr string, body func()) {
+	if !startServer {
+		body()
+		return
+	}
+
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatal("Start API service failed", zap.Error(err))
+		return
+	}
+
+	log.Info("API service started", zap.String("address", addr))
+
+	go func() {
+		body()
+	}()
+
+	apiservice.GlobalInstance.Serve(l)
 }

@@ -33,10 +33,10 @@ func (config *TiDBConfig) OpenDB() (*sql.DB, error) {
 		rootCertPool := x509.NewCertPool()
 		pem, err := os.ReadFile(config.SSLCA)
 		if err != nil {
-			log.Fatal(err.Error())
+			return nil, err
 		}
 		if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
-			log.Fatal("Failed to append PEM.")
+			return nil, fmt.Errorf("Failed to append PEM.")
 		}
 		mysql.RegisterTLSConfig("tidb", &tls.Config{
 			RootCAs:    rootCertPool,
