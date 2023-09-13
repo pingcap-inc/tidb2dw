@@ -409,10 +409,6 @@ func StartReplicateIncrement(
 	flushInterval time.Duration,
 ) error {
 	fileExtension := CSVFileExtension
-	if storageURI.Scheme == "gcs" {
-		log.Error("Skip replicating increment. GCS does not supprt data warehouse connector now...")
-		return nil
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sigCh := make(chan os.Signal, 1)
