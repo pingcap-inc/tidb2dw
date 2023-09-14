@@ -3,20 +3,13 @@ package dumpling
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"net/url"
 	"sync"
-	"syscall"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tidb/dumpling/export"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
@@ -28,7 +21,6 @@ func buildDumperConfig(
 	storageURI *url.URL,
 	snapshotTSO string,
 	tableNames []string,
-	credValue credentials.Value,
 ) (*export.Config, error) {
 	conf := export.DefaultConfig()
 	conf.Logger = log.L()
@@ -48,32 +40,6 @@ func buildDumperConfig(
 		conf.Snapshot = snapshotTSO
 	}
 
-	switch storageURI.Scheme {
-	case "s3":
-		awsSession, err := session.NewSessionWithOptions(session.Options{
-			SharedConfigState: session.SharedConfigEnable,
-		})
-		if err != nil {
-			return nil, errors.Annotate(err, "Failed to establish AWS session")
-		}
-		bucket := storageURI.Host
-		log.Debug("Resolving storage region")
-		s3Region, err := s3manager.GetBucketRegion(context.Background(), awsSession, bucket, "us-west-2")
-		if err != nil {
-			if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "NotFound" {
-				return nil, fmt.Errorf("unable to find bucket %s's region not found", bucket)
-			}
-			return nil, errors.Annotate(err, "Failed to resolve --storage region")
-		}
-		conf.S3.Region = s3Region
-	case "gcs":
-		credFile, found := syscall.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-		if !found {
-			log.Error("Failed to resolve AWS credential")
-		}
-		conf.GCS.CredentialsFile = credFile
-	}
-
 	filesize, err := export.ParseFileSize("5GiB")
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -87,13 +53,7 @@ func buildDumperConfig(
 	}
 	conf.Tables = tables
 
-	opts := &storage.BackendOptions{
-		S3: storage.S3BackendOptions{
-			AccessKey:       credValue.AccessKeyID,
-			SecretAccessKey: credValue.SecretAccessKey,
-		},
-	}
-	externalStorage, err := putil.GetExternalStorage(context.Background(), storageURI.String(), opts, putil.DefaultS3Retryer())
+	externalStorage, err := putil.GetExternalStorageFromURI(context.Background(), storageURI.String())
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -124,9 +84,8 @@ func RunDump(
 	snapshotTSO string,
 	tableNames []string,
 	onSnapshotDumpProgress func(dumpedRows, totalRows int64),
-	credValue credentials.Value,
 ) error {
-	dumpConfig, err := buildDumperConfig(tidbConfig, concurrency, storageURI, snapshotTSO, tableNames, credValue)
+	dumpConfig, err := buildDumperConfig(tidbConfig, concurrency, storageURI, snapshotTSO, tableNames)
 	if err != nil {
 		return errors.Trace(err)
 	}

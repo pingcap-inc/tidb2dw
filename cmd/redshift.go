@@ -61,7 +61,12 @@ func NewRedshiftCmd() *cobra.Command {
 			}
 		}
 
-		snapshotURI, incrementURI, err := genURI(storagePath)
+		storageURI, err := getS3URIWithCredentials(storagePath, credValue)
+		if err != nil {
+			return errors.Trace(err)
+		}
+
+		snapshotURI, incrementURI, err := genSnapshotAndIncrementURIs(storageURI)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -92,7 +97,7 @@ func NewRedshiftCmd() *cobra.Command {
 		if err != nil {
 			return errors.Trace(err)
 		}
-		return Replicate(&tidbConfigFromCli, tableFQN, storagePath, snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, *credValue, snapConnector, increConnector, timezone, mode)
+		return Replicate(&tidbConfigFromCli, tableFQN, storageURI, snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, *credValue, snapConnector, increConnector, timezone, mode)
 	}
 
 	cmd := &cobra.Command{

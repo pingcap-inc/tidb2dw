@@ -22,6 +22,8 @@ type SnowflakeConnector struct {
 
 	stageName string
 
+	s3Credentials *credentials.Value
+
 	columns []cloudstorage.TableCol
 }
 
@@ -39,9 +41,10 @@ func NewSnowflakeConnector(db *sql.DB, stageName string, storageURI *url.URL, cr
 	}
 
 	return &SnowflakeConnector{
-		db:        db,
-		stageName: stageName,
-		columns:   nil,
+		db:            db,
+		stageName:     stageName,
+		s3Credentials: credentials,
+		columns:       nil,
 	}, nil
 }
 
@@ -139,8 +142,8 @@ func (sc *SnowflakeConnector) LoadIncrement(tableDef cloudstorage.TableDefinitio
 	return nil
 }
 
-func (sc *SnowflakeConnector) Clone(stageName string, storageURI *url.URL, credentials *credentials.Value) (coreinterfaces.Connector, error) {
-	return NewSnowflakeConnector(sc.db, stageName, storageURI, credentials)
+func (sc *SnowflakeConnector) Clone(stageName string, storageURI *url.URL) (coreinterfaces.Connector, error) {
+	return NewSnowflakeConnector(sc.db, stageName, storageURI, sc.s3Credentials)
 }
 
 func (sc *SnowflakeConnector) Close() {

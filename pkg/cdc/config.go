@@ -4,9 +4,6 @@ import (
 	"fmt"
 	"net/url"
 	"time"
-
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pingcap/errors"
 )
 
 type FilterConfig struct {
@@ -45,22 +42,13 @@ type SinkURIConfig struct {
 	flushInterval time.Duration
 	fileSize      int64
 	protocol      string
-	cred          *credentials.Value
 }
 
 func (s *SinkURIConfig) genSinkURI() (*url.URL, error) {
-	if s.storageUri.Scheme != "s3" {
-		return nil, errors.Errorf("Only support s3 storage")
-	}
 	values := s.storageUri.Query()
 	values.Add("flush-interval", s.flushInterval.String())
 	values.Add("file-size", fmt.Sprint(s.fileSize))
 	values.Add("protocol", s.protocol)
-	values.Add("access-key", s.cred.AccessKeyID)
-	values.Add("secret-access-key", s.cred.SecretAccessKey)
-	if s.cred.SessionToken != "" {
-		values.Add("session-token", s.cred.SessionToken)
-	}
 	s.storageUri.RawQuery = values.Encode()
 	return s.storageUri, nil
 }

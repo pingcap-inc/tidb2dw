@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
@@ -39,7 +38,6 @@ func NewSnapshotReplicateSession(
 	tidbConfig *tidbsql.TiDBConfig,
 	sourceDatabase, sourceTable string,
 	storageUri *url.URL,
-	credValue credentials.Value,
 ) (*SnapshotReplicateSession, error) {
 	sess := &SnapshotReplicateSession{
 		DataWarehousePool:   dwConnector,
@@ -65,13 +63,7 @@ func NewSnapshotReplicateSession(
 		}
 	}
 	{
-		opts := &storage.BackendOptions{
-			S3: storage.S3BackendOptions{
-				AccessKey:       credValue.AccessKeyID,
-				SecretAccessKey: credValue.SecretAccessKey,
-			},
-		}
-		externalStorage, err := putil.GetExternalStorage(context.Background(), storageUri.String(), opts, putil.DefaultS3Retryer())
+		externalStorage, err := putil.GetExternalStorageFromURI(context.Background(), storageUri.String())
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
@@ -130,10 +122,9 @@ func StartReplicateSnapshot(
 	tidbConfig *tidbsql.TiDBConfig,
 	tableFQN string,
 	storageUri *url.URL,
-	credValue credentials.Value,
 ) error {
 	sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
-	session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, storageUri, credValue)
+	session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, storageUri)
 	if err != nil {
 		return errors.Trace(err)
 	}
