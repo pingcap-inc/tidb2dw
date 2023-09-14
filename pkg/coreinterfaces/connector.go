@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"net/url"
 
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
 
@@ -26,7 +25,7 @@ type Connector interface {
 	LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error
 	// Clone return a new Connector wihch reuses the same connection to the Data Warehouse
 	// FIXME: tables with different schemas/databases should not reuse the same connection
-	Clone(stageName string, storageURI *url.URL, credentials *credentials.Value) (Connector, error)
+	Clone(stageName string, storageURI *url.URL) (Connector, error)
 	// Close closes the connection to the Data Warehouse
 	Close()
 }

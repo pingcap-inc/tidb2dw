@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
@@ -47,11 +46,10 @@ type consumer struct {
 	sampleConnector coreinterfaces.Connector
 	// dwConnectorMap maintains a map of <TableID, dwConnector>, each table has a dwConnector
 	dwConnectorMap map[model.TableID]coreinterfaces.Connector
-	awsCredential  *credentials.Value // aws credential, resolved from current env
 	storageURI     *url.URL
 }
 
-func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, storageUri *url.URL, timezone string, credential *credentials.Value) (*consumer, error) {
+func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, storageUri *url.URL, timezone string) (*consumer, error) {
 	_, err := putil.GetTimezone(timezone)
 	if err != nil {
 		return nil, errors.Annotate(err, "can not load timezone")
@@ -61,13 +59,7 @@ func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, stor
 	config.StoreGlobalServerConfig(serverCfg)
 	extension := sinkutil.GetFileExtension(config.ProtocolCsv)
 
-	opts := &storage.BackendOptions{
-		S3: storage.S3BackendOptions{
-			AccessKey:       credential.AccessKeyID,
-			SecretAccessKey: credential.SecretAccessKey,
-		},
-	}
-	externalStorage, err := putil.GetExternalStorage(ctx, storageUri.String(), opts, putil.DefaultS3Retryer())
+	externalStorage, err := putil.GetExternalStorageFromURI(ctx, storageUri.String())
 	if err != nil {
 		log.Error("failed to create external storage", zap.Error(err))
 		return nil, err
@@ -84,7 +76,6 @@ func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, stor
 		},
 		sampleConnector: dwConnector,
 		dwConnectorMap:  make(map[model.TableID]coreinterfaces.Connector),
-		awsCredential:   credential,
 		storageURI:      storageUri,
 	}, nil
 }
@@ -406,7 +397,6 @@ func (c *consumer) handleNewFiles(
 			connector, err := c.sampleConnector.Clone(
 				fmt.Sprintf("increment_stage_%s", tableDef.Table),
 				c.storageURI,
-				c.awsCredential,
 			)
 			if err != nil {
 				return errors.Trace(err)
@@ -478,7 +468,7 @@ func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partiti
 }
 
 func StartReplicateIncrement(
-	dwConnector coreinterfaces.Connector, storageUri *url.URL, flushInterval time.Duration, timezone string, credential *credentials.Value,
+	dwConnector coreinterfaces.Connector, storageUri *url.URL, flushInterval time.Duration, timezone string,
 ) error {
 	var consumer *consumer
 	var err error
@@ -504,7 +494,7 @@ func StartReplicateIncrement(
 	}
 	defer deferFunc()
 
-	consumer, err = newConsumer(ctx, dwConnector, storageUri, timezone, credential)
+	consumer, err = newConsumer(ctx, dwConnector, storageUri, timezone)
 	if err != nil {
 		return errors.Annotate(err, "failed to create storage consumer")
 	}

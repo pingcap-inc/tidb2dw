@@ -145,8 +145,8 @@ func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 	return nil
 }
 
-func (rc *RedshiftConnector) Clone(externalTableName string, storageURI *url.URL, s3credentials *credentials.Value) (coreinterfaces.Connector, error) {
-	return NewRedshiftConnector(rc.db, rc.schemaName, externalTableName, rc.iamRole, storageURI, s3credentials)
+func (rc *RedshiftConnector) Clone(externalTableName string, storageURI *url.URL) (coreinterfaces.Connector, error) {
+	return NewRedshiftConnector(rc.db, rc.schemaName, externalTableName, rc.iamRole, storageURI, rc.s3Credentials)
 }
 
 func (rc *RedshiftConnector) Close() {

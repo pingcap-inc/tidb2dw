@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/config"
@@ -25,13 +24,12 @@ type CDCConnector struct {
 	SinkURI       *url.URL
 }
 
-func NewCDCConnector(cdcHost string, cdcPort int, tableFQN string, startTSO uint64, storageUri *url.URL, flushInterval time.Duration, fileSize int64, cred *credentials.Value) (*CDCConnector, error) {
+func NewCDCConnector(cdcHost string, cdcPort int, tableFQN string, startTSO uint64, storageUri *url.URL, flushInterval time.Duration, fileSize int64) (*CDCConnector, error) {
 	sinkURIConfig := &SinkURIConfig{
 		storageUri:    storageUri,
 		flushInterval: flushInterval,
 		fileSize:      fileSize,
 		protocol:      "csv",
-		cred:          cred,
 	}
 	sinkURI, err := sinkURIConfig.genSinkURI()
 	if err != nil {
