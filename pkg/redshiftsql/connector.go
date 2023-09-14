@@ -20,7 +20,7 @@ type RedshiftConnector struct {
 	db            *sql.DB
 	schemaName    string
 	tableName     string
-	storageUrl    string
+	storageUri    *url.URL
 	s3Credentials *credentials.Value
 	iamRole       string
 	columns       []cloudstorage.TableCol
@@ -33,7 +33,6 @@ func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName, iamRole str
 	if err != nil {
 		return nil, errors.Annotate(err, "Failed to create schema")
 	}
-	storageUrl := fmt.Sprintf("%s://%s", storageURI.Scheme, storageURI.Host)
 	// need iam role to create external schema
 	var mode = strings.Split(externalTableName, "_")[0]
 	if mode == "increment" {
@@ -48,7 +47,7 @@ func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName, iamRole str
 		db:            db,
 		schemaName:    schemaName,
 		tableName:     externalTableName,
-		storageUrl:    storageUrl,
+		storageUri:    storageURI,
 		s3Credentials: s3Credentials,
 		iamRole:       iamRole,
 		columns:       nil,
@@ -108,7 +107,7 @@ func (rc *RedshiftConnector) CopyTableSchema(sourceDatabase string, sourceTable 
 
 // filePrefix should be
 func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
-	if err := LoadSnapshotFromS3(rc.db, targetTable, rc.storageUrl, filePrefix, rc.s3Credentials, onSnapshotLoadProgress); err != nil {
+	if err := LoadSnapshotFromS3(rc.db, targetTable, rc.storageUri.String(), filePrefix, rc.s3Credentials, onSnapshotLoadProgress); err != nil {
 		return errors.Trace(err)
 	}
 	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))

@@ -30,8 +30,8 @@ func CreateSchema(db *sql.DB, schemaName string) error {
 }
 
 // redshift currently can not support ROWS_PRODUCED function
-// use csv file path for storageUrl, like s3://tidbbucket/snapshot/stock.csv
-func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUrl, filePrefix string, credential *credentials.Value, onSnapshotLoadProgress func(loadedRows int64)) error {
+// use csv file path for storageUri, like s3://tidbbucket/snapshot/stock.csv
+func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUri, filePrefix string, credential *credentials.Value, onSnapshotLoadProgress func(loadedRows int64)) error {
 	sql, err := formatter.Format(`
 	COPY {targetTable}
 	FROM '{storageUrl}/{filePrefix}'
@@ -39,7 +39,7 @@ func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUrl, filePrefix string, 
 	FORMAT AS CSV DELIMITER ',' QUOTE '"';
 	`, formatter.Named{
 		"targetTable": snowsql.EscapeString(targetTable),
-		"storageUrl":  snowsql.EscapeString(storageUrl),
+		"storageUrl":  snowsql.EscapeString(storageUri),
 		"filePrefix":  snowsql.EscapeString(filePrefix), // TODO: Verify
 		"accessId":    credential.AccessKeyID,
 		"accessKey":   credential.SecretAccessKey,
@@ -48,9 +48,7 @@ func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUrl, filePrefix string, 
 		return errors.Trace(err)
 	}
 	log.Info("Loading snapshot data from external table", zap.String("query", sql))
-	ctx := context.Background()
-	_, err = db.ExecContext(ctx, sql)
-
+	_, err = db.Exec(sql)
 	return err
 }
 

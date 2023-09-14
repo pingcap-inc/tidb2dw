@@ -91,13 +91,13 @@ COPY INTO {targetTable}
 -- tidb2dw-reqid={reqId}
 FROM @{stageName}
 FILE_FORMAT = (TYPE = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"')
-PATTERN = '{filePrefix}.*'
+PATTERN = '.*{filePrefix}.*\.csv'
 ON_ERROR = CONTINUE;
 `, formatter.Named{
 		"reqId":       EscapeString(reqId.String()),
 		"targetTable": EscapeString(targetTable),
 		"stageName":   EscapeString(stageName),
-		"filePrefix":  EscapeString(regexp.QuoteMeta(filePrefix)), // TODO: Verify
+		"filePrefix":  EscapeString(regexp.QuoteMeta(filePrefix)),
 	})
 	if err != nil {
 		return errors.Trace(err)
