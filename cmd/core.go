@@ -105,7 +105,7 @@ func getS3URIWithCredentials(storagePath string, cred *credentials.Value) (*url.
 		return nil, errors.New("Not a s3 storage")
 	}
 
-	// append credentials file path to query string
+	// append credentials to query string
 	values := url.Values{}
 	values.Add("access-key", cred.AccessKeyID)
 	values.Add("secret-access-key", cred.SecretAccessKey)
