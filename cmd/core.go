@@ -73,27 +73,27 @@ func checkStage(storage storage.ExternalStorage) (Stage, error) {
 	return stage, nil
 }
 
-func getGCSURIWithCredentials(storagePath string, credentialsFilePath string) (*url.URL, error) {
-	uri, err := url.Parse(storagePath)
-	if err != nil {
-		return nil, errors.Annotate(err, "Failed to parse workspace path")
-	}
+// func getGCSURIWithCredentials(storagePath string, credentialsFilePath string) (*url.URL, error) {
+// 	uri, err := url.Parse(storagePath)
+// 	if err != nil {
+// 		return nil, errors.Annotate(err, "Failed to parse workspace path")
+// 	}
 
-	if uri.Scheme != "gcs" && uri.Scheme != "gs" {
-		return nil, errors.New("Not a gcs storage")
-	}
+// 	if uri.Scheme != "gcs" && uri.Scheme != "gs" {
+// 		return nil, errors.New("Not a gcs storage")
+// 	}
 
-	// bigquery does not support gcs scheme
-	if uri.Scheme == "gcs" {
-		uri.Scheme = "gs"
-	}
+// 	// bigquery does not support gcs scheme
+// 	if uri.Scheme == "gcs" {
+// 		uri.Scheme = "gs"
+// 	}
 
-	// append credentials file path to query string
-	values := url.Values{}
-	values.Add("credentials-file", credentialsFilePath)
-	uri.RawQuery = values.Encode()
-	return uri, nil
-}
+// 	// append credentials file path to query string
+// 	values := url.Values{}
+// 	values.Add("credentials-file", credentialsFilePath)
+// 	uri.RawQuery = values.Encode()
+// 	return uri, nil
+// }
 
 func getS3URIWithCredentials(storagePath string, cred *credentials.Value) (*url.URL, error) {
 	uri, err := url.Parse(storagePath)
@@ -134,26 +134,6 @@ func genSnapshotAndIncrementURIs(storageURI *url.URL) (*url.URL, *url.URL, error
 	return &snapshotURI, &incrementURI, nil
 }
 
-func genURI(storagePath string) (*url.URL, *url.URL, error) {
-	snapStoragePath, err := url.JoinPath(storagePath, "snapshot")
-	if err != nil {
-		return nil, nil, errors.Annotate(err, "Failed to join workspace path")
-	}
-	snapshotURI, err := url.Parse(snapStoragePath)
-	if err != nil {
-		return nil, nil, errors.Annotate(err, "Failed to parse workspace path")
-	}
-	increStoragePath, err := url.JoinPath(storagePath, "increment")
-	if err != nil {
-		return nil, nil, errors.Annotate(err, "Failed to join workspace path")
-	}
-	incrementURI, err := url.Parse(increStoragePath)
-	if err != nil {
-		return snapshotURI, nil, errors.Annotate(err, "Failed to parse workspace path")
-	}
-	return snapshotURI, incrementURI, nil
-}
-
 func resolveAWSCredential(storagePath string) (*credentials.Value, error) {
 	uri, err := url.Parse(storagePath)
 	if err != nil {
@@ -169,17 +149,15 @@ func resolveAWSCredential(storagePath string) (*credentials.Value, error) {
 
 func Replicate(
 	tidbConfig *tidbsql.TiDBConfig,
-	tableName string,
+	tables []string,
 	storageURI *url.URL,
 	snapshotConcurrency int,
 	cdcHost string,
 	cdcPort int,
 	cdcFlushInterval time.Duration,
 	cdcFileSize int64,
-	credValue credentials.Value,
-	snapConnector coreinterfaces.Connector,
-	increConnector coreinterfaces.Connector,
-	timezone string,
+	snapConnectorMap map[string]coreinterfaces.Connector,
+	increConnectorMap map[string]coreinterfaces.Connector,
 	mode RunMode,
 ) error {
 	ctx := context.Background()
@@ -212,7 +190,7 @@ func Replicate(
 	switch stage {
 	case StageInit:
 		if mode != RunModeSnapshotOnly && mode != RunModeCloud {
-			cdcConnector, err := cdc.NewCDCConnector(cdcHost, cdcPort, tableName, startTSO, incrementURI, cdcFlushInterval, cdcFileSize)
+			cdcConnector, err := cdc.NewCDCConnector(cdcHost, cdcPort, tables, startTSO, incrementURI, cdcFlushInterval, cdcFileSize)
 			if err != nil {
 				return errors.Trace(err)
 			}
@@ -223,21 +201,21 @@ func Replicate(
 		fallthrough
 	case StageChangefeedCreated:
 		if mode != RunModeIncrementalOnly && mode != RunModeCloud {
-			if err := dumpling.RunDump(tidbConfig, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), []string{tableName}, onSnapshotDumpProgress); err != nil {
+			if err := dumpling.RunDump(tidbConfig, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), tables, onSnapshotDumpProgress); err != nil {
 				return errors.Trace(err)
 			}
 		}
 		fallthrough
 	case StageSnapshotDumped:
 		if mode != RunModeIncrementalOnly {
-			if err = replicate.StartReplicateSnapshot(snapConnector, tidbConfig, tableName, snapshotURI); err != nil {
+			if err = replicate.StartReplicateSnapshot(snapConnectorMap, tidbConfig, snapshotURI); err != nil {
 				return errors.Annotate(err, "Failed to replicate snapshot")
 			}
 		}
 		fallthrough
 	case StageSnapshotLoaded:
 		if mode != RunModeSnapshotOnly {
-			if err = replicate.StartReplicateIncrement(increConnector, incrementURI, cdcFlushInterval/5, timezone); err != nil {
+			if err = replicate.StartReplicateIncrement(increConnectorMap, incrementURI, cdcFlushInterval/5); err != nil {
 				return errors.Annotate(err, "Failed to replicate incremental")
 			}
 		}

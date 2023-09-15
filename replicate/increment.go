@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"os/signal"
 	"strings"
 	"sync"
@@ -12,20 +13,21 @@ import (
 	"time"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
+	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tiflow/cdc/model"
-	sinkutil "github.com/pingcap/tiflow/cdc/sink/util"
 	"github.com/pingcap/tiflow/pkg/config"
-	"github.com/pingcap/tiflow/pkg/quotes"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
 )
 
-const fakePartitionNumForSchemaFile = -1
+const (
+	CSVFileExtension              = ".csv"
+	fakePartitionNumForSchemaFile = -1
+)
 
 // fileIndexRange defines a range of files. eg. CDC000002.csv ~ CDC000005.csv
 type fileIndexRange struct {
@@ -33,232 +35,49 @@ type fileIndexRange struct {
 	end   uint64
 }
 
-type consumer struct {
+type IncrementReplicateSession struct {
+	dwConnector     coreinterfaces.Connector
 	externalStorage storage.ExternalStorage
-	fileExtension   string
+	ctx             context.Context
 	// tableDMLIdxMap maintains a map of <dmlPathKey, max file index>
 	tableDMLIdxMap map[cloudstorage.DmlPathKey]uint64
-	// tableDefMap maintains a map of <`schema`.`table`, tableDef slice sorted by TableVersion>
-	tableDefMap      map[string]map[uint64]*cloudstorage.TableDefinition
-	tableIDGenerator *fakeTableIDGenerator
-	errCh            chan error
-	// sampleConnector is used to create Connector for dwConnectorMap
-	sampleConnector coreinterfaces.Connector
-	// dwConnectorMap maintains a map of <TableID, dwConnector>, each table has a dwConnector
-	dwConnectorMap map[model.TableID]coreinterfaces.Connector
+	// tableDefMap maintains a map of <tableVersion, tableDef>
+	tableDefMap    map[uint64]*cloudstorage.TableDefinition
+	fileExtension  string
+	sourceDatabase string
+	sourceTable    string
 	storageURI     *url.URL
+	logger         *zap.Logger
 }
 
-func newConsumer(ctx context.Context, dwConnector coreinterfaces.Connector, storageUri *url.URL, timezone string) (*consumer, error) {
-	_, err := putil.GetTimezone(timezone)
+func NewIncrementReplicateSession(
+	ctx context.Context,
+	dwConnector coreinterfaces.Connector,
+	fileExtension string,
+	storageURI *url.URL,
+	sourceDatabase string,
+	sourceTable string,
+	logger *zap.Logger,
+) (*IncrementReplicateSession, error) {
+	externalStorage, err := putil.GetExternalStorageFromURI(ctx, storageURI.String())
 	if err != nil {
-		return nil, errors.Annotate(err, "can not load timezone")
+		return nil, errors.Trace(err)
 	}
-	serverCfg := config.GetGlobalServerConfig().Clone()
-	serverCfg.TZ = timezone
-	config.StoreGlobalServerConfig(serverCfg)
-	extension := sinkutil.GetFileExtension(config.ProtocolCsv)
-
-	externalStorage, err := putil.GetExternalStorageFromURI(ctx, storageUri.String())
-	if err != nil {
-		log.Error("failed to create external storage", zap.Error(err))
-		return nil, err
-	}
-
-	return &consumer{
+	return &IncrementReplicateSession{
+		dwConnector:     dwConnector,
 		externalStorage: externalStorage,
-		fileExtension:   extension,
-		errCh:           make(chan error, 1),
+		ctx:             ctx,
 		tableDMLIdxMap:  make(map[cloudstorage.DmlPathKey]uint64),
-		tableDefMap:     make(map[string]map[uint64]*cloudstorage.TableDefinition),
-		tableIDGenerator: &fakeTableIDGenerator{
-			tableIDs: make(map[string]int64),
-		},
-		sampleConnector: dwConnector,
-		dwConnectorMap:  make(map[model.TableID]coreinterfaces.Connector),
-		storageURI:      storageUri,
+		tableDefMap:     make(map[uint64]*cloudstorage.TableDefinition),
+		fileExtension:   fileExtension,
+		sourceDatabase:  sourceDatabase,
+		sourceTable:     sourceTable,
+		storageURI:      storageURI,
+		logger:          logger,
 	}, nil
 }
 
-// map1 - map2
-func diffDMLMaps(
-	map1, map2 map[cloudstorage.DmlPathKey]uint64,
-) map[cloudstorage.DmlPathKey]fileIndexRange {
-	resMap := make(map[cloudstorage.DmlPathKey]fileIndexRange)
-	for k, v := range map1 {
-		if _, ok := map2[k]; !ok {
-			resMap[k] = fileIndexRange{
-				start: 1,
-				end:   v,
-			}
-		} else if v > map2[k] {
-			resMap[k] = fileIndexRange{
-				start: map2[k] + 1,
-				end:   v,
-			}
-		}
-	}
-
-	return resMap
-}
-
-func (c *consumer) GenManifestFile(ctx context.Context, path string, size int64) error {
-	fileName := strings.TrimSuffix(path, c.fileExtension) + ".manifest"
-	content := fmt.Sprintf("{\"entries\":[{\"url\":\"%s%s\",\"mandatory\":true, \"meta\": { \"content_length\": %d } }]}", c.externalStorage.URI(), path, size)
-	c.externalStorage.WriteFile(ctx, fileName, []byte(content))
-	return nil
-}
-
-// getNewFiles returns newly created dml files in specific ranges
-func (c *consumer) getNewFiles(
-	ctx context.Context,
-) (map[cloudstorage.DmlPathKey]fileIndexRange, error) {
-	tableDMLMap := make(map[cloudstorage.DmlPathKey]fileIndexRange)
-	opt := &storage.WalkOption{SubDir: ""}
-
-	origDMLIdxMap := make(map[cloudstorage.DmlPathKey]uint64, len(c.tableDMLIdxMap))
-	for k, v := range c.tableDMLIdxMap {
-		origDMLIdxMap[k] = v
-	}
-
-	err := c.externalStorage.WalkDir(ctx, opt, func(path string, size int64) error {
-		if cloudstorage.IsSchemaFile(path) {
-			err := c.parseSchemaFilePath(ctx, path)
-			if err != nil {
-				log.Error("failed to parse schema file path", zap.Error(err))
-				// skip handling this file
-				return nil
-			}
-		} else if strings.HasSuffix(path, c.fileExtension) {
-			err := c.parseDMLFilePath(ctx, path)
-			if err != nil {
-				log.Error("failed to parse dml file path", zap.Error(err))
-				// skip handling this file
-				return nil
-			}
-			// manifest
-			manifestFileName := strings.TrimSuffix(path, c.fileExtension) + ".manifest"
-			// check if manifest already exists
-			exist, err := c.externalStorage.FileExists(ctx, manifestFileName)
-			if err != nil {
-				return err
-			}
-			if !exist {
-				if err = c.GenManifestFile(ctx, path, size); err != nil {
-					return nil
-				}
-			}
-		} else {
-			log.Debug("ignore handling file", zap.String("path", path))
-		}
-		return nil
-	})
-	if err != nil {
-		return tableDMLMap, err
-	}
-
-	tableDMLMap = diffDMLMaps(c.tableDMLIdxMap, origDMLIdxMap)
-	return tableDMLMap, err
-}
-
-func (c *consumer) syncExecDDLEvents(
-	ctx context.Context,
-	tableDef cloudstorage.TableDefinition,
-	tableID int64,
-	key cloudstorage.DmlPathKey,
-) error {
-	if len(tableDef.Query) == 0 {
-		// schema.json file without query is used to initialize the schema.
-		if err := c.dwConnectorMap[tableID].InitSchema(tableDef.Columns); err != nil {
-			return errors.Trace(err)
-		}
-	} else {
-		// TODO: make this block is atomic
-		if err := c.dwConnectorMap[tableID].ExecDDL(tableDef); err != nil {
-			// FIXME: if there is a DDL before all the DMLs, will return error here.
-			return errors.Annotate(err,
-				fmt.Sprintf("Please check the DDL query, "+
-					"if necessary, please manually execute the DDL query in data warehouse, "+
-					"update the `query` of the %s%s/%s/meta/schema_%d_{hash}.json to empty, "+
-					"and restart the program",
-					c.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
-		}
-
-		// The following logic is used to handle pause and resume.
-		// Keep the current table definition file with len(query) == 0 and delete all the outdated files.
-
-		// Delete all the outdated table definition files.
-		for _, item := range c.tableDefMap[key.GetKey()] {
-			if item.TableVersion < tableDef.TableVersion {
-				filePath, err := item.GenerateSchemaFilePath()
-				if err != nil {
-					return errors.Trace(err)
-				}
-				if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
-					return errors.Trace(err)
-				}
-				delete(c.tableDefMap[key.GetKey()], item.TableVersion)
-			}
-		}
-		// clear the query in the current table definition file.
-		tableDef.Query = ""
-		data, err := tableDef.MarshalWithQuery()
-		if err != nil {
-			return errors.Trace(err)
-		}
-		filePath, err := tableDef.GenerateSchemaFilePath()
-		if err != nil {
-			return errors.Trace(err)
-		}
-		// update the current table definition file.
-		if err = c.externalStorage.WriteFile(ctx, filePath, data); err != nil {
-			return errors.Trace(err)
-		}
-	}
-	return nil
-}
-
-func (c *consumer) syncExecDMLEvents(
-	ctx context.Context,
-	tableDef cloudstorage.TableDefinition,
-	tableID int64,
-	key cloudstorage.DmlPathKey,
-	fileIdx uint64,
-) error {
-	filePath := key.GenerateDMLFilePath(fileIdx, c.fileExtension, config.DefaultFileIndexWidth)
-	exist, err := c.externalStorage.FileExists(ctx, filePath)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	// We will remove the file after flush complete, so if the program restarts,
-	// the file range will start from 1 again, but the file may not exist.
-	// So we just ignore the non-exist file.
-	if !exist {
-		log.Warn("file not exists", zap.String("path", filePath))
-		return nil
-	}
-
-	{ // TODO: make this block is atomic
-		// merge file into data warehouse
-		if err := c.dwConnectorMap[tableID].LoadIncrement(tableDef, c.storageURI, filePath); err != nil {
-			return errors.Trace(err)
-		}
-
-		// delete file after merge complete in order to avoid duplicate merge when program restarts
-		if err = c.externalStorage.DeleteFile(ctx, filePath); err != nil {
-			return errors.Trace(err)
-		}
-		// delete manifest file after merge complete
-		manifestFilePath := strings.TrimSuffix(filePath, c.fileExtension) + ".manifest"
-		if err = c.externalStorage.DeleteFile(ctx, manifestFilePath); err != nil {
-			return errors.Trace(err)
-		}
-	}
-
-	return nil
-}
-
-func (c *consumer) parseDMLFilePath(_ context.Context, path string) error {
+func (sess *IncrementReplicateSession) parseDMLFilePath(path string) error {
 	var dmlkey cloudstorage.DmlPathKey
 	fileIdx, err := dmlkey.ParseDMLFilePath(
 		config.DateSeparatorDay.String(),
@@ -267,31 +86,32 @@ func (c *consumer) parseDMLFilePath(_ context.Context, path string) error {
 	if err != nil {
 		return errors.Trace(err)
 	}
-	if _, ok := c.tableDMLIdxMap[dmlkey]; !ok || fileIdx >= c.tableDMLIdxMap[dmlkey] {
-		c.tableDMLIdxMap[dmlkey] = fileIdx
+	if _, ok := sess.tableDMLIdxMap[dmlkey]; !ok || fileIdx >= sess.tableDMLIdxMap[dmlkey] {
+		sess.tableDMLIdxMap[dmlkey] = fileIdx
 	}
 	return nil
 }
 
-func (c *consumer) parseSchemaFilePath(ctx context.Context, path string) error {
+func (sess *IncrementReplicateSession) parseSchemaFilePath(path string) error {
 	var schemaKey cloudstorage.SchemaPathKey
 	checksumInFile, err := schemaKey.ParseSchemaFilePath(path)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	key := schemaKey.GetKey()
-	if tableDefs, ok := c.tableDefMap[key]; ok {
-		if _, ok := tableDefs[schemaKey.TableVersion]; ok {
-			// Skip if tableDef already exists.
-			return nil
-		}
-	} else {
-		c.tableDefMap[key] = make(map[uint64]*cloudstorage.TableDefinition)
+	if _, ok := sess.tableDefMap[schemaKey.TableVersion]; ok {
+		// Skip if tableDef already exists.
+		return nil
+	}
+	if schemaKey.Schema != sess.sourceDatabase || schemaKey.Table != sess.sourceTable {
+		// ignore schema files do not belong to the current table.
+		// This should not happen.
+		sess.logger.Error("schema file path not match", zap.String("path", path))
+		return nil
 	}
 
 	// Read tableDef from schema file and check checksum.
 	var tableDef cloudstorage.TableDefinition
-	schemaContent, err := c.externalStorage.ReadFile(ctx, path)
+	schemaContent, err := sess.externalStorage.ReadFile(sess.ctx, path)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -303,7 +123,7 @@ func (c *consumer) parseSchemaFilePath(ctx context.Context, path string) error {
 		return errors.Trace(err)
 	}
 	if checksumInMem != checksumInFile || schemaKey.TableVersion != tableDef.TableVersion {
-		log.Error("checksum mismatch",
+		sess.logger.Error("checksum mismatch",
 			zap.Uint32("checksumInMem", checksumInMem),
 			zap.Uint32("checksumInFile", checksumInFile),
 			zap.Uint64("tableversionInMem", schemaKey.TableVersion),
@@ -313,7 +133,7 @@ func (c *consumer) parseSchemaFilePath(ctx context.Context, path string) error {
 	}
 
 	// Update tableDefMap.
-	c.tableDefMap[key][tableDef.TableVersion] = &tableDef
+	sess.tableDefMap[tableDef.TableVersion] = &tableDef
 
 	// Fake a dml key for schema.json file, which is useful for putting DDL
 	// in front of the DML files when sorting.
@@ -335,38 +155,191 @@ func (c *consumer) parseSchemaFilePath(ctx context.Context, path string) error {
 		PartitionNum:  fakePartitionNumForSchemaFile,
 		Date:          "",
 	}
-	if _, ok := c.tableDMLIdxMap[dmlkey]; !ok {
-		c.tableDMLIdxMap[dmlkey] = 0
+	if _, ok := sess.tableDMLIdxMap[dmlkey]; !ok {
+		sess.tableDMLIdxMap[dmlkey] = 0
 	} else {
 		// duplicate table schema file found, this should not happen.
-		log.Panic("duplicate schema file found",
+		sess.logger.Panic("duplicate schema file found",
 			zap.String("path", path), zap.Any("tableDef", tableDef),
 			zap.Any("schemaKey", schemaKey), zap.Any("dmlkey", dmlkey))
 	}
 	return nil
 }
 
-func (c *consumer) mustGetTableDef(key cloudstorage.SchemaPathKey) cloudstorage.TableDefinition {
-	var tableDef *cloudstorage.TableDefinition
-	if tableDefs, ok := c.tableDefMap[key.GetKey()]; ok {
-		tableDef = tableDefs[key.TableVersion]
-	}
-	if tableDef == nil {
-		log.Panic("tableDef not found", zap.Any("key", key), zap.Any("tableDefMap", c.tableDefMap))
-	}
-	return *tableDef
+func (sess *IncrementReplicateSession) GenManifestFile(path string, size int64) error {
+	fileName := strings.TrimSuffix(path, sess.fileExtension) + ".manifest"
+	content := fmt.Sprintf("{\"entries\":[{\"url\":\"%s%s\",\"mandatory\":true, \"meta\": { \"content_length\": %d } }]}", sess.externalStorage.URI(), path, size)
+	sess.externalStorage.WriteFile(sess.ctx, fileName, []byte(content))
+	return nil
 }
 
-func (c *consumer) handleNewFiles(
-	ctx context.Context,
-	dmlFileMap map[cloudstorage.DmlPathKey]fileIndexRange,
+// map1 - map2
+func diffDMLMaps(
+	map1, map2 map[cloudstorage.DmlPathKey]uint64,
+) map[cloudstorage.DmlPathKey]fileIndexRange {
+	resMap := make(map[cloudstorage.DmlPathKey]fileIndexRange)
+	for k, v := range map1 {
+		if _, ok := map2[k]; !ok {
+			resMap[k] = fileIndexRange{
+				start: 1,
+				end:   v,
+			}
+		} else if v > map2[k] {
+			resMap[k] = fileIndexRange{
+				start: map2[k] + 1,
+				end:   v,
+			}
+		}
+	}
+	return resMap
+}
+
+// getNewFiles returns newly created dml files in specific ranges
+func (sess *IncrementReplicateSession) getNewFiles() (map[cloudstorage.DmlPathKey]fileIndexRange, error) {
+	tableDMLMap := make(map[cloudstorage.DmlPathKey]fileIndexRange)
+	opt := &storage.WalkOption{SubDir: fmt.Sprintf("%s/%s", sess.sourceDatabase, sess.sourceTable)}
+
+	origDMLIdxMap := make(map[cloudstorage.DmlPathKey]uint64, len(sess.tableDMLIdxMap))
+	for k, v := range sess.tableDMLIdxMap {
+		origDMLIdxMap[k] = v
+	}
+
+	err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
+		if cloudstorage.IsSchemaFile(path) {
+			if err := sess.parseSchemaFilePath(path); err != nil {
+				sess.logger.Error("failed to parse schema file path", zap.Error(err))
+				// skip handling this file
+				return nil
+			}
+		} else if strings.HasSuffix(path, sess.fileExtension) {
+			if err := sess.parseDMLFilePath(path); err != nil {
+				sess.logger.Error("failed to parse dml file path", zap.Error(err))
+				// skip handling this file
+				return nil
+			}
+			// generate manifest file for each dml file
+			manifestFileName := strings.TrimSuffix(path, sess.fileExtension) + ".manifest"
+			exist, err := sess.externalStorage.FileExists(sess.ctx, manifestFileName)
+			if err != nil {
+				return err
+			}
+			if !exist {
+				if err = sess.GenManifestFile(path, size); err != nil {
+					return nil
+				}
+			}
+		} else {
+			sess.logger.Debug("ignore handling file", zap.String("path", path))
+		}
+		return nil
+	})
+	if err != nil {
+		return tableDMLMap, err
+	}
+
+	tableDMLMap = diffDMLMaps(sess.tableDMLIdxMap, origDMLIdxMap)
+	return tableDMLMap, err
+}
+
+func (sess *IncrementReplicateSession) getTableDef(tableVersion uint64) cloudstorage.TableDefinition {
+	if td, ok := sess.tableDefMap[tableVersion]; ok {
+		return *td
+	} else {
+		sess.logger.Panic("tableDef not found", zap.Any("table version", tableVersion), zap.Any("tableDefMap", sess.tableDefMap))
+		return cloudstorage.TableDefinition{}
+	}
+}
+
+func (sess *IncrementReplicateSession) syncExecDMLEvents(
+	tableDef cloudstorage.TableDefinition,
+	key cloudstorage.DmlPathKey,
+	fileIdx uint64,
 ) error {
+	filePath := key.GenerateDMLFilePath(fileIdx, sess.fileExtension, config.DefaultFileIndexWidth)
+	exist, err := sess.externalStorage.FileExists(sess.ctx, filePath)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	// We will remove the file after flush complete, so if the program restarts,
+	// the file range will start from 1 again, but the file may not exist.
+	// So we just ignore the non-exist file.
+	if !exist {
+		sess.logger.Warn("file not exists", zap.String("path", filePath))
+		return nil
+	}
+
+	// merge file into data warehouse
+	if err := sess.dwConnector.LoadIncrement(tableDef, sess.storageURI, filePath); err != nil {
+		return errors.Trace(err)
+	}
+
+	// delete file after merge complete in order to avoid duplicate merge when program restarts
+	if err = sess.externalStorage.DeleteFile(sess.ctx, filePath); err != nil {
+		return errors.Trace(err)
+	}
+	// delete manifest file after merge complete
+	manifestFilePath := strings.TrimSuffix(filePath, sess.fileExtension) + ".manifest"
+	if err = sess.externalStorage.DeleteFile(sess.ctx, manifestFilePath); err != nil {
+		return errors.Trace(err)
+	}
+
+	return nil
+}
+
+func (sess *IncrementReplicateSession) syncExecDDLEvents(tableDef cloudstorage.TableDefinition) error {
+	if len(tableDef.Query) == 0 {
+		// schema.json file without query is used to initialize the schema.
+		err := sess.dwConnector.InitSchema(tableDef.Columns)
+		return errors.Wrap(err, "failed to init schema")
+	}
+
+	if err := sess.dwConnector.ExecDDL(tableDef); err != nil {
+		// FIXME: if there is a DDL before all the DMLs, will return error here.
+		return errors.Annotate(err,
+			fmt.Sprintf("Please check the DDL query, "+
+				"if necessary, please manually execute the DDL query in data warehouse, "+
+				"update the `query` of the %s/%s/%s/meta/schema_%d_{hash}.json to empty, "+
+				"and restart the program",
+				sess.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
+	}
+
+	// The following logic is used to handle pause and resume.
+	// Keep the current table definition file with len(query) == 0 and delete all the outdated files.
+
+	// Delete all the outdated table definition files.
+	for _, item := range sess.tableDefMap {
+		if item.TableVersion < tableDef.TableVersion {
+			filePath, err := item.GenerateSchemaFilePath()
+			if err != nil {
+				return errors.Trace(err)
+			}
+			if err = sess.externalStorage.DeleteFile(sess.ctx, filePath); err != nil {
+				return errors.Trace(err)
+			}
+			delete(sess.tableDefMap, item.TableVersion)
+		}
+	}
+	// clear the query in the current table definition file.
+	tableDef.Query = ""
+	data, err := tableDef.MarshalWithQuery()
+	if err != nil {
+		return errors.Trace(err)
+	}
+	filePath, err := tableDef.GenerateSchemaFilePath()
+	if err != nil {
+		return errors.Trace(err)
+	}
+	// update the current table definition file.
+	return sess.externalStorage.WriteFile(sess.ctx, filePath, data)
+}
+
+func (sess *IncrementReplicateSession) handleNewFiles(dmlFileMap map[cloudstorage.DmlPathKey]fileIndexRange) error {
 	keys := make([]cloudstorage.DmlPathKey, 0, len(dmlFileMap))
 	for k := range dmlFileMap {
 		keys = append(keys, k)
 	}
 	if len(keys) == 0 {
-		log.Info("no new files found since last round")
+		sess.logger.Info("no new files found since last round")
 		return nil
 	}
 	slices.SortStableFunc(keys, func(x, y cloudstorage.DmlPathKey) bool {
@@ -376,38 +349,16 @@ func (c *consumer) handleNewFiles(
 		if x.PartitionNum != y.PartitionNum {
 			return x.PartitionNum < y.PartitionNum
 		}
-		if x.Date != y.Date {
-			return x.Date < y.Date
-		}
-		if x.Schema != y.Schema {
-			return x.Schema < y.Schema
-		}
-		return x.Table < y.Table
+		return x.Date < y.Date
 	})
-	log.Info("new files found since last round", zap.Any("keys", keys))
+	sess.logger.Info("new files found since last round", zap.Any("keys", keys))
 
-	// TODO: support handling dml events of different tables concurrently.
-	// Note: dml events of the same table should be handled sequentially.
-	//       so we can not just pipeline this loop.
 	for _, key := range keys {
-		tableDef := c.mustGetTableDef(key.SchemaPathKey)
-		tableID := c.tableIDGenerator.generateFakeTableID(key.Schema, key.Table, key.PartitionNum)
-		if _, ok := c.dwConnectorMap[tableID]; !ok {
-			// create a new connector for the table.
-			connector, err := c.sampleConnector.Clone(
-				fmt.Sprintf("increment_stage_%s", tableDef.Table),
-				c.storageURI,
-			)
-			if err != nil {
-				return errors.Trace(err)
-			}
-			c.dwConnectorMap[tableID] = connector
-		}
-
+		tableDef := sess.getTableDef(key.SchemaPathKey.TableVersion)
 		// if the key is a fake dml path key which is mainly used for
 		// sorting schema.json file before the dml files, which means it is a schema.json file.
 		if key.PartitionNum == fakePartitionNumForSchemaFile && len(key.Date) == 0 {
-			if err := c.syncExecDDLEvents(ctx, tableDef, tableID, key); err != nil {
+			if err := sess.syncExecDDLEvents(tableDef); err != nil {
 				return errors.Trace(err)
 			}
 			continue
@@ -415,7 +366,7 @@ func (c *consumer) handleNewFiles(
 
 		fileRange := dmlFileMap[key]
 		for i := fileRange.start; i <= fileRange.end; i++ {
-			if err := c.syncExecDMLEvents(ctx, tableDef, tableID, key, i); err != nil {
+			if err := sess.syncExecDMLEvents(tableDef, key, i); err != nil {
 				return errors.Trace(err)
 			}
 		}
@@ -424,82 +375,73 @@ func (c *consumer) handleNewFiles(
 	return nil
 }
 
-func (c *consumer) run(ctx context.Context, flushInterval time.Duration) error {
+func (sess *IncrementReplicateSession) Run(flushInterval time.Duration, wg *sync.WaitGroup) error {
+	defer wg.Done()
+
 	ticker := time.NewTicker(flushInterval)
 	for {
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case err := <-c.errCh:
-			return err
+		case <-sess.ctx.Done():
+			return sess.ctx.Err()
 		case <-ticker.C:
 		}
-		dmlFileMap, err := c.getNewFiles(ctx)
+		dmlFileMap, err := sess.getNewFiles()
 		if err != nil {
 			return errors.Trace(err)
 		}
 
-		if err = c.handleNewFiles(ctx, dmlFileMap); err != nil {
+		if err = sess.handleNewFiles(dmlFileMap); err != nil {
 			return errors.Trace(err)
 		}
 	}
 }
 
-// copied from kafka-consumer
-type fakeTableIDGenerator struct {
-	tableIDs       map[string]int64
-	currentTableID int64
-	mu             sync.Mutex
-}
-
-func (g *fakeTableIDGenerator) generateFakeTableID(schema, table string, partition int64) int64 {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	key := quotes.QuoteSchema(schema, table)
-	if partition > 0 {
-		key = fmt.Sprintf("%s.`%d`", key, partition)
+func (sess *IncrementReplicateSession) Close() {
+	if sess.dwConnector != nil {
+		sess.dwConnector.Close()
 	}
-	if tableID, ok := g.tableIDs[key]; ok {
-		return tableID
-	}
-	g.currentTableID++
-	g.tableIDs[key] = g.currentTableID
-	return g.currentTableID
 }
 
 func StartReplicateIncrement(
-	dwConnector coreinterfaces.Connector, storageUri *url.URL, flushInterval time.Duration, timezone string,
+	dwConnectorMap map[string]coreinterfaces.Connector,
+	storageURI *url.URL,
+	flushInterval time.Duration,
 ) error {
-	var consumer *consumer
-	var err error
-
-	if storageUri.Scheme == "gcs" {
+	fileExtension := CSVFileExtension
+	if storageURI.Scheme == "gcs" {
 		log.Error("Skip replicating increment. GCS does not supprt data warehouse connector now...")
 		return nil
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	deferFunc := func() int {
-		stop()
-		if err != nil && err != context.Canceled {
-			return 1
-		}
-		// close all data warehouse connections
-		if consumer != nil {
-			for _, db := range consumer.dwConnectorMap {
-				db.Close()
-			}
-		}
-		return 0
-	}
-	defer deferFunc()
+	ctx, cancel := context.WithCancel(context.Background())
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	consumer, err = newConsumer(ctx, dwConnector, storageUri, timezone)
-	if err != nil {
-		return errors.Annotate(err, "failed to create storage consumer")
+	var wg sync.WaitGroup
+	for tableFQN, dwConnector := range dwConnectorMap {
+		go func(tableFQN string, dwConnector coreinterfaces.Connector) {
+			logger := log.L().With(zap.String("table", tableFQN))
+			sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
+			session, err := NewIncrementReplicateSession(ctx, dwConnector, fileExtension, storageURI, sourceDatabase, sourceTable, logger)
+			if err != nil {
+				logger.Error("error occurred while creating increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+				return
+			}
+			defer session.Close()
+			if err = session.Run(flushInterval, &wg); err != nil {
+				logger.Error("error occurred while running increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+				return
+			}
+		}(tableFQN, dwConnector)
 	}
-	if err = consumer.run(ctx, flushInterval); err != nil {
-		return errors.Annotate(err, "error occurred while running consumer")
-	}
+
+	// Wait for the termination signal
+	<-sigCh
+
+	// Cancel the context to stop the goroutines
+	cancel()
+
+	// Wait for all the goroutines to exit
+	wg.Wait()
 	return nil
 }

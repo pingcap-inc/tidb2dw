@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
@@ -140,10 +139,6 @@ func (sc *SnowflakeConnector) LoadIncrement(tableDef cloudstorage.TableDefinitio
 
 	log.Info("Successfully merge file", zap.String("file", filePath))
 	return nil
-}
-
-func (sc *SnowflakeConnector) Clone(stageName string, storageURI *url.URL) (coreinterfaces.Connector, error) {
-	return NewSnowflakeConnector(sc.db, stageName, storageURI, sc.s3Credentials)
 }
 
 func (sc *SnowflakeConnector) Close() {

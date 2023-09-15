@@ -31,6 +31,8 @@ type SnapshotReplicateSession struct {
 
 	StorageWorkspaceUri url.URL
 	externalStorage     storage.ExternalStorage
+
+	logger *zap.Logger
 }
 
 func NewSnapshotReplicateSession(
@@ -38,6 +40,7 @@ func NewSnapshotReplicateSession(
 	tidbConfig *tidbsql.TiDBConfig,
 	sourceDatabase, sourceTable string,
 	storageUri *url.URL,
+	logger *zap.Logger,
 ) (*SnapshotReplicateSession, error) {
 	sess := &SnapshotReplicateSession{
 		DataWarehousePool:   dwConnector,
@@ -45,8 +48,9 @@ func NewSnapshotReplicateSession(
 		SourceDatabase:      sourceDatabase,
 		SourceTable:         sourceTable,
 		StorageWorkspaceUri: *storageUri,
+		logger:              logger,
 	}
-	log.Info("Creating replicate session",
+	sess.logger.Info("Creating replicate session",
 		zap.String("storage", sess.StorageWorkspaceUri.String()),
 		zap.String("source", fmt.Sprintf("%s.%s", sourceDatabase, sourceTable)))
 	{
@@ -59,7 +63,7 @@ func NewSnapshotReplicateSession(
 	{
 		// Setup progress reporters
 		sess.OnSnapshotLoadProgress = func(loadedRows int64) {
-			log.Info("Snapshot load progress", zap.Int64("loadedRows", loadedRows))
+			sess.logger.Info("Snapshot load progress", zap.Int64("loadedRows", loadedRows))
 		}
 	}
 	{
@@ -83,13 +87,12 @@ func (sess *SnapshotReplicateSession) Close() {
 
 func (sess *SnapshotReplicateSession) Run() error {
 	switch sess.StorageWorkspaceUri.Scheme {
-	case "s3":
+	case "s3", "gcs", "gs":
 		if err := sess.DataWarehousePool.CopyTableSchema(sess.SourceDatabase, sess.SourceTable, sess.TiDBPool); err != nil {
 			return errors.Trace(err)
 		}
-	case "gcs":
-		log.Error("GCS does not supprt data warehouse connector now...")
-		return errors.New("GCS does not supprt data warehouse connector now...")
+	default:
+		return errors.Errorf("%s does not supprt data warehouse connector now...", sess.StorageWorkspaceUri.Scheme)
 	}
 
 	startTime := time.Now()
@@ -102,15 +105,14 @@ func (sess *SnapshotReplicateSession) Run() error {
 	// loadinfo exists means the data has been all loaded into data warehouse.
 	loadinfo := fmt.Sprintf("Copy to data warehouse start time: %s\nCopy to data warehouse end time: %s\n", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
 	if err := sess.externalStorage.WriteFile(context.Background(), "loadinfo", []byte(loadinfo)); err != nil {
-		log.Error("Failed to upload loadinfo", zap.Error(err))
+		sess.logger.Error("Failed to upload loadinfo", zap.Error(err))
 	}
-	log.Info("Successfully upload loadinfo", zap.String("loadinfo", loadinfo))
+	sess.logger.Info("Successfully upload loadinfo", zap.String("loadinfo", loadinfo))
 	return nil
 }
 
 func (sess *SnapshotReplicateSession) loadSnapshotDataIntoDataWarehouse() error {
-	workspacePrefix := strings.TrimPrefix(sess.StorageWorkspaceUri.Path, "/")
-	dumpFilePrefix := fmt.Sprintf("%s/%s.%s.", workspacePrefix, sess.SourceDatabase, sess.SourceTable)
+	dumpFilePrefix := fmt.Sprintf("%s.%s.", sess.SourceDatabase, sess.SourceTable)
 	if err := sess.DataWarehousePool.LoadSnapshot(sess.SourceTable, dumpFilePrefix, sess.OnSnapshotLoadProgress); err != nil {
 		return errors.Trace(err)
 	}
@@ -118,19 +120,40 @@ func (sess *SnapshotReplicateSession) loadSnapshotDataIntoDataWarehouse() error 
 }
 
 func StartReplicateSnapshot(
-	dwConnector coreinterfaces.Connector,
+	dwConnectorMap map[string]coreinterfaces.Connector,
 	tidbConfig *tidbsql.TiDBConfig,
-	tableFQN string,
 	storageUri *url.URL,
 ) error {
-	sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
-	session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, storageUri)
-	if err != nil {
-		return errors.Trace(err)
+	errCh := make(chan error)
+	for tableFQN, dwConnector := range dwConnectorMap {
+		go func(tableFQN string, dwConnector coreinterfaces.Connector) {
+			logger := log.L().With(zap.String("table", tableFQN))
+			sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
+			session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, storageUri, logger)
+			if err != nil {
+				logger.Error("Failed to create snapshot replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+				errCh <- err
+				return
+			}
+			defer session.Close()
+			if err := session.Run(); err != nil {
+				logger.Error("Failed to run snapshot replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+				errCh <- err
+				return
+			}
+			logger.Info("Successfully run snapshot replicate session", zap.String("tableFQN", tableFQN))
+			errCh <- nil
+		}(tableFQN, dwConnector)
 	}
-	defer session.Close()
-	if err := session.Run(); err != nil {
-		return errors.Trace(err)
+
+	var errMsgs []string
+	for range dwConnectorMap {
+		if err := <-errCh; err != nil {
+			errMsgs = append(errMsgs, err.Error())
+		}
+	}
+	if len(errMsgs) > 0 {
+		return errors.New(strings.Join(errMsgs, "\n"))
 	}
 	return nil
 }

@@ -1,6 +1,6 @@
 module github.com/pingcap-inc/tidb2dw
 
-go 1.20
+go 1.21
 
 require (
 	github.com/aws/aws-sdk-go v1.44.278

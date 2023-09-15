@@ -11,11 +11,9 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/dumpling/export"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"gitlab.com/tymonx/go-formatter/formatter"
 	"go.uber.org/zap"
-	"golang.org/x/exp/slices"
 )
 
 func CreateSchema(db *sql.DB, schemaName string) error {
@@ -30,8 +28,8 @@ func CreateSchema(db *sql.DB, schemaName string) error {
 }
 
 // redshift currently can not support ROWS_PRODUCED function
-// use csv file path for storageUrl, like s3://tidbbucket/snapshot/stock.csv
-func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUrl, filePrefix string, credential *credentials.Value, onSnapshotLoadProgress func(loadedRows int64)) error {
+// use csv file path for storageUri, like s3://tidbbucket/snapshot/stock.csv
+func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUri, filePrefix string, credential *credentials.Value, onSnapshotLoadProgress func(loadedRows int64)) error {
 	sql, err := formatter.Format(`
 	COPY {targetTable}
 	FROM '{storageUrl}/{filePrefix}'
@@ -39,7 +37,7 @@ func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUrl, filePrefix string, 
 	FORMAT AS CSV DELIMITER ',' QUOTE '"';
 	`, formatter.Named{
 		"targetTable": snowsql.EscapeString(targetTable),
-		"storageUrl":  snowsql.EscapeString(storageUrl),
+		"storageUrl":  snowsql.EscapeString(storageUri),
 		"filePrefix":  snowsql.EscapeString(filePrefix), // TODO: Verify
 		"accessId":    credential.AccessKeyID,
 		"accessKey":   credential.SecretAccessKey,
@@ -48,9 +46,7 @@ func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUrl, filePrefix string, 
 		return errors.Trace(err)
 	}
 	log.Info("Loading snapshot data from external table", zap.String("query", sql))
-	ctx := context.Background()
-	_, err = db.ExecContext(ctx, sql)
-
+	_, err = db.Exec(sql)
 	return err
 }
 
@@ -61,7 +57,7 @@ func DropTable(sourceTable string, db *sql.DB) error {
 	return err
 }
 
-func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, db *sql.DB) error {
+func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, redConn *sql.DB) error {
 	tableColumns, err := tidbsql.GetTiDBTableColumn(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
 		return errors.Trace(err)
@@ -75,29 +71,9 @@ func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, db *
 		columnRows = append(columnRows, row)
 	}
 
-	indexQuery := fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", sourceDatabase, sourceTable) // FIXME: Escape
-	indexRows, err := sourceTiDBConn.QueryContext(context.Background(), indexQuery)
+	redshiftPKColumns, err := tidbsql.GetTiDBTablePKColumns(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
 		return errors.Trace(err)
-	}
-	indexResults, err := export.GetSpecifiedColumnValuesAndClose(indexRows, "KEY_NAME", "COLUMN_NAME", "SEQ_IN_INDEX")
-	if err != nil {
-		return errors.Trace(err)
-	}
-
-	redshiftPKColumns := make([]string, 0)
-	// Sort by key_name, seq_in_index
-	slices.SortFunc(indexResults, func(i, j []string) bool {
-		if i[0] == j[0] {
-			return i[2] < j[2] // Sort by seq_in_index
-		}
-		return i[0] < j[0] // Sort by key_name
-	})
-	for _, oneRow := range indexResults {
-		keyName, columnName := oneRow[0], oneRow[1]
-		if keyName == "PRIMARY" {
-			redshiftPKColumns = append(redshiftPKColumns, columnName)
-		}
 	}
 
 	// TODO: Support unique key
@@ -119,7 +95,7 @@ func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, db *
 
 	query := strings.Join(sql, "\n")
 	log.Info("Creating table in Redshift", zap.String("query", query))
-	_, err = db.Exec(query)
+	_, err = redConn.Exec(query)
 	return err
 }
 

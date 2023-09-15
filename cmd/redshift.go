@@ -6,6 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/apiservice"
+	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/redshiftsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
@@ -21,7 +22,7 @@ func NewRedshiftCmd() *cobra.Command {
 	var (
 		tidbConfigFromCli     tidbsql.TiDBConfig
 		redshiftConfigFromCli redshiftsql.RedshiftConfig
-		tableFQN              string
+		tables                []string
 		snapshotConcurrency   int
 		storagePath           string
 		cdcHost               string
@@ -70,34 +71,45 @@ func NewRedshiftCmd() *cobra.Command {
 		if err != nil {
 			return errors.Trace(err)
 		}
-		_, sourceTable := utils.SplitTableFQN(tableFQN)
-		db, err := redshiftConfigFromCli.OpenDB()
-		if err != nil {
-			return errors.Trace(err)
+
+		snapConnectorMap := make(map[string]coreinterfaces.Connector)
+		increConnectorMap := make(map[string]coreinterfaces.Connector)
+		for _, tableFQN := range tables {
+			_, sourceTable := utils.SplitTableFQN(tableFQN)
+			db, err := redshiftConfigFromCli.OpenDB()
+			if err != nil {
+				return errors.Trace(err)
+			}
+			snapConnector, err := redshiftsql.NewRedshiftConnector(
+				db,
+				redshiftConfigFromCli.Schema,
+				fmt.Sprintf("snapshot_external_%s", sourceTable),
+				redshiftConfigFromCli.Role,
+				snapshotURI,
+				credValue,
+			)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			snapConnectorMap[tableFQN] = snapConnector
+			db, err = redshiftConfigFromCli.OpenDB()
+			if err != nil {
+				return errors.Trace(err)
+			}
+			increConnector, err := redshiftsql.NewRedshiftConnector(
+				db,
+				redshiftConfigFromCli.Schema,
+				fmt.Sprintf("increment_external_%s", sourceTable),
+				redshiftConfigFromCli.Role,
+				incrementURI,
+				credValue,
+			)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			increConnectorMap[tableFQN] = increConnector
 		}
-		snapConnector, err := redshiftsql.NewRedshiftConnector(
-			db,
-			redshiftConfigFromCli.Schema,
-			fmt.Sprintf("snapshot_external_%s", sourceTable),
-			redshiftConfigFromCli.Role,
-			snapshotURI,
-			credValue,
-		)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		increConnector, err := redshiftsql.NewRedshiftConnector(
-			db,
-			redshiftConfigFromCli.Schema,
-			fmt.Sprintf("increment_external_%s", sourceTable),
-			redshiftConfigFromCli.Role,
-			incrementURI,
-			credValue,
-		)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		return Replicate(&tidbConfigFromCli, tableFQN, storageURI, snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, *credValue, snapConnector, increConnector, timezone, mode)
+		return Replicate(&tidbConfigFromCli, tables, storageURI, snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, snapConnectorMap, increConnectorMap, mode)
 	}
 
 	cmd := &cobra.Command{
@@ -129,7 +141,7 @@ func NewRedshiftCmd() *cobra.Command {
 	cmd.Flags().StringVar(&redshiftConfigFromCli.Database, "redshift.database", "", "redshift database")
 	cmd.Flags().StringVar(&redshiftConfigFromCli.Schema, "redshift.schema", "", "redshift schema")
 	cmd.Flags().StringVar(&redshiftConfigFromCli.Role, "redshift.role", "", "iam role for redshift")
-	cmd.Flags().StringVarP(&tableFQN, "table", "t", "", "tables full qualified name: <db_1>.<t_a>")
+	cmd.Flags().StringArrayVarP(&tables, "table", "t", []string{}, "tables full qualified name, e.g. -t <db1>.<table1> -t <db2>.<table2>")
 	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
 	cmd.Flags().StringVarP(&storagePath, "storage", "s", "", "storage path: s3://<bucket>/<path> or gcs://<bucket>/<path>")
 	cmd.Flags().StringVar(&cdcHost, "cdc.host", "127.0.0.1", "TiCDC server host")
