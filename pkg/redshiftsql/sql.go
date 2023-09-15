@@ -71,7 +71,7 @@ func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, redC
 		columnRows = append(columnRows, row)
 	}
 
-	pkColumns, err := tidbsql.GetTiDBTablePKColumns(sourceTiDBConn, sourceDatabase, sourceTable)
+	redshiftPKColumns, err := tidbsql.GetTiDBTablePKColumns(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -80,8 +80,8 @@ func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, redC
 
 	sqlRows := make([]string, 0, len(columnRows)+1)
 	sqlRows = append(sqlRows, columnRows...)
-	if len(pkColumns) > 0 {
-		sqlRows = append(sqlRows, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(pkColumns, ", ")))
+	if len(redshiftPKColumns) > 0 {
+		sqlRows = append(sqlRows, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(redshiftPKColumns, ", ")))
 	}
 	// Add idents
 	for i := 0; i < len(sqlRows); i++ {
