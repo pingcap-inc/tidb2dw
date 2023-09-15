@@ -1,5 +1,3 @@
 package apiservice
 
-var (
-	GlobalInstance = New()
-)
+var GlobalInstance *APIService

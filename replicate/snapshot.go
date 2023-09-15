@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pingcap-inc/tidb2dw/pkg/apiservice"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
@@ -132,11 +133,13 @@ func StartReplicateSnapshot(
 			session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, storageUri, logger)
 			if err != nil {
 				logger.Error("Failed to create snapshot replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+				apiservice.GlobalInstance.APIInfo.SetStatusFatalError(tableFQN, err)
 				errCh <- err
 				return
 			}
 			defer session.Close()
 			if err := session.Run(); err != nil {
+				apiservice.GlobalInstance.APIInfo.SetStatusFatalError(tableFQN, err)
 				logger.Error("Failed to run snapshot replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
 				errCh <- err
 				return

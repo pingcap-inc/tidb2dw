@@ -16,13 +16,13 @@ type APIService struct {
 	router  *gin.Engine
 }
 
-func New() *APIService {
+func New(tables []string) *APIService {
 	gin.SetMode(gin.ReleaseMode)
 
 	r := gin.New()
 	r.Use(gin.Recovery())
 
-	apiInfo := NewAPIInfo()
+	apiInfo := NewAPIInfo(tables)
 	apiInfo.registerRouter(r)
 
 	return &APIService{
@@ -38,7 +38,7 @@ func (service *APIService) Serve(l net.Listener) {
 		}
 	}()
 
-	quit := make(chan os.Signal)
+	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	s := <-quit
 	log.Info("Received exit signal, shutting down API service ...", zap.String("signal", s.String()))

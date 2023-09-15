@@ -116,9 +116,10 @@ func NewRedshiftCmd() *cobra.Command {
 		Use:   "redshift",
 		Short: "Replicate snapshot and incremental data from TiDB to Redshift",
 		Run: func(_ *cobra.Command, _ []string) {
+			apiservice.GlobalInstance = apiservice.New(tables)
 			runWithServer(mode == RunModeCloud, fmt.Sprintf("%s:%d", apiListenHost, apiListenPort), func() {
 				if err := run(); err != nil {
-					apiservice.GlobalInstance.APIInfo.SetStatusFatalError(err)
+					apiservice.GlobalInstance.APIInfo.SetGlobalStatusFatalError(err)
 					log.Error("Fatal error running redshift replication", zap.Error(err))
 				}
 			})
