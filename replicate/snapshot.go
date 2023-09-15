@@ -87,13 +87,12 @@ func (sess *SnapshotReplicateSession) Close() {
 
 func (sess *SnapshotReplicateSession) Run() error {
 	switch sess.StorageWorkspaceUri.Scheme {
-	case "s3":
+	case "s3", "gcs", "gs":
 		if err := sess.DataWarehousePool.CopyTableSchema(sess.SourceDatabase, sess.SourceTable, sess.TiDBPool); err != nil {
 			return errors.Trace(err)
 		}
-	case "gcs":
-		sess.logger.Error("GCS does not supprt data warehouse connector now...")
-		return errors.New("GCS does not supprt data warehouse connector now...")
+	default:
+		return errors.Errorf("%s does not supprt data warehouse connector now...", sess.StorageWorkspaceUri.Scheme)
 	}
 
 	startTime := time.Now()

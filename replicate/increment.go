@@ -298,7 +298,7 @@ func (sess *IncrementReplicateSession) syncExecDDLEvents(tableDef cloudstorage.T
 		return errors.Annotate(err,
 			fmt.Sprintf("Please check the DDL query, "+
 				"if necessary, please manually execute the DDL query in data warehouse, "+
-				"update the `query` of the %s%s/%s/meta/schema_%d_{hash}.json to empty, "+
+				"update the `query` of the %s/%s/%s/meta/schema_%d_{hash}.json to empty, "+
 				"and restart the program",
 				sess.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
 	}
