@@ -427,6 +427,7 @@ func StartReplicateIncrement(
 				logger.Error("error occurred while creating increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
 				return
 			}
+			defer session.Close()
 			if err = session.Run(flushInterval, &wg); err != nil {
 				logger.Error("error occurred while running increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
 				return
