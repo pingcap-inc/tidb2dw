@@ -11,11 +11,9 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/dumpling/export"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"gitlab.com/tymonx/go-formatter/formatter"
 	"go.uber.org/zap"
-	"golang.org/x/exp/slices"
 )
 
 func CreateSchema(db *sql.DB, schemaName string) error {
@@ -59,7 +57,7 @@ func DropTable(sourceTable string, db *sql.DB) error {
 	return err
 }
 
-func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, db *sql.DB) error {
+func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, redConn *sql.DB) error {
 	tableColumns, err := tidbsql.GetTiDBTableColumn(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
 		return errors.Trace(err)
@@ -73,37 +71,17 @@ func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, db *
 		columnRows = append(columnRows, row)
 	}
 
-	indexQuery := fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", sourceDatabase, sourceTable) // FIXME: Escape
-	indexRows, err := sourceTiDBConn.QueryContext(context.Background(), indexQuery)
+	pkColumns, err := tidbsql.GetTiDBTablePKColumns(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
 		return errors.Trace(err)
-	}
-	indexResults, err := export.GetSpecifiedColumnValuesAndClose(indexRows, "KEY_NAME", "COLUMN_NAME", "SEQ_IN_INDEX")
-	if err != nil {
-		return errors.Trace(err)
-	}
-
-	redshiftPKColumns := make([]string, 0)
-	// Sort by key_name, seq_in_index
-	slices.SortFunc(indexResults, func(i, j []string) bool {
-		if i[0] == j[0] {
-			return i[2] < j[2] // Sort by seq_in_index
-		}
-		return i[0] < j[0] // Sort by key_name
-	})
-	for _, oneRow := range indexResults {
-		keyName, columnName := oneRow[0], oneRow[1]
-		if keyName == "PRIMARY" {
-			redshiftPKColumns = append(redshiftPKColumns, columnName)
-		}
 	}
 
 	// TODO: Support unique key
 
 	sqlRows := make([]string, 0, len(columnRows)+1)
 	sqlRows = append(sqlRows, columnRows...)
-	if len(redshiftPKColumns) > 0 {
-		sqlRows = append(sqlRows, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(redshiftPKColumns, ", ")))
+	if len(pkColumns) > 0 {
+		sqlRows = append(sqlRows, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(pkColumns, ", ")))
 	}
 	// Add idents
 	for i := 0; i < len(sqlRows); i++ {
@@ -117,7 +95,7 @@ func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, db *
 
 	query := strings.Join(sql, "\n")
 	log.Info("Creating table in Redshift", zap.String("query", query))
-	_, err = db.Exec(query)
+	_, err = redConn.Exec(query)
 	return err
 }
 

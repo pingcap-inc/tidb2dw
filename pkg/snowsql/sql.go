@@ -14,12 +14,10 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/dumpling/export"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"github.com/snowflakedb/gosnowflake"
 	"gitlab.com/tymonx/go-formatter/formatter"
 	"go.uber.org/zap"
-	"golang.org/x/exp/slices"
 )
 
 func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred *credentials.Value) error {
@@ -178,29 +176,9 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 		columnRows = append(columnRows, row)
 	}
 
-	indexQuery := fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", sourceDatabase, sourceTable) // FIXME: Escape
-	indexRows, err := sourceTiDBConn.QueryContext(context.Background(), indexQuery)
+	snowflakePKColumns, err := tidbsql.GetTiDBTablePKColumns(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
 		return "", errors.Trace(err)
-	}
-	indexResults, err := export.GetSpecifiedColumnValuesAndClose(indexRows, "KEY_NAME", "COLUMN_NAME", "SEQ_IN_INDEX")
-	if err != nil {
-		return "", errors.Trace(err)
-	}
-
-	snowflakePKColumns := make([]string, 0)
-	// Sort by key_name, seq_in_index
-	slices.SortFunc(indexResults, func(i, j []string) bool {
-		if i[0] == j[0] {
-			return i[2] < j[2] // Sort by seq_in_index
-		}
-		return i[0] < j[0] // Sort by key_name
-	})
-	for _, oneRow := range indexResults {
-		keyName, columnName := oneRow[0], oneRow[1]
-		if keyName == "PRIMARY" {
-			snowflakePKColumns = append(snowflakePKColumns, columnName)
-		}
 	}
 
 	// TODO: Support unique key

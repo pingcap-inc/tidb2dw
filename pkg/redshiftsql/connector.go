@@ -33,14 +33,8 @@ func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName, iamRole str
 		return nil, errors.Annotate(err, "Failed to create schema")
 	}
 	// need iam role to create external schema
-	var mode = strings.Split(externalTableName, "_")[0]
-	if mode == "increment" {
-		err = CreateExternalSchema(db, fmt.Sprintf("%s_schema", externalTableName), fmt.Sprintf("%s_database", externalTableName), iamRole)
-		if err != nil {
-			return nil, errors.Annotate(err, "Failed to create external table")
-		}
-	} else if mode != "snapshot" {
-		return nil, errors.Annotate(err, "Incorrect external table name, only support snapshot_* and increment_*")
+	if err = CreateExternalSchema(db, fmt.Sprintf("%s_schema", externalTableName), fmt.Sprintf("%s_database", externalTableName), iamRole); err != nil {
+		return nil, errors.Annotate(err, "Failed to create external table")
 	}
 	return &RedshiftConnector{
 		db:            db,

@@ -1,10 +1,13 @@
 package tidbsql
 
 import (
+	"cmp"
 	"database/sql"
 	"fmt"
+	"slices"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/tidb/dumpling/export"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
 
@@ -175,4 +178,31 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 		tableColumns = append(tableColumns, tableCol)
 	}
 	return tableColumns, nil
+}
+
+func GetTiDBTablePKColumns(db *sql.DB, sourceDatabase, sourceTable string) ([]string, error) {
+	indexQuery := fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", sourceDatabase, sourceTable) // FIXME: Escape
+	indexRows, err := db.Query(indexQuery)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	indexResults, err := export.GetSpecifiedColumnValuesAndClose(indexRows, "KEY_NAME", "COLUMN_NAME", "SEQ_IN_INDEX")
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	// Sort by key_name, seq_in_index
+	slices.SortStableFunc(indexResults, func(i, j []string) int {
+		if i[0] == j[0] {
+			return cmp.Compare(i[2], j[2]) // Sort by seq_in_index
+		}
+		return cmp.Compare(i[0], j[0]) // Sort by key_name
+	})
+	pkColumns := make([]string, 0)
+	for _, row := range indexResults {
+		keyName, columnName := row[0], row[1]
+		if keyName == "PRIMARY" {
+			pkColumns = append(pkColumns, columnName)
+		}
+	}
+	return pkColumns, nil
 }
