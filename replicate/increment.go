@@ -174,7 +174,7 @@ func (sess *IncrementReplicateSession) GenManifestFile(path string, size int64) 
 	return nil
 }
 
-// // map1 - map2
+// map1 - map2
 func diffDMLMaps(
 	map1, map2 map[cloudstorage.DmlPathKey]uint64,
 ) map[cloudstorage.DmlPathKey]fileIndexRange {

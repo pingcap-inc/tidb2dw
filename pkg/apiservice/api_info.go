@@ -51,21 +51,6 @@ func (s *APIInfo) registerRouter(router *gin.Engine) {
 			})
 		}
 	})
-	router.GET("/info", func(c *gin.Context) {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if s.globalStatus == ServiceStatusFatalError {
-			c.JSON(http.StatusOK, gin.H{
-				"status":        s.globalStatus,
-				"error_message": s.globalErrorMessage,
-			})
-		} else {
-			c.JSON(http.StatusOK, gin.H{
-				"status":        s.statuses,
-				"error_message": s.errorMessages,
-			})
-		}
-	})
 }
 
 func (s *APIInfo) SetStatusFatalError(table string, err error) {
