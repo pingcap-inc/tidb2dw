@@ -27,7 +27,7 @@ func init() {
 				fmt.Println(version.NewTiDB2DWVersion().String())
 				return nil
 			default:
-				return fmt.Errorf("unknown flag: %s, run `tidb2dw --help` for usage", args[0])
+				return fmt.Errorf("unknown flag: %s\nRun `tidb2dw --help` for usage.", args[0])
 			}
 		},
 	}
