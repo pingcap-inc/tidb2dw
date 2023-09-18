@@ -59,7 +59,7 @@ func (bc *BigQueryConnector) ExecDDL(tableDef cloudstorage.TableDefinition) erro
 		return errors.Trace(err)
 	}
 	if len(ddls) == 0 {
-		log.Info("No need to execute this DDL in Snowflake", zap.String("ddl", tableDef.Query))
+		log.Info("No need to execute this DDL in BigQuery", zap.String("ddl", tableDef.Query))
 		return nil
 	}
 	// One DDL may be rewritten to multiple DDLs
