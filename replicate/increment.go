@@ -415,6 +415,7 @@ func StartReplicateIncrement(
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	var wg sync.WaitGroup
+	wg.Add(len(dwConnectorMap))
 	for tableFQN, dwConnector := range dwConnectorMap {
 		go func(tableFQN string, dwConnector coreinterfaces.Connector) {
 			logger := log.L().With(zap.String("table", tableFQN))
