@@ -11,6 +11,7 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	"github.com/pingcap/tiflow/pkg/logutil"
 	"github.com/spf13/cobra"
 	"github.com/thediveo/enumflag"
 	"go.uber.org/zap"
@@ -37,6 +38,14 @@ func NewBigQueryCmd() *cobra.Command {
 	)
 
 	run := func() error {
+		err := logutil.InitLogger(&logutil.Config{
+			Level: logLevel,
+			File:  logFile,
+		})
+		if err != nil {
+			return errors.Trace(err)
+		}
+
 		bigqueryConfigFromCli.CredentialsFilePath = credentialsFilePath
 
 		storageURI, err := getGCSURIWithCredentials(storagePath, credentialsFilePath)
