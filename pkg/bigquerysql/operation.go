@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/pingcap/errors"
@@ -71,26 +70,6 @@ func createNativeTable(ctx context.Context, client *bigquery.Client, datasetID, 
 		return errors.Trace(err)
 	}
 	tableRef := client.Dataset(datasetID).Table(tableID)
-	if err := tableRef.Create(context.Background(), tableMetadata); err != nil {
-		return errors.Trace(err)
-	}
-	return nil
-}
-
-func createExternalTable(ctx context.Context, client *bigquery.Client, datasetID, externalTableID string, columns []cloudstorage.TableCol, storageURI *url.URL, filePath string) error {
-	tableMetadata, err := genTableMetadata(columns, externalTableID)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	tableRef := client.Dataset(datasetID).Table(externalTableID)
-	externalConfig := &bigquery.ExternalDataConfig{
-		SourceFormat: bigquery.CSV,
-		SourceURIs:   []string{filePath},
-		Options: &bigquery.CSVOptions{
-			NullMarker: "\\N",
-		},
-	}
-	tableMetadata.ExternalDataConfig = externalConfig
 	if err := tableRef.Create(context.Background(), tableMetadata); err != nil {
 		return errors.Trace(err)
 	}
