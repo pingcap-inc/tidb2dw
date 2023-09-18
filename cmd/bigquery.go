@@ -127,7 +127,6 @@ func NewBigQueryCmd() *cobra.Command {
 	cmd.MarkFlagRequired("storage")
 	cmd.MarkFlagRequired("bq.project-id")
 	cmd.MarkFlagRequired("bq.dataset-id")
-	cmd.MarkFlagRequired("bq.table-id")
 
 	return cmd
 }

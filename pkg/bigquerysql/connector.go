@@ -129,7 +129,7 @@ func (bc *BigQueryConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 	incrementTableID := bc.stageName
 	absolutePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, filePath)
 
-	// external table may exists if the previous load failed
+	// table may exists if the previous load failed
 	tableExists, err := checkTableExists(ctx, bc.bqClient, bc.datasetID, incrementTableID)
 	if err != nil {
 		return errors.Trace(err)
