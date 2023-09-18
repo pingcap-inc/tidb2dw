@@ -142,16 +142,8 @@ func (bc *BigQueryConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 	}
 
 	mergeSQL := GenMergeInto(tableDef, bc.datasetID, bc.tableID, incrementTableID)
-	job, err := bc.bqClient.Query(mergeSQL).Run(ctx)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	status, err := job.Wait(ctx)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	if status.Err() != nil {
-		return errors.Trace(fmt.Errorf("Bigquery load increment job completed with error: %v", status.Err()))
+	if err = runQuery(ctx, bc.bqClient, mergeSQL); err != nil {
+		return errors.Annotate(err, "Failed to merge increment table")
 	}
 
 	err = deleteTable(ctx, bc.bqClient, bc.datasetID, incrementTableID)
