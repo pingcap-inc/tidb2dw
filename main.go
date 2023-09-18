@@ -14,8 +14,8 @@ func init() {
 	rootCmd = &cobra.Command{
 		Use:                "tidb2dw",
 		Short:              "A service to replicate data changes from TiDB to Data Warehouse in real-time",
-		SilenceErrors:      true,
 		DisableFlagParsing: true,
+		SilenceUsage:       true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return cmd.Help()
@@ -27,7 +27,7 @@ func init() {
 				fmt.Println(version.NewTiDB2DWVersion().String())
 				return nil
 			default:
-				return cmd.Help()
+				return fmt.Errorf("unknown flag: %s, run `tidb2dw --help` for usage", args[0])
 			}
 		},
 	}
