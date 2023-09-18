@@ -26,10 +26,17 @@ type APIInfo struct {
 }
 
 func NewAPIInfo(tables []string) *APIInfo {
+	statuses := make(map[string]ServiceStatus, len(tables))
+	errorMessages := make(map[string]string, len(tables))
+	for _, table := range tables {
+		statuses[table] = ServiceStatusRunning
+		errorMessages[table] = ""
+	}
+
 	return &APIInfo{
 		tables:             tables,
-		statuses:           make(map[string]ServiceStatus),
-		errorMessages:      make(map[string]string),
+		statuses:           statuses,
+		errorMessages:      errorMessages,
 		globalStatus:       ServiceStatusRunning,
 		globalErrorMessage: "",
 	}
@@ -56,10 +63,11 @@ func (s *APIInfo) registerRouter(router *gin.Engine) {
 func (s *APIInfo) SetStatusFatalError(table string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.statuses[table] == ServiceStatusFatalError {
+	if status, ok := s.statuses[table]; ok && status == ServiceStatusFatalError {
 		log.Warn("Ignored new fatal errors", zap.Error(err))
 		return
 	}
+
 	s.statuses[table] = ServiceStatusFatalError
 	s.errorMessages[table] = err.Error()
 }
