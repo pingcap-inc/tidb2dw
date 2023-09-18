@@ -135,7 +135,7 @@ func NewRedshiftCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&tidbConfigFromCli.User, "tidb.user", "u", "root", "TiDB user")
 	cmd.Flags().StringVarP(&tidbConfigFromCli.Pass, "tidb.pass", "p", "", "TiDB password")
 	cmd.Flags().StringVar(&tidbConfigFromCli.SSLCA, "tidb.ssl-ca", "", "TiDB SSL CA")
-	cmd.Flags().StringVar(&redshiftConfigFromCli.Host, "redshift.host", "redshift-cluster-1.cph4e20x7btf.us-east-1.redshift.amazonaws.com", "redshift host")
+	cmd.Flags().StringVar(&redshiftConfigFromCli.Host, "redshift.host", "", "redshift host")
 	cmd.Flags().IntVar(&redshiftConfigFromCli.Port, "redshift.port", 5439, "redshift port")
 	cmd.Flags().StringVar(&redshiftConfigFromCli.User, "redshift.user", "", "redshift user")
 	cmd.Flags().StringVar(&redshiftConfigFromCli.Pass, "redshift.pass", "", "redshift password")
@@ -156,5 +156,6 @@ func NewRedshiftCmd() *cobra.Command {
 	cmd.Flags().StringVar(&awsSecretKey, "aws.secret-key", "", "aws secret key")
 
 	cmd.MarkFlagRequired("storage")
+	cmd.MarkFlagRequired("redshift.host")
 	return cmd
 }
