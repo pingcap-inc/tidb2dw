@@ -65,18 +65,8 @@ func (bc *BigQueryConnector) ExecDDL(tableDef cloudstorage.TableDefinition) erro
 	// One DDL may be rewritten to multiple DDLs
 	ctx := context.Background()
 	for _, ddl := range ddls {
-		job, err := bc.bqClient.Query(ddl).Run(ctx)
-		if err != nil {
+		if err = runQuery(ctx, bc.bqClient, ddl); err != nil {
 			log.Error("Failed to execute DDL", zap.String("received", tableDef.Query), zap.String("rewritten", strings.Join(ddls, "\n")))
-			return errors.Annotate(err, fmt.Sprint("failed to execute", ddl))
-		}
-		status, err := job.Wait(ctx)
-		if err != nil {
-			log.Error("Failed to wait DDL", zap.String("received", tableDef.Query), zap.String("rewritten", strings.Join(ddls, "\n")))
-			return errors.Annotate(err, fmt.Sprint("failed to wait", ddl))
-		}
-		if status.Err() != nil {
-			log.Error("Failed to executed DDL", zap.String("received", tableDef.Query), zap.String("rewritten", strings.Join(ddls, "\n")))
 			return errors.Annotate(err, fmt.Sprint("failed to execute", ddl))
 		}
 	}
