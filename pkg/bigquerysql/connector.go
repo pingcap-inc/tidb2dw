@@ -18,23 +18,23 @@ import (
 type BigQueryConnector struct {
 	bqClient *bigquery.Client
 
-	stageName  string
-	datasetID  string
-	tableID    string
-	storageURL string
+	datasetID        string
+	tableID          string
+	incrementTableID string
+	storageURL       string
 
 	columns []cloudstorage.TableCol
 }
 
-func NewBigQueryConnector(bqClient *bigquery.Client, stageName, datasetID, tableID string, storageURI *url.URL) (*BigQueryConnector, error) {
+func NewBigQueryConnector(bqClient *bigquery.Client, incrementTableID, datasetID, tableID string, storageURI *url.URL) (*BigQueryConnector, error) {
 	storageURL := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
 	return &BigQueryConnector{
-		bqClient:   bqClient,
-		stageName:  stageName,
-		datasetID:  datasetID,
-		tableID:    tableID,
-		storageURL: storageURL,
-		columns:    nil,
+		bqClient:         bqClient,
+		datasetID:        datasetID,
+		tableID:          tableID,
+		incrementTableID: incrementTableID,
+		storageURL:       storageURL,
+		columns:          nil,
 	}, nil
 }
 
@@ -126,7 +126,7 @@ func (bc *BigQueryConnector) LoadSnapshot(targetTable, filePrefix string, onSnap
 
 func (bc *BigQueryConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
 	ctx := context.Background()
-	incrementTableID := bc.stageName
+	incrementTableID := bc.incrementTableID
 	absolutePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, filePath)
 
 	// table may exists if the previous load failed
