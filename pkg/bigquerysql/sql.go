@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/pingcap/errors"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
 
@@ -13,6 +14,28 @@ var (
 	CDC_SCHEMANAME_COLUMN_NAME = "tidb2dw_schemaname"
 	CDC_TIMESTAMP_COLUMN_NAME  = "tidb2dw_timestamp"
 )
+
+func GenIncrementTableColumns(columns []cloudstorage.TableCol) []cloudstorage.TableCol {
+	return append([]cloudstorage.TableCol{
+		{
+			Name: CDC_FLAG_COLUMN_NAME,
+			Tp:   "varchar",
+		},
+		{
+			Name: CDC_TABLENAME_COLUMN_NAME,
+			Tp:   "varchar",
+		},
+		{
+			Name: CDC_SCHEMANAME_COLUMN_NAME,
+			Tp:   "varchar",
+		},
+		{
+			// is timestamp?
+			Name: CDC_TIMESTAMP_COLUMN_NAME,
+			Tp:   "varchar",
+		},
+	}, columns...)
+}
 
 func GenMergeInto(tableDef cloudstorage.TableDefinition, datasetID, tableID, externalTableID string) string {
 	pkColumn := make([]string, 0)
@@ -71,4 +94,32 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, datasetID, tableID, ext
 	)
 
 	return mergeSQL
+}
+
+func GenCreateSchema(columns []cloudstorage.TableCol, pkColumns []string, datasetID, tableID string) (string, error) {
+	columnRows := make([]string, 0, len(columns))
+	for _, column := range columns {
+		row, err := GetBigQueryColumnString(column)
+		if err != nil {
+			return "", errors.Trace(err)
+		}
+		columnRows = append(columnRows, row)
+	}
+
+	sqlRows := make([]string, 0, len(columnRows)+1)
+	sqlRows = append(sqlRows, columnRows...)
+	if len(pkColumns) > 0 {
+		sqlRows = append(sqlRows, fmt.Sprintf("PRIMARY KEY (%s) NOT ENFORCED", strings.Join(pkColumns, ", ")))
+	}
+	// Add idents
+	for i := 0; i < len(sqlRows); i++ {
+		sqlRows[i] = fmt.Sprintf("    %s", sqlRows[i])
+	}
+
+	sql := []string{}
+	sql = append(sql, fmt.Sprintf(`CREATE OR REPLACE TABLE %s.%s (`, datasetID, tableID)) // TODO: Escape
+	sql = append(sql, strings.Join(sqlRows, ",\n"))
+	sql = append(sql, ")")
+
+	return strings.Join(sql, "\n"), nil
 }

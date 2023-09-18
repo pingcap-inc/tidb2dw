@@ -91,24 +91,22 @@ func (bc *BigQueryConnector) ExecDDL(tableDef cloudstorage.TableDefinition) erro
 func (bc *BigQueryConnector) CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {
 	ctx := context.Background()
 
-	tableExists, err := checkTableExists(ctx, bc.bqClient, bc.datasetID, bc.tableID)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	if tableExists {
-		err = deleteTable(ctx, bc.bqClient, bc.datasetID, bc.tableID)
-		if err != nil {
-			return errors.Trace(err)
-		}
-	}
-
 	tableColumns, err := tidbsql.GetTiDBTableColumn(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
 		return errors.Trace(err)
 	}
 
-	if err := createNativeTable(ctx, bc.bqClient, bc.datasetID, bc.tableID, tableColumns); err != nil {
+	pKColumns, err := tidbsql.GetTiDBTablePKColumns(sourceTiDBConn, sourceDatabase, sourceTable)
+	if err != nil {
 		return errors.Trace(err)
+	}
+
+	createTableSQL, err := GenCreateSchema(tableColumns, pKColumns, bc.datasetID, bc.tableID)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	if err = runQuery(ctx, bc.bqClient, createTableSQL); err != nil {
+		return errors.Annotate(err, "Failed to create table")
 	}
 	return nil
 }
@@ -129,23 +127,15 @@ func (bc *BigQueryConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 	incrementTableID := bc.incrementTableID
 	absolutePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, filePath)
 
-	// table may exists if the previous load failed
-	tableExists, err := checkTableExists(ctx, bc.bqClient, bc.datasetID, incrementTableID)
+	tableColumns := GenIncrementTableColumns(tableDef.Columns)
+	createTableSQL, err := GenCreateSchema(tableColumns, []string{}, bc.datasetID, incrementTableID)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	if tableExists {
-		err = deleteTable(ctx, bc.bqClient, bc.datasetID, incrementTableID)
-		if err != nil {
-			return errors.Trace(err)
-		}
+	if err = runQuery(ctx, bc.bqClient, createTableSQL); err != nil {
+		return errors.Annotate(err, "Failed to create increment table")
 	}
 
-	tableColumns := getIncrementTableColumns(tableDef.Columns)
-	err = createNativeTable(ctx, bc.bqClient, bc.datasetID, incrementTableID, tableColumns)
-	if err != nil {
-		return errors.Trace(err)
-	}
 	err = loadGCSFileToBigQuery(ctx, bc.bqClient, bc.datasetID, incrementTableID, absolutePath)
 	if err != nil {
 		return errors.Trace(err)
