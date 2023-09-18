@@ -17,15 +17,28 @@ const (
 )
 
 type APIInfo struct {
-	status       ServiceStatus
-	errorMessage string
-	mu           sync.Mutex
+	tables             []string
+	statuses           map[string]ServiceStatus
+	errorMessages      map[string]string
+	globalStatus       ServiceStatus
+	globalErrorMessage string
+	mu                 sync.Mutex
 }
 
-func NewAPIInfo() *APIInfo {
+func NewAPIInfo(tables []string) *APIInfo {
+	statuses := make(map[string]ServiceStatus, len(tables))
+	errorMessages := make(map[string]string, len(tables))
+	for _, table := range tables {
+		statuses[table] = ServiceStatusRunning
+		errorMessages[table] = ""
+	}
+
 	return &APIInfo{
-		status:       ServiceStatusRunning,
-		errorMessage: "",
+		tables:             tables,
+		statuses:           statuses,
+		errorMessages:      errorMessages,
+		globalStatus:       ServiceStatusRunning,
+		globalErrorMessage: "",
 	}
 }
 
@@ -33,20 +46,40 @@ func (s *APIInfo) registerRouter(router *gin.Engine) {
 	router.GET("/info", func(c *gin.Context) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		c.JSON(http.StatusOK, gin.H{
-			"status":        s.status,
-			"error_message": s.errorMessage,
-		})
+		if s.globalStatus == ServiceStatusFatalError {
+			c.JSON(http.StatusOK, gin.H{
+				"status":        s.globalStatus,
+				"error_message": s.globalErrorMessage,
+			})
+		} else {
+			c.JSON(http.StatusOK, gin.H{
+				"status":        s.statuses,
+				"error_message": s.errorMessages,
+			})
+		}
 	})
 }
 
-func (s *APIInfo) SetStatusFatalError(err error) {
+func (s *APIInfo) SetStatusFatalError(table string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.status == ServiceStatusFatalError {
+	if status, ok := s.statuses[table]; ok && status == ServiceStatusFatalError {
 		log.Warn("Ignored new fatal errors", zap.Error(err))
 		return
 	}
-	s.status = ServiceStatusFatalError
-	s.errorMessage = err.Error()
+
+	s.statuses[table] = ServiceStatusFatalError
+	s.errorMessages[table] = err.Error()
+}
+
+func (s *APIInfo) SetGlobalStatusFatalError(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.globalStatus == ServiceStatusFatalError {
+		log.Warn("Ignored new fatal errors", zap.Error(err))
+		return
+	}
+	s.globalStatus = ServiceStatusFatalError
+	s.globalErrorMessage = err.Error()
 }

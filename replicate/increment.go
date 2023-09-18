@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pingcap-inc/tidb2dw/pkg/apiservice"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
@@ -425,11 +426,13 @@ func StartReplicateIncrement(
 			session, err := NewIncrementReplicateSession(ctx, dwConnector, fileExtension, storageURI, sourceDatabase, sourceTable, logger)
 			if err != nil {
 				logger.Error("error occurred while creating increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+				apiservice.GlobalInstance.APIInfo.SetStatusFatalError(tableFQN, err)
 				return
 			}
 			defer session.Close()
 			if err = session.Run(flushInterval, &wg); err != nil {
 				logger.Error("error occurred while running increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+				apiservice.GlobalInstance.APIInfo.SetStatusFatalError(tableFQN, err)
 				return
 			}
 		}(tableFQN, dwConnector)
