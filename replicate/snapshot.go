@@ -5,10 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
-	"strings"
 	"time"
 
-	"github.com/pingcap-inc/tidb2dw/pkg/apiservice"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
@@ -33,10 +31,12 @@ type SnapshotReplicateSession struct {
 	StorageWorkspaceUri url.URL
 	externalStorage     storage.ExternalStorage
 
+	ctx    context.Context
 	logger *zap.Logger
 }
 
 func NewSnapshotReplicateSession(
+	ctx context.Context,
 	dwConnector coreinterfaces.Connector,
 	tidbConfig *tidbsql.TiDBConfig,
 	sourceDatabase, sourceTable string,
@@ -49,6 +49,7 @@ func NewSnapshotReplicateSession(
 		SourceDatabase:      sourceDatabase,
 		SourceTable:         sourceTable,
 		StorageWorkspaceUri: *storageUri,
+		ctx:                 ctx,
 		logger:              logger,
 	}
 	sess.logger.Info("Creating replicate session",
@@ -68,7 +69,7 @@ func NewSnapshotReplicateSession(
 		}
 	}
 	{
-		externalStorage, err := putil.GetExternalStorageFromURI(context.Background(), storageUri.String())
+		externalStorage, err := putil.GetExternalStorageFromURI(sess.ctx, storageUri.String())
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
@@ -105,7 +106,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 	// Write load info to workspace to record the status of load,
 	// loadinfo exists means the data has been all loaded into data warehouse.
 	loadinfo := fmt.Sprintf("Copy to data warehouse start time: %s\nCopy to data warehouse end time: %s\n", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
-	if err := sess.externalStorage.WriteFile(context.Background(), "loadinfo", []byte(loadinfo)); err != nil {
+	if err := sess.externalStorage.WriteFile(sess.ctx, "loadinfo", []byte(loadinfo)); err != nil {
 		sess.logger.Error("Failed to upload loadinfo", zap.Error(err))
 	}
 	sess.logger.Info("Successfully upload loadinfo", zap.String("loadinfo", loadinfo))
@@ -121,42 +122,24 @@ func (sess *SnapshotReplicateSession) loadSnapshotDataIntoDataWarehouse() error 
 }
 
 func StartReplicateSnapshot(
-	dwConnectorMap map[string]coreinterfaces.Connector,
+	ctx context.Context,
+	dwConnector coreinterfaces.Connector,
+	tableFQN string,
 	tidbConfig *tidbsql.TiDBConfig,
 	storageUri *url.URL,
 ) error {
-	errCh := make(chan error)
-	for tableFQN, dwConnector := range dwConnectorMap {
-		go func(tableFQN string, dwConnector coreinterfaces.Connector) {
-			logger := log.L().With(zap.String("table", tableFQN))
-			sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
-			session, err := NewSnapshotReplicateSession(dwConnector, tidbConfig, sourceDatabase, sourceTable, storageUri, logger)
-			if err != nil {
-				logger.Error("Failed to create snapshot replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
-				apiservice.GlobalInstance.APIInfo.SetStatusFatalError(tableFQN, err)
-				errCh <- err
-				return
-			}
-			defer session.Close()
-			if err := session.Run(); err != nil {
-				apiservice.GlobalInstance.APIInfo.SetStatusFatalError(tableFQN, err)
-				logger.Error("Failed to run snapshot replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
-				errCh <- err
-				return
-			}
-			logger.Info("Successfully run snapshot replicate session", zap.String("tableFQN", tableFQN))
-			errCh <- nil
-		}(tableFQN, dwConnector)
+	logger := log.L().With(zap.String("table", tableFQN))
+	sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
+	session, err := NewSnapshotReplicateSession(ctx, dwConnector, tidbConfig, sourceDatabase, sourceTable, storageUri, logger)
+	if err != nil {
+		logger.Error("Failed to create snapshot replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+		return errors.Trace(err)
 	}
-
-	var errMsgs []string
-	for range dwConnectorMap {
-		if err := <-errCh; err != nil {
-			errMsgs = append(errMsgs, err.Error())
-		}
+	defer session.Close()
+	if err := session.Run(); err != nil {
+		logger.Error("Failed to load snapshot", zap.Error(err), zap.String("tableFQN", tableFQN))
+		return errors.Trace(err)
 	}
-	if len(errMsgs) > 0 {
-		return errors.New(strings.Join(errMsgs, "\n"))
-	}
+	logger.Info("Successfully load snapshot", zap.String("tableFQN", tableFQN))
 	return nil
 }
