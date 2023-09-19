@@ -124,7 +124,7 @@ func NewBigQueryCmd() *cobra.Command {
 	cmd.Flags().StringVar(&tidbConfigFromCli.SSLCA, "tidb.ssl-ca", "", "TiDB SSL CA")
 	cmd.Flags().StringVarP(&bigqueryConfigFromCli.ProjectID, "bq.project-id", "", "", "BigQuery project id")
 	cmd.Flags().StringVarP(&bigqueryConfigFromCli.DatasetID, "bq.dataset-id", "", "", "BigQuery dataset id")
-	cmd.Flags().StringVarP(&credentialsFilePath, "credentials-file-path", "", "", "Google application credentials file path")
+	cmd.Flags().StringVarP(&bigqueryConfigFromCli.credentialsFilePath, "credentials-file-path", "", "", "Google application credentials file path")
 	cmd.Flags().StringArrayVarP(&tables, "table", "t", []string{}, "tables full qualified name, e.g. -t <db1>.<table1> -t <db2>.<table2>")
 	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
 	cmd.Flags().StringVarP(&storagePath, "storage", "s", "", "storage path: gs://<bucket>/<path>")
