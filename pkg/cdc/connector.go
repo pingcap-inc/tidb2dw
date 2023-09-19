@@ -75,6 +75,11 @@ func (c *CDCConnector) CreateChangefeed() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		// print the error message from TiCDC
+		if resp.Body != nil {
+			body, _ := io.ReadAll(resp.Body)
+			log.Error("create changefeed failed", zap.String("resp", string(body)))
+		}
 		return errors.Errorf("create changefeed failed, status code: %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
