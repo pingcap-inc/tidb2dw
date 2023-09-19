@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -73,27 +74,27 @@ func checkStage(storage storage.ExternalStorage) (Stage, error) {
 	return stage, nil
 }
 
-// func getGCSURIWithCredentials(storagePath string, credentialsFilePath string) (*url.URL, error) {
-// 	uri, err := url.Parse(storagePath)
-// 	if err != nil {
-// 		return nil, errors.Annotate(err, "Failed to parse workspace path")
-// 	}
+func getGCSURIWithCredentials(storagePath string, credentialsFilePath string) (*url.URL, error) {
+	uri, err := url.Parse(storagePath)
+	if err != nil {
+		return nil, errors.Annotate(err, "Failed to parse workspace path")
+	}
 
-// 	if uri.Scheme != "gcs" && uri.Scheme != "gs" {
-// 		return nil, errors.New("Not a gcs storage")
-// 	}
+	if uri.Scheme != "gcs" && uri.Scheme != "gs" {
+		return nil, errors.New("Not a gcs storage")
+	}
 
-// 	// bigquery does not support gcs scheme
-// 	if uri.Scheme == "gcs" {
-// 		uri.Scheme = "gs"
-// 	}
+	// bigquery does not support gcs scheme
+	if uri.Scheme == "gcs" {
+		uri.Scheme = "gs"
+	}
 
-// 	// append credentials file path to query string
-// 	values := url.Values{}
-// 	values.Add("credentials-file", credentialsFilePath)
-// 	uri.RawQuery = values.Encode()
-// 	return uri, nil
-// }
+	// append credentials file path to query string
+	values := url.Values{}
+	values.Add("credentials-file", credentialsFilePath)
+	uri.RawQuery = values.Encode()
+	return uri, nil
+}
 
 func getS3URIWithCredentials(storagePath string, cred *credentials.Value) (*url.URL, error) {
 	uri, err := url.Parse(storagePath)
@@ -205,22 +206,32 @@ func Replicate(
 				return errors.Trace(err)
 			}
 		}
-		fallthrough
-	case StageSnapshotDumped:
-		if mode != RunModeIncrementalOnly {
-			if err = replicate.StartReplicateSnapshot(snapConnectorMap, tidbConfig, snapshotURI); err != nil {
-				return errors.Annotate(err, "Failed to replicate snapshot")
-			}
-		}
-		fallthrough
-	case StageSnapshotLoaded:
-		if mode != RunModeSnapshotOnly {
-			if err = replicate.StartReplicateIncrement(increConnectorMap, incrementURI, cdcFlushInterval/5); err != nil {
-				return errors.Annotate(err, "Failed to replicate incremental")
-			}
-		}
-
 	}
+
+	var wg sync.WaitGroup
+	for _, table := range tables {
+		wg.Add(1)
+		go func(table string) {
+			defer wg.Done()
+			ctx := context.Background()
+			if mode != RunModeIncrementalOnly && stage != StageSnapshotLoaded {
+				if err = replicate.StartReplicateSnapshot(ctx, snapConnectorMap[table], table, tidbConfig, snapshotURI); err != nil {
+					log.Fatal("Failed to load snapshot", zap.Error(err), zap.String("tableFQN", table))
+					apiservice.GlobalInstance.APIInfo.SetStatusFatalError(table, err)
+					return
+				}
+			}
+			if mode != RunModeSnapshotOnly {
+				if err = replicate.StartReplicateIncrement(ctx, increConnectorMap[table], table, incrementURI, cdcFlushInterval/5); err != nil {
+					log.Fatal("Failed to load incremental", zap.Error(err), zap.String("tableFQN", table))
+					apiservice.GlobalInstance.APIInfo.SetStatusFatalError(table, err)
+					return
+				}
+			}
+		}(table)
+	}
+
+	wg.Wait()
 	return nil
 }
 
