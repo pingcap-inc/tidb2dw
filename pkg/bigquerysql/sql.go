@@ -12,7 +12,7 @@ var (
 	CDC_FLAG_COLUMN_NAME       = "tidb2dw_flag"
 	CDC_TABLENAME_COLUMN_NAME  = "tidb2dw_tablename"
 	CDC_SCHEMANAME_COLUMN_NAME = "tidb2dw_schemaname"
-	CDC_TIMESTAMP_COLUMN_NAME  = "tidb2dw_timestamp"
+	CDC_COMMIT_TS_COLUMN_NAME  = "tidb2dw_commit_ts"
 )
 
 func GenIncrementTableColumns(columns []cloudstorage.TableCol) []cloudstorage.TableCol {
@@ -30,9 +30,8 @@ func GenIncrementTableColumns(columns []cloudstorage.TableCol) []cloudstorage.Ta
 			Tp:   "varchar",
 		},
 		{
-			// is timestamp?
-			Name: CDC_TIMESTAMP_COLUMN_NAME,
-			Tp:   "varchar",
+			Name: CDC_COMMIT_TS_COLUMN_NAME,
+			Tp:   "bigint",
 		},
 	}, columns...)
 }
@@ -82,7 +81,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, datasetID, tableID, ext
 	WHEN NOT MATCHED AND S.%s != 'D' THEN INSERT (%s) VALUES (%s);`,
 		fmt.Sprintf("`%s.%s`", datasetID, tableID),
 		strings.Join(pkColumn, ", "),
-		CDC_TIMESTAMP_COLUMN_NAME,
+		CDC_COMMIT_TS_COLUMN_NAME,
 		fmt.Sprintf("`%s.%s`", datasetID, externalTableID),
 		strings.Join(onStat, " AND "),
 		CDC_FLAG_COLUMN_NAME,
@@ -99,7 +98,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, datasetID, tableID, ext
 func GenCreateSchema(columns []cloudstorage.TableCol, pkColumns []string, datasetID, tableID string) (string, error) {
 	columnRows := make([]string, 0, len(columns))
 	for _, column := range columns {
-		row, err := GetBigQueryColumnString(column)
+		row, err := GetBigQueryColumnString(column, true)
 		if err != nil {
 			return "", errors.Trace(err)
 		}

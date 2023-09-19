@@ -32,9 +32,9 @@ func GetColumnModifyString(diff *tidbsql.ColumnDiff) (string, error) {
 	}
 	if diff.Before.Nullable != diff.After.Nullable {
 		if diff.After.Nullable == "true" {
-			log.Warn("BigQuery does not support update column nullable", zap.String("column", diff.After.Name), zap.Any("before", diff.Before.Nullable), zap.Any("after", diff.After.Nullable))
+			strs = append(strs, fmt.Sprintf("%s DROP NOT NULL", diff.After.Name))
 		} else {
-			strs = append(strs, fmt.Sprintf("COLUMN %s SET NOT NULL", diff.After.Name))
+			log.Warn("BigQuery does not support update column required", zap.String("column", diff.After.Name), zap.Any("before", diff.Before.Nullable), zap.Any("after", diff.After.Nullable))
 		}
 	}
 	return strings.Join(strs, ", "), nil
@@ -73,28 +73,36 @@ func GenDDLViaColumnsDiff(datasetID, tableID string, prevColumns []cloudstorage.
 		switch item.Action {
 		case tidbsql.ADD_COLUMN:
 			ddl += fmt.Sprintf("ALTER TABLE %s ADD COLUMN ", tableFullName)
-			colStr, err := GetBigQueryColumnString(*item.After)
+			colStr, err := GetBigQueryColumnString(*item.After, false)
 			if err != nil {
 				return nil, errors.Trace(err)
 			}
-			ddl += colStr
+			ddl += colStr + ";"
+			ddls = append(ddls, ddl)
+			if item.After.Default != nil {
+				ddls = append(
+					ddls,
+					fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", tableFullName, item.After.Name, getDefaultString(item.After.Default)),
+					fmt.Sprintf("UPDATE %s SET %s = %s WHERE TRUE;", tableFullName, item.After.Name, getDefaultString(item.After.Default)),
+				)
+
+			} else if item.After.Nullable == "true" {
+				ddls = append(ddls, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT NULL;", tableFullName, item.After.Name))
+			}
 		case tidbsql.DROP_COLUMN:
-			ddl += fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", tableFullName, item.Before.Name)
+			ddls = append(ddls, fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s;", tableFullName, item.Before.Name))
 		case tidbsql.MODIFY_COLUMN:
 			ddl += fmt.Sprintf("ALTER TABLE %s ALTER COLUMN ", tableFullName)
 			modifyStr, err := GetColumnModifyString(&item)
 			if err != nil {
 				return nil, errors.Trace(err)
 			}
-			ddl += modifyStr
+			ddl += modifyStr + ";"
+			ddls = append(ddls, ddl)
 		case tidbsql.RENAME_COLUMN:
-			ddl += fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", tableFullName, item.Before.Name, item.After.Name)
+			ddls = append(ddls, fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s;", tableFullName, item.Before.Name, item.After.Name))
 		default:
 			// UNCHANGE
-		}
-		if ddl != "" {
-			ddl += ";"
-			ddls = append(ddls, ddl)
 		}
 	}
 
@@ -114,7 +122,7 @@ func getDefaultString(val interface{}) string {
 // "id INT NOT NULL DEFAULT '0'"
 // Refer to:
 // https://dev.mysql.com/doc/refman/8.0/en/data-types.html
-func GetBigQueryColumnString(column cloudstorage.TableCol) (string, error) {
+func GetBigQueryColumnString(column cloudstorage.TableCol, createTable bool) (string, error) {
 	var sb strings.Builder
 	colType, err := GetBigQueryColumnTypeString(column)
 	if err != nil {
@@ -124,10 +132,12 @@ func GetBigQueryColumnString(column cloudstorage.TableCol) (string, error) {
 	if column.Nullable == "false" {
 		sb.WriteString(" NOT NULL")
 	}
-	if column.Default != nil {
-		sb.WriteString(fmt.Sprintf(` DEFAULT %s`, getDefaultString(column.Default)))
-	} else if column.Nullable == "true" {
-		sb.WriteString(" DEFAULT NULL")
+	if createTable {
+		if column.Default != nil {
+			sb.WriteString(fmt.Sprintf(` DEFAULT %s`, getDefaultString(column.Default)))
+		} else if column.Nullable == "true" {
+			sb.WriteString(" DEFAULT NULL")
+		}
 	}
 	return sb.String(), nil
 }
