@@ -17,6 +17,7 @@ import (
 
 type BigQueryConnector struct {
 	bqClient *bigquery.Client
+	ctx      context.Context
 
 	datasetID        string
 	tableID          string
@@ -30,6 +31,7 @@ func NewBigQueryConnector(bqClient *bigquery.Client, incrementTableID, datasetID
 	storageURL := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
 	return &BigQueryConnector{
 		bqClient:         bqClient,
+		ctx:              context.Background(),
 		datasetID:        datasetID,
 		tableID:          tableID,
 		incrementTableID: incrementTableID,
@@ -63,9 +65,8 @@ func (bc *BigQueryConnector) ExecDDL(tableDef cloudstorage.TableDefinition) erro
 		return nil
 	}
 	// One DDL may be rewritten to multiple DDLs
-	ctx := context.Background()
 	for _, ddl := range ddls {
-		if err = runQuery(ctx, bc.bqClient, ddl); err != nil {
+		if err = runQuery(bc.ctx, bc.bqClient, ddl); err != nil {
 			log.Error("Failed to execute DDL", zap.String("received", tableDef.Query), zap.String("rewritten", strings.Join(ddls, "\n")))
 			return errors.Annotate(err, fmt.Sprint("failed to execute", ddl))
 		}
@@ -79,8 +80,6 @@ func (bc *BigQueryConnector) ExecDDL(tableDef cloudstorage.TableDefinition) erro
 // CopyTableSchema copies table schema from TiDB to BigQuery
 // If table exists, delete it first
 func (bc *BigQueryConnector) CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {
-	ctx := context.Background()
-
 	tableColumns, err := tidbsql.GetTiDBTableColumn(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
 		return errors.Trace(err)
@@ -95,7 +94,7 @@ func (bc *BigQueryConnector) CopyTableSchema(sourceDatabase string, sourceTable 
 	if err != nil {
 		return errors.Trace(err)
 	}
-	if err = runQuery(ctx, bc.bqClient, createTableSQL); err != nil {
+	if err = runQuery(bc.ctx, bc.bqClient, createTableSQL); err != nil {
 		return errors.Annotate(err, "Failed to create table")
 	}
 	log.Info("Successfully copying table scheme", zap.String("database", sourceDatabase), zap.String("table", sourceTable))
@@ -103,10 +102,9 @@ func (bc *BigQueryConnector) CopyTableSchema(sourceDatabase string, sourceTable 
 }
 
 func (bc *BigQueryConnector) LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
-	ctx := context.Background()
 	gcsFilePath := fmt.Sprintf("%s/%s*.csv", bc.storageURL, filePrefix)
 	// FIXME: if source table is empty, bigquery will fail to load (file not found)
-	err := loadGCSFileToBigQuery(ctx, bc.bqClient, bc.datasetID, bc.tableID, gcsFilePath)
+	err := loadGCSFileToBigQuery(bc.ctx, bc.bqClient, bc.datasetID, bc.tableID, gcsFilePath)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -115,7 +113,6 @@ func (bc *BigQueryConnector) LoadSnapshot(targetTable, filePrefix string, onSnap
 }
 
 func (bc *BigQueryConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
-	ctx := context.Background()
 	incrementTableID := bc.incrementTableID
 	absolutePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, filePath)
 
@@ -124,21 +121,21 @@ func (bc *BigQueryConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 	if err != nil {
 		return errors.Trace(err)
 	}
-	if err = runQuery(ctx, bc.bqClient, createTableSQL); err != nil {
+	if err = runQuery(bc.ctx, bc.bqClient, createTableSQL); err != nil {
 		return errors.Annotate(err, "Failed to create increment table")
 	}
 
-	err = loadGCSFileToBigQuery(ctx, bc.bqClient, bc.datasetID, incrementTableID, absolutePath)
+	err = loadGCSFileToBigQuery(bc.ctx, bc.bqClient, bc.datasetID, incrementTableID, absolutePath)
 	if err != nil {
 		return errors.Trace(err)
 	}
 
 	mergeSQL := GenMergeInto(tableDef, bc.datasetID, bc.tableID, incrementTableID)
-	if err = runQuery(ctx, bc.bqClient, mergeSQL); err != nil {
+	if err = runQuery(bc.ctx, bc.bqClient, mergeSQL); err != nil {
 		return errors.Annotate(err, "Failed to merge increment table")
 	}
 
-	err = deleteTable(ctx, bc.bqClient, bc.datasetID, incrementTableID)
+	err = deleteTable(bc.ctx, bc.bqClient, bc.datasetID, incrementTableID)
 	if err != nil {
 		return errors.Trace(err)
 	}
