@@ -37,6 +37,7 @@ func init() {
 	rootCmd.AddCommand(
 		cmd.NewSnowflakeCmd(),
 		cmd.NewRedshiftCmd(),
+		cmd.NewBigQueryCmd(),
 	)
 }
 

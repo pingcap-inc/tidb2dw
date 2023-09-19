@@ -3,6 +3,7 @@ module github.com/pingcap-inc/tidb2dw
 go 1.21
 
 require (
+	cloud.google.com/go/bigquery v1.50.0
 	github.com/aws/aws-sdk-go v1.44.278
 	github.com/gin-gonic/gin v1.8.1
 	github.com/go-sql-driver/mysql v1.7.1
@@ -18,6 +19,7 @@ require (
 	gitlab.com/tymonx/go-formatter v1.5.1
 	go.uber.org/zap v1.24.0
 	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
+	google.golang.org/api v0.114.0
 )
 
 require (
@@ -26,6 +28,8 @@ require (
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/Shopify/sarama v1.38.1 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
+	github.com/andybalholm/brotli v1.0.4 // indirect
+	github.com/apache/arrow/go/v11 v11.0.0 // indirect
 	github.com/cilium/ebpf v0.4.0 // indirect
 	github.com/containerd/cgroups v1.0.4 // indirect
 	github.com/eapache/go-resiliency v1.3.0 // indirect
@@ -54,7 +58,11 @@ require (
 	github.com/jcmturner/gofork v1.7.6 // indirect
 	github.com/jcmturner/gokrb5/v8 v8.4.3 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
+	github.com/klauspost/asmfmt v1.3.2 // indirect
+	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/leodido/go-urn v1.2.1 // indirect
+	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
+	github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 // indirect
 	github.com/opencontainers/runtime-spec v1.0.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.1 // indirect
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2 // indirect
@@ -69,6 +77,8 @@ require (
 	github.com/vbauerster/mpb/v7 v7.5.3 // indirect
 	github.com/xdg/scram v1.0.5 // indirect
 	github.com/xdg/stringprep v1.0.3 // indirect
+	github.com/zeebo/xxh3 v1.0.2 // indirect
+	golang.org/x/mod v0.10.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/api v0.27.2 // indirect
 	k8s.io/apimachinery v0.27.2 // indirect
@@ -244,7 +254,6 @@ require (
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.9.3 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
-	google.golang.org/api v0.114.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 	google.golang.org/grpc v1.54.0 // indirect

@@ -409,16 +409,13 @@ func StartReplicateIncrement(
 	flushInterval time.Duration,
 ) error {
 	fileExtension := CSVFileExtension
-	if storageURI.Scheme == "gcs" {
-		log.Error("Skip replicating increment. GCS does not supprt data warehouse connector now...")
-		return nil
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	var wg sync.WaitGroup
+	wg.Add(len(dwConnectorMap))
 	for tableFQN, dwConnector := range dwConnectorMap {
 		go func(tableFQN string, dwConnector coreinterfaces.Connector) {
 			logger := log.L().With(zap.String("table", tableFQN))
