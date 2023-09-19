@@ -17,19 +17,8 @@ type SnowflakeConfig struct {
 	Schema    string
 }
 
-/// Implement the Config interface.
-
-// Open a connection to Snowflake.
-func (config *SnowflakeConfig) OpenDB() (*sql.DB, error) {
-	sfConfig := gosnowflake.Config{
-		Account:   config.AccountId,
-		User:      config.User,
-		Password:  config.Pass,
-		Database:  config.Database,
-		Schema:    config.Schema,
-		Warehouse: config.Warehouse,
-	}
-	dsn, err := gosnowflake.DSN(&sfConfig)
+func testSnowflakeConnection(sfConfig *gosnowflake.Config) (*sql.DB, error) {
+	dsn, err := gosnowflake.DSN(sfConfig)
 	if err != nil {
 		return nil, errors.Annotate(err, "Failed to generate Snowflake DSN")
 	}
@@ -40,6 +29,39 @@ func (config *SnowflakeConfig) OpenDB() (*sql.DB, error) {
 	// make sure the connection is available
 	if err = db.Ping(); err != nil {
 		return nil, errors.Annotate(err, "Failed to ping Snowflake")
+	}
+	return db, nil
+}
+
+/// Implement the Config interface.
+
+// Open a connection to Snowflake.
+func (config *SnowflakeConfig) OpenDB() (*sql.DB, error) {
+	sfConfig := gosnowflake.Config{
+		Account:  config.AccountId,
+		User:     config.User,
+		Password: config.Pass,
+	}
+	db, err := testSnowflakeConnection(&sfConfig)
+	if err != nil {
+		return nil, errors.Annotate(err, "Failed to connect to Snowflake")
+	}
+	// make sure database exists, if not then create
+	_, err = db.Exec("CREATE DATABASE IF NOT EXISTS ?", config.Database)
+	if err != nil {
+		return nil, errors.Annotate(err, "Failed to create database")
+	}
+	// make sure schema exists, if not then create
+	_, err = db.Exec("CREATE SCHEMA IF NOT EXISTS ?.?", config.Database, config.Schema)
+	if err != nil {
+		return nil, errors.Annotate(err, "Failed to create schema")
+	}
+	sfConfig.Database = config.Database
+	sfConfig.Schema = config.Schema
+	sfConfig.Warehouse = config.Warehouse
+	db, err = testSnowflakeConnection(&sfConfig)
+	if err != nil {
+		return nil, errors.Annotate(err, "Failed to connect to Snowflake with database and schema")
 	}
 	log.Info("Snowflake connection established")
 	return db, nil
