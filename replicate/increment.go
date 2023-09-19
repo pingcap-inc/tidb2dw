@@ -5,14 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
-	"github.com/pingcap-inc/tidb2dw/pkg/apiservice"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
@@ -376,9 +373,7 @@ func (sess *IncrementReplicateSession) handleNewFiles(dmlFileMap map[cloudstorag
 	return nil
 }
 
-func (sess *IncrementReplicateSession) Run(flushInterval time.Duration, wg *sync.WaitGroup) error {
-	defer wg.Done()
-
+func (sess *IncrementReplicateSession) Run(flushInterval time.Duration) error {
 	ticker := time.NewTicker(flushInterval)
 	for {
 		select {
@@ -404,44 +399,28 @@ func (sess *IncrementReplicateSession) Close() {
 }
 
 func StartReplicateIncrement(
-	dwConnectorMap map[string]coreinterfaces.Connector,
+	ctx context.Context,
+	dwConnector coreinterfaces.Connector,
+	tableFQN string,
 	storageURI *url.URL,
 	flushInterval time.Duration,
 ) error {
 	fileExtension := CSVFileExtension
 
-	ctx, cancel := context.WithCancel(context.Background())
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	var wg sync.WaitGroup
-	wg.Add(len(dwConnectorMap))
-	for tableFQN, dwConnector := range dwConnectorMap {
-		go func(tableFQN string, dwConnector coreinterfaces.Connector) {
-			logger := log.L().With(zap.String("table", tableFQN))
-			sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
-			session, err := NewIncrementReplicateSession(ctx, dwConnector, fileExtension, storageURI, sourceDatabase, sourceTable, logger)
-			if err != nil {
-				logger.Error("error occurred while creating increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
-				apiservice.GlobalInstance.APIInfo.SetStatusFatalError(tableFQN, err)
-				return
-			}
-			defer session.Close()
-			if err = session.Run(flushInterval, &wg); err != nil {
-				logger.Error("error occurred while running increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
-				apiservice.GlobalInstance.APIInfo.SetStatusFatalError(tableFQN, err)
-				return
-			}
-		}(tableFQN, dwConnector)
+	logger := log.L().With(zap.String("table", tableFQN))
+	sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
+	session, err := NewIncrementReplicateSession(ctx, dwConnector, fileExtension, storageURI, sourceDatabase, sourceTable, logger)
+	if err != nil {
+		logger.Error("error occurred while creating increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+		return errors.Trace(err)
 	}
-
-	// Wait for the termination signal
-	<-sigCh
-
-	// Cancel the context to stop the goroutines
-	cancel()
-
-	// Wait for all the goroutines to exit
-	wg.Wait()
+	defer session.Close()
+	if err = session.Run(flushInterval); err != nil {
+		logger.Error("error occurred while running increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+		return errors.Trace(err)
+	}
 	return nil
 }

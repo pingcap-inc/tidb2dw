@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -205,22 +206,32 @@ func Replicate(
 				return errors.Trace(err)
 			}
 		}
-		fallthrough
-	case StageSnapshotDumped:
-		if mode != RunModeIncrementalOnly {
-			if err = replicate.StartReplicateSnapshot(snapConnectorMap, tidbConfig, snapshotURI); err != nil {
-				return errors.Annotate(err, "Failed to replicate snapshot")
-			}
-		}
-		fallthrough
-	case StageSnapshotLoaded:
-		if mode != RunModeSnapshotOnly {
-			if err = replicate.StartReplicateIncrement(increConnectorMap, incrementURI, cdcFlushInterval/5); err != nil {
-				return errors.Annotate(err, "Failed to replicate incremental")
-			}
-		}
-
 	}
+
+	var wg sync.WaitGroup
+	for _, table := range tables {
+		wg.Add(1)
+		go func(table string) {
+			defer wg.Done()
+			ctx := context.Background()
+			if mode != RunModeIncrementalOnly && stage != StageSnapshotLoaded {
+				if err = replicate.StartReplicateSnapshot(ctx, snapConnectorMap[table], table, tidbConfig, snapshotURI); err != nil {
+					log.Fatal("Failed to load snapshot", zap.Error(err), zap.String("tableFQN", table))
+					apiservice.GlobalInstance.APIInfo.SetStatusFatalError(table, err)
+					return
+				}
+			}
+			if mode != RunModeSnapshotOnly {
+				if err = replicate.StartReplicateIncrement(ctx, increConnectorMap[table], table, incrementURI, cdcFlushInterval/5); err != nil {
+					log.Fatal("Failed to load incremental", zap.Error(err), zap.String("tableFQN", table))
+					apiservice.GlobalInstance.APIInfo.SetStatusFatalError(table, err)
+					return
+				}
+			}
+		}(table)
+	}
+
+	wg.Wait()
 	return nil
 }
 
