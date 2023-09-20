@@ -60,6 +60,10 @@ func NewSnapshotReplicateSession(
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
+		err = db.Ping()
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
 		sess.TiDBPool = db
 	}
 	{

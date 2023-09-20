@@ -1,3 +1,3 @@
 package apiservice
 
-var GlobalInstance *APIService
+var GlobalInstance *APIService = New()

@@ -51,7 +51,7 @@ func (config *TiDBConfig) OpenDB() (*sql.DB, error) {
 	}
 	// make sure the connection is available
 	if err = db.Ping(); err != nil {
-		return nil, errors.Annotate(err, "Failed to ping TiDB")
+		return nil, errors.Annotate(err, "Failed to open TiDB connection")
 	}
 	log.Info("TiDB connection established")
 	return db, nil

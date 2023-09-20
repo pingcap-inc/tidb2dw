@@ -2,6 +2,7 @@ package snowsql
 
 import (
 	"database/sql"
+	"fmt"
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
@@ -28,7 +29,7 @@ func testSnowflakeConnection(sfConfig *gosnowflake.Config) (*sql.DB, error) {
 	}
 	// make sure the connection is available
 	if err = db.Ping(); err != nil {
-		return nil, errors.Annotate(err, "Failed to ping Snowflake")
+		return nil, errors.Annotate(err, "Failed to open Snowflake connection")
 	}
 	return db, nil
 }
@@ -44,15 +45,15 @@ func (config *SnowflakeConfig) OpenDB() (*sql.DB, error) {
 	}
 	db, err := testSnowflakeConnection(&sfConfig)
 	if err != nil {
-		return nil, errors.Annotate(err, "Failed to connect to Snowflake")
+		return nil, err
 	}
 	// make sure database exists, if not then create
-	_, err = db.Exec("CREATE DATABASE IF NOT EXISTS ?", config.Database)
+	_, err = db.Exec("CREATE DATABASE IF NOT EXISTS IDENTIFIER(?)", config.Database)
 	if err != nil {
 		return nil, errors.Annotate(err, "Failed to create database")
 	}
 	// make sure schema exists, if not then create
-	_, err = db.Exec("CREATE SCHEMA IF NOT EXISTS ?.?", config.Database, config.Schema)
+	_, err = db.Exec("CREATE SCHEMA IF NOT EXISTS IDENTIFIER(?)", fmt.Sprintf("%s.%s", config.Database, config.Schema))
 	if err != nil {
 		return nil, errors.Annotate(err, "Failed to create schema")
 	}
@@ -61,8 +62,9 @@ func (config *SnowflakeConfig) OpenDB() (*sql.DB, error) {
 	sfConfig.Warehouse = config.Warehouse
 	db, err = testSnowflakeConnection(&sfConfig)
 	if err != nil {
-		return nil, errors.Annotate(err, "Failed to connect to Snowflake with database and schema")
+		return nil, err
 	}
+
 	log.Info("Snowflake connection established")
 	return db, nil
 }

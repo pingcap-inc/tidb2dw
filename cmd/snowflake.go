@@ -90,10 +90,7 @@ func NewSnowflakeCmd() *cobra.Command {
 				return errors.Trace(err)
 			}
 			snapConnectorMap[tableFQN] = snapConnector
-			db, err = snowflakeConfigFromCli.OpenDB()
-			if err != nil {
-				return errors.Trace(err)
-			}
+
 			increConnector, err := snowsql.NewSnowflakeConnector(
 				db,
 				fmt.Sprintf("increment_external_%s", sourceTable),
@@ -112,10 +109,9 @@ func NewSnowflakeCmd() *cobra.Command {
 		Use:   "snowflake",
 		Short: "Replicate snapshot and incremental data from TiDB to Snowflake",
 		Run: func(_ *cobra.Command, _ []string) {
-			apiservice.GlobalInstance = apiservice.New(tables)
 			runWithServer(mode == RunModeCloud, fmt.Sprintf("%s:%d", apiListenHost, apiListenPort), func() {
 				if err := run(); err != nil {
-					apiservice.GlobalInstance.APIInfo.SetGlobalStatusFatalError(err)
+					apiservice.GlobalInstance.APIInfo.SetServiceStatusFatalError(err)
 					log.Error("Fatal error running snowflake replication", zap.Error(err))
 				}
 			})
