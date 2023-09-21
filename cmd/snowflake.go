@@ -123,6 +123,8 @@ func NewSnowflakeCmd() *cobra.Command {
 				if err := run(); err != nil {
 					apiservice.GlobalInstance.APIInfo.SetServiceStatusFatalError(err)
 					log.Error("Fatal error running snowflake replication", zap.Error(err))
+				} else {
+					apiservice.GlobalInstance.APIInfo.SetServiceStatusIdle()
 				}
 			})
 		},

@@ -13,6 +13,7 @@ type ServiceStatus string
 
 const (
 	ServiceStatusRunning ServiceStatus = "running"
+	ServiceStatusIdle    ServiceStatus = "idle"
 
 	// For example, when connect S3 failed, all table replication will be failed
 	ServiceStatusFatalError ServiceStatus = "fatal_error"
@@ -73,11 +74,24 @@ func (s *APIInfo) SetTableStatusFatalError(table string, err error) {
 	defer s.mu.Unlock()
 
 	if status, ok := s.statusByTable[table]; ok && status == TableStatusFatalError {
-		log.Warn("Ignored new fatal errors of table", zap.String("table", table), zap.Error(err))
+		log.Warn("Ignored setting table status to fatal error", zap.String("table", table), zap.Error(err))
 		return
 	}
 	s.statusByTable[table] = TableStatusFatalError
 	s.errorMessageByTable[table] = err.Error()
+}
+
+func (s *APIInfo) SetServiceStatusIdle() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.status == ServiceStatusFatalError {
+		log.Warn("Ignored setting status to idle", zap.String("current_error", s.errorMessage))
+		return
+	}
+
+	s.status = ServiceStatusIdle
+	s.errorMessage = ""
 }
 
 func (s *APIInfo) SetServiceStatusFatalError(err error) {
@@ -85,9 +99,10 @@ func (s *APIInfo) SetServiceStatusFatalError(err error) {
 	defer s.mu.Unlock()
 
 	if s.status == ServiceStatusFatalError {
-		log.Warn("Ignored new fatal errors", zap.Error(err))
+		log.Warn("Ignored setting status to fatal error", zap.Error(err))
 		return
 	}
+
 	s.status = ServiceStatusFatalError
 	s.errorMessage = err.Error()
 }
