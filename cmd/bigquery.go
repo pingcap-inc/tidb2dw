@@ -77,6 +77,7 @@ func NewBigQueryCmd() *cobra.Command {
 			if err != nil {
 				return errors.Trace(err)
 			}
+
 			increConnector, err := bigquerysql.NewBigQueryConnector(
 				bqClient,
 				fmt.Sprintf("increment_external_%s", sourceTable),
@@ -89,6 +90,16 @@ func NewBigQueryCmd() *cobra.Command {
 			}
 			increConnectorMap[tableFQN] = increConnector
 		}
+
+		defer func() {
+			for _, connector := range snapConnectorMap {
+				connector.Close()
+			}
+			for _, connector := range increConnectorMap {
+				connector.Close()
+			}
+		}()
+
 		return Replicate(
 			&tidbConfigFromCli, tables, storageURI, snapshotConcurrency,
 			cdcHost, cdcPort, cdcFlushInterval, cdcFileSize,

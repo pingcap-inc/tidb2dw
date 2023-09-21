@@ -92,10 +92,7 @@ func NewRedshiftCmd() *cobra.Command {
 				return errors.Trace(err)
 			}
 			snapConnectorMap[tableFQN] = snapConnector
-			db, err = redshiftConfigFromCli.OpenDB()
-			if err != nil {
-				return errors.Trace(err)
-			}
+
 			increConnector, err := redshiftsql.NewRedshiftConnector(
 				db,
 				redshiftConfigFromCli.Schema,
@@ -109,6 +106,16 @@ func NewRedshiftCmd() *cobra.Command {
 			}
 			increConnectorMap[tableFQN] = increConnector
 		}
+
+		defer func() {
+			for _, connector := range snapConnectorMap {
+				connector.Close()
+			}
+			for _, connector := range increConnectorMap {
+				connector.Close()
+			}
+		}()
+
 		return Replicate(&tidbConfigFromCli, tables, storageURI, snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, snapConnectorMap, increConnectorMap, mode)
 	}
 

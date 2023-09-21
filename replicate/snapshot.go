@@ -60,10 +60,6 @@ func NewSnapshotReplicateSession(
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
-		err = db.Ping()
-		if err != nil {
-			return nil, errors.Trace(err)
-		}
 		sess.TiDBPool = db
 	}
 	{
@@ -83,9 +79,6 @@ func NewSnapshotReplicateSession(
 }
 
 func (sess *SnapshotReplicateSession) Close() {
-	if sess.DataWarehousePool != nil {
-		sess.DataWarehousePool.Close()
-	}
 	if sess.TiDBPool != nil {
 		sess.TiDBPool.Close()
 	}
