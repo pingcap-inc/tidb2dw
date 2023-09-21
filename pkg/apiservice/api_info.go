@@ -27,6 +27,13 @@ const (
 	TableStatusFatalError TableStatus = "fatal_error"
 )
 
+type InfoResponse struct {
+	Status              ServiceStatus          `json:"status"`
+	ErrorMessage        string                 `json:"error_message"`
+	StatusByTable       map[string]TableStatus `json:"status_by_table"`
+	ErrorMessageByTable map[string]string      `json:"error_message_by_table"`
+}
+
 type APIInfo struct {
 	status       ServiceStatus
 	errorMessage string
@@ -52,11 +59,11 @@ func (s *APIInfo) registerRouter(router *gin.Engine) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
-		c.JSON(http.StatusOK, gin.H{
-			"status":                 s.status,
-			"error_message":          s.errorMessage,
-			"status_by_table":        s.statusByTable,
-			"error_message_by_table": s.errorMessageByTable,
+		c.JSON(http.StatusOK, InfoResponse{
+			Status:              s.status,
+			ErrorMessage:        s.errorMessage,
+			StatusByTable:       s.statusByTable,
+			ErrorMessageByTable: s.errorMessageByTable,
 		})
 	})
 }
