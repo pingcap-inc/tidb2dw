@@ -16,13 +16,13 @@ type APIService struct {
 	router  *gin.Engine
 }
 
-func New(tables []string) *APIService {
+func New() *APIService {
 	gin.SetMode(gin.ReleaseMode)
 
 	r := gin.New()
 	r.Use(gin.Recovery())
 
-	apiInfo := NewAPIInfo(tables)
+	apiInfo := NewAPIInfo()
 	apiInfo.registerRouter(r)
 
 	return &APIService{

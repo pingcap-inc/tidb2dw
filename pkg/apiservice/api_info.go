@@ -12,33 +12,46 @@ import (
 type ServiceStatus string
 
 const (
-	ServiceStatusRunning    ServiceStatus = "running"
+	ServiceStatusRunning ServiceStatus = "running"
+	ServiceStatusIdle    ServiceStatus = "idle"
+
+	// For example, when connect S3 failed, all table replication will be failed
 	ServiceStatusFatalError ServiceStatus = "fatal_error"
 )
 
-type APIInfo struct {
-	tables             []string
-	statuses           map[string]ServiceStatus
-	errorMessages      map[string]string
-	globalStatus       ServiceStatus
-	globalErrorMessage string
-	mu                 sync.Mutex
+type TableStatus string
+
+const (
+	TableStatusRunning TableStatus = "running"
+
+	// For example, when encounter unsupported DDL, this table replication will be failed
+	TableStatusFatalError TableStatus = "fatal_error"
+)
+
+type InfoResponse struct {
+	Status              ServiceStatus          `json:"status"`
+	ErrorMessage        string                 `json:"error_message"`
+	StatusByTable       map[string]TableStatus `json:"status_by_table"`
+	ErrorMessageByTable map[string]string      `json:"error_message_by_table"`
 }
 
-func NewAPIInfo(tables []string) *APIInfo {
-	statuses := make(map[string]ServiceStatus, len(tables))
-	errorMessages := make(map[string]string, len(tables))
-	for _, table := range tables {
-		statuses[table] = ServiceStatusRunning
-		errorMessages[table] = ""
-	}
+type APIInfo struct {
+	status       ServiceStatus
+	errorMessage string
 
+	statusByTable       map[string]TableStatus
+	errorMessageByTable map[string]string
+
+	mu sync.Mutex
+}
+
+func NewAPIInfo() *APIInfo {
 	return &APIInfo{
-		tables:             tables,
-		statuses:           statuses,
-		errorMessages:      errorMessages,
-		globalStatus:       ServiceStatusRunning,
-		globalErrorMessage: "",
+		status:       ServiceStatusRunning,
+		errorMessage: "",
+
+		statusByTable:       make(map[string]TableStatus),
+		errorMessageByTable: make(map[string]string),
 	}
 }
 
@@ -46,40 +59,50 @@ func (s *APIInfo) registerRouter(router *gin.Engine) {
 	router.GET("/info", func(c *gin.Context) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.globalStatus == ServiceStatusFatalError {
-			c.JSON(http.StatusOK, gin.H{
-				"status":        s.globalStatus,
-				"error_message": s.globalErrorMessage,
-			})
-		} else {
-			c.JSON(http.StatusOK, gin.H{
-				"status":        s.statuses,
-				"error_message": s.errorMessages,
-			})
-		}
+
+		c.JSON(http.StatusOK, InfoResponse{
+			Status:              s.status,
+			ErrorMessage:        s.errorMessage,
+			StatusByTable:       s.statusByTable,
+			ErrorMessageByTable: s.errorMessageByTable,
+		})
 	})
 }
 
-func (s *APIInfo) SetStatusFatalError(table string, err error) {
+func (s *APIInfo) SetTableStatusFatalError(table string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if status, ok := s.statuses[table]; ok && status == ServiceStatusFatalError {
-		log.Warn("Ignored new fatal errors", zap.Error(err))
+
+	if status, ok := s.statusByTable[table]; ok && status == TableStatusFatalError {
+		log.Warn("Ignored setting table status to fatal error", zap.String("table", table), zap.Error(err))
 		return
 	}
-
-	s.statuses[table] = ServiceStatusFatalError
-	s.errorMessages[table] = err.Error()
+	s.statusByTable[table] = TableStatusFatalError
+	s.errorMessageByTable[table] = err.Error()
 }
 
-func (s *APIInfo) SetGlobalStatusFatalError(err error) {
+func (s *APIInfo) SetServiceStatusIdle() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.globalStatus == ServiceStatusFatalError {
-		log.Warn("Ignored new fatal errors", zap.Error(err))
+	if s.status == ServiceStatusFatalError {
+		log.Warn("Ignored setting status to idle", zap.String("current_error", s.errorMessage))
 		return
 	}
-	s.globalStatus = ServiceStatusFatalError
-	s.globalErrorMessage = err.Error()
+
+	s.status = ServiceStatusIdle
+	s.errorMessage = ""
+}
+
+func (s *APIInfo) SetServiceStatusFatalError(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.status == ServiceStatusFatalError {
+		log.Warn("Ignored setting status to fatal error", zap.Error(err))
+		return
+	}
+
+	s.status = ServiceStatusFatalError
+	s.errorMessage = err.Error()
 }

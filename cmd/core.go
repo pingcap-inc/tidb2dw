@@ -216,15 +216,13 @@ func Replicate(
 			ctx := context.Background()
 			if mode != RunModeIncrementalOnly && stage != StageSnapshotLoaded {
 				if err = replicate.StartReplicateSnapshot(ctx, snapConnectorMap[table], table, tidbConfig, snapshotURI); err != nil {
-					log.Fatal("Failed to load snapshot", zap.Error(err), zap.String("tableFQN", table))
-					apiservice.GlobalInstance.APIInfo.SetStatusFatalError(table, err)
+					apiservice.GlobalInstance.APIInfo.SetTableStatusFatalError(table, err)
 					return
 				}
 			}
 			if mode != RunModeSnapshotOnly {
 				if err = replicate.StartReplicateIncrement(ctx, increConnectorMap[table], table, incrementURI, cdcFlushInterval/5); err != nil {
-					log.Fatal("Failed to load incremental", zap.Error(err), zap.String("tableFQN", table))
-					apiservice.GlobalInstance.APIInfo.SetStatusFatalError(table, err)
+					apiservice.GlobalInstance.APIInfo.SetTableStatusFatalError(table, err)
 					return
 				}
 			}

@@ -92,10 +92,7 @@ func NewRedshiftCmd() *cobra.Command {
 				return errors.Trace(err)
 			}
 			snapConnectorMap[tableFQN] = snapConnector
-			db, err = redshiftConfigFromCli.OpenDB()
-			if err != nil {
-				return errors.Trace(err)
-			}
+
 			increConnector, err := redshiftsql.NewRedshiftConnector(
 				db,
 				redshiftConfigFromCli.Schema,
@@ -109,6 +106,16 @@ func NewRedshiftCmd() *cobra.Command {
 			}
 			increConnectorMap[tableFQN] = increConnector
 		}
+
+		defer func() {
+			for _, connector := range snapConnectorMap {
+				connector.Close()
+			}
+			for _, connector := range increConnectorMap {
+				connector.Close()
+			}
+		}()
+
 		return Replicate(&tidbConfigFromCli, tables, storageURI, snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, snapConnectorMap, increConnectorMap, mode)
 	}
 
@@ -116,11 +123,12 @@ func NewRedshiftCmd() *cobra.Command {
 		Use:   "redshift",
 		Short: "Replicate snapshot and incremental data from TiDB to Redshift",
 		Run: func(_ *cobra.Command, _ []string) {
-			apiservice.GlobalInstance = apiservice.New(tables)
 			runWithServer(mode == RunModeCloud, fmt.Sprintf("%s:%d", apiListenHost, apiListenPort), func() {
 				if err := run(); err != nil {
-					apiservice.GlobalInstance.APIInfo.SetGlobalStatusFatalError(err)
+					apiservice.GlobalInstance.APIInfo.SetServiceStatusFatalError(err)
 					log.Error("Fatal error running redshift replication", zap.Error(err))
+				} else {
+					apiservice.GlobalInstance.APIInfo.SetServiceStatusIdle()
 				}
 			})
 		},
