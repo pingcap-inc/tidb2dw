@@ -19,12 +19,14 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/pingcap-inc/tidb2dw/pkg/bigquerysql"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"go.uber.org/zap"
 	"net/url"
+	"strings"
 )
 
 type (
@@ -40,6 +42,8 @@ type (
 		columns []cloudstorage.TableCol
 	}
 )
+
+const incrementTablePrefix = "incr_"
 
 func NewDatabricksConnector(databricksDB *sql.DB, srcCredentials *credentials.Value,
 	storageURI *url.URL, awsRegion string) (*DatabricksConnector, error) {
@@ -76,13 +80,13 @@ func (dc *DatabricksConnector) CopyTableSchema(sourceDatabase string, sourceTabl
 	}
 
 	err = dc.setColumns(sourceDatabase, sourceTable, sourceTiDBConn)
-	corTableSQL, err := GenCreateTableSQL(sourceTable, dc.columns)
+	createTableSQL, err := GenCreateTableSQL(sourceTable, dc.columns)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Creating table in Databricks Warehouse", zap.String("query", corTableSQL))
+	log.Info("Creating table in Databricks Warehouse", zap.String("query", createTableSQL))
 
-	_, err = dc.db.Exec(corTableSQL)
+	_, err = dc.db.Exec(createTableSQL)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -92,7 +96,7 @@ func (dc *DatabricksConnector) CopyTableSchema(sourceDatabase string, sourceTabl
 }
 
 func (dc *DatabricksConnector) LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
-	if err := LoadSnapshotFromS3(dc.db, dc.columns, targetTable, dc.storageURL, filePrefix, dc.temporaryCredentials); err != nil {
+	if err := LoadCSVFromS3(dc.db, dc.columns, targetTable, dc.storageURL, filePrefix, dc.temporaryCredentials); err != nil {
 		return errors.Trace(err)
 	}
 	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
@@ -100,17 +104,69 @@ func (dc *DatabricksConnector) LoadSnapshot(targetTable, filePrefix string, onSn
 }
 
 func (dc *DatabricksConnector) ExecDDL(tableDef cloudstorage.TableDefinition) error {
-	//TODO implement me
+	if len(dc.columns) == 0 {
+		return errors.New("Columns not initialized. Maybe you execute a DDL before all DMLs, which is not supported now.")
+	}
+	ddls, err := GenDDLViaColumnsDiff(dc.columns, tableDef)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	if len(ddls) == 0 {
+		log.Info("No need to execute this DDL in Databricks", zap.String("ddl", tableDef.Query))
+		return nil
+	}
+	// One DDL may be rewritten to multiple DDLs
+	for _, ddl := range ddls {
+		_, err := dc.db.Exec(ddl)
+		if err != nil {
+			log.Error("Failed to executed DDL", zap.String("received", tableDef.Query), zap.String("rewritten", strings.Join(ddls, "\n")))
+			return errors.Annotate(err, fmt.Sprint("failed to execute", ddl))
+		}
+	}
+	// update columns
+	dc.columns = tableDef.Columns
+	log.Info("Successfully executed DDL", zap.String("received", tableDef.Query), zap.String("rewritten", strings.Join(ddls, "\n")))
 	return nil
 }
 
 func (dc *DatabricksConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
-	//TODO implement me
+	absolutePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, filePath)
+	incrTableColumns := bigquerysql.GenIncrementTableColumns(tableDef.Columns)
+	incrTableName := incrementTablePrefix + tableDef.Table
+
+	createTableSQL, err := GenCreateTableSQL(incrTableName, incrTableColumns)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	_, err = dc.db.Exec(createTableSQL)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	if err := LoadCSVFromS3(dc.db, incrTableColumns, incrTableName, absolutePath, "",
+		dc.temporaryCredentials); err != nil {
+		return errors.Trace(err)
+	}
+
+	// Merge and delete increase table
+	mergeIntoSQL := GenMergeIntoSQL(tableDef, tableDef.Table, incrTableName)
+	_, err = dc.db.Exec(mergeIntoSQL)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	dropTableSQL := GenDropTableSQL(incrTableName)
+	_, err = dc.db.Exec(dropTableSQL)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
 	return nil
 }
 
 func (dc *DatabricksConnector) Close() {
-	//TODO implement me
+	dc.db.Close()
 }
 
 func (dc *DatabricksConnector) setColumns(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {

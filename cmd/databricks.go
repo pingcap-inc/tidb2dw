@@ -149,6 +149,7 @@ func NewDatabricksCmd() *cobra.Command {
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
 	cmd.Flags().StringVar(&awsAccessKey, "aws.access-key", "", "aws access key")
 	cmd.Flags().StringVar(&awsSecretKey, "aws.secret-key", "", "aws secret key")
+	cmd.Flags().StringVar(&awsRegion, "aws.region", "", "aws region")
 
 	cmd.MarkFlagRequired("storage")
 	cmd.MarkFlagRequired("databricks.host")
