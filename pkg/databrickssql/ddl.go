@@ -37,7 +37,6 @@ func GenDDLViaColumnsDiff(prevColumns []cloudstorage.TableCol, curTableDef cloud
 		return nil, errors.New("Received rename table ddl, new change data can not be capture by TiCDC any more." +
 			"If you want to rename table, please start a new task to capture the new table") // FIXME: rename table to new table and rename back
 	}
-	// snowflake: Default CASCADE, redshift: Default RESTRICT
 	if curTableDef.Type == timodel.ActionDropSchema {
 		return []string{fmt.Sprintf("DROP SCHEMA %s CASCADE", curTableDef.Schema)}, nil
 	}
