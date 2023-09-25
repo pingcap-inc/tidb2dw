@@ -22,6 +22,7 @@ const (
 type TableStage string
 
 const (
+	TableStageUnknown            TableStage = "unknown"
 	TableStageLoadingSnapshot    TableStage = "loading_snapshot"
 	TableStageLoadingIncremental TableStage = "loading_incremental"
 	TableStageFinished           TableStage = "finished"
@@ -34,21 +35,23 @@ const (
 	TableStatusFatalError TableStatus = "fatal_error"
 )
 
+type TableInfo struct {
+	Stage        TableStage  `json:"stage"`
+	Status       TableStatus `json:"status"`
+	ErrorMessage string      `json:"error_message"`
+}
+
 type InfoResponse struct {
-	Status              ServiceStatus          `json:"status"`
-	ErrorMessage        string                 `json:"error_message"`
-	StageByTable        map[string]TableStage  `json:"stage_by_table"`
-	StatusByTable       map[string]TableStatus `json:"status_by_table"`
-	ErrorMessageByTable map[string]string      `json:"error_message_by_table"`
+	Status       ServiceStatus         `json:"status"`
+	ErrorMessage string                `json:"error_message"`
+	TablesInfo   map[string]*TableInfo `json:"tables_info"`
 }
 
 type APIInfo struct {
 	status       ServiceStatus
 	errorMessage string
 
-	stageByTable        map[string]TableStage
-	statusByTable       map[string]TableStatus
-	errorMessageByTable map[string]string
+	tablesInfo map[string]*TableInfo
 
 	mu sync.Mutex
 }
@@ -58,9 +61,7 @@ func NewAPIInfo() *APIInfo {
 		status:       ServiceStatusRunning,
 		errorMessage: "",
 
-		stageByTable:        make(map[string]TableStage),
-		statusByTable:       make(map[string]TableStatus),
-		errorMessageByTable: make(map[string]string),
+		tablesInfo: make(map[string]*TableInfo),
 	}
 }
 
@@ -70,36 +71,42 @@ func (s *APIInfo) registerRouter(router *gin.Engine) {
 		defer s.mu.Unlock()
 
 		c.JSON(http.StatusOK, InfoResponse{
-			Status:              s.status,
-			ErrorMessage:        s.errorMessage,
-			StageByTable:        s.stageByTable,
-			StatusByTable:       s.statusByTable,
-			ErrorMessageByTable: s.errorMessageByTable,
+			Status:       s.status,
+			ErrorMessage: s.errorMessage,
+			TablesInfo:   s.tablesInfo,
 		})
 	})
+}
+
+func (s *APIInfo) initTableInfoIfNotExist(table string) {
+	if _, ok := s.tablesInfo[table]; ok {
+		s.tablesInfo[table] = &TableInfo{
+			Stage:        TableStageUnknown,
+			Status:       TableStatusNormal,
+			ErrorMessage: "",
+		}
+	}
 }
 
 func (s *APIInfo) SetTableFatalError(table string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.statusByTable[table] == TableStatusFatalError {
+	s.initTableInfoIfNotExist(table)
+	if s.tablesInfo[table].Status == TableStatusFatalError {
 		log.Warn("Ignored setting table to fatal error", zap.String("table", table), zap.Error(err))
 		return
 	}
-	s.errorMessageByTable[table] = err.Error()
-	s.statusByTable[table] = TableStatusFatalError
+	s.tablesInfo[table].Status = TableStatusFatalError
+	s.tablesInfo[table].ErrorMessage = err.Error()
 }
 
 func (s *APIInfo) SetTableStage(table string, stage TableStage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.stageByTable[table] = stage
-	if _, ok := s.statusByTable[table]; !ok {
-		s.statusByTable[table] = TableStatusNormal
-		s.errorMessageByTable[table] = ""
-	}
+	s.initTableInfoIfNotExist(table)
+	s.tablesInfo[table].Stage = stage
 }
 
 func (s *APIInfo) SetServiceStatusIdle() {
