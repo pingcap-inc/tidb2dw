@@ -215,17 +215,20 @@ func Replicate(
 			defer wg.Done()
 			ctx := context.Background()
 			if mode != RunModeIncrementalOnly && stage != StageSnapshotLoaded {
+				apiservice.GlobalInstance.APIInfo.SetTableStage(table, apiservice.TableStageLoadingSnapshot)
 				if err = replicate.StartReplicateSnapshot(ctx, snapConnectorMap[table], table, tidbConfig, snapshotURI); err != nil {
-					apiservice.GlobalInstance.APIInfo.SetTableStatusFatalError(table, err)
+					apiservice.GlobalInstance.APIInfo.SetTableFatalError(table, err)
 					return
 				}
 			}
 			if mode != RunModeSnapshotOnly {
+				apiservice.GlobalInstance.APIInfo.SetTableStage(table, apiservice.TableStageLoadingIncremental)
 				if err = replicate.StartReplicateIncrement(ctx, increConnectorMap[table], table, incrementURI, cdcFlushInterval/5); err != nil {
-					apiservice.GlobalInstance.APIInfo.SetTableStatusFatalError(table, err)
+					apiservice.GlobalInstance.APIInfo.SetTableFatalError(table, err)
 					return
 				}
 			}
+			apiservice.GlobalInstance.APIInfo.SetTableStage(table, apiservice.TableStageFinished)
 		}(table)
 	}
 
