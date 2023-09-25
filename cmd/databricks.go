@@ -112,11 +112,12 @@ func NewDatabricksCmd() *cobra.Command {
 		Use:   "databricks",
 		Short: "Replicate snapshot and incremental data from TiDB to Databricks",
 		Run: func(_ *cobra.Command, _ []string) {
-			apiservice.GlobalInstance = apiservice.New(tables)
 			runWithServer(mode == RunModeCloud, fmt.Sprintf("%s:%d", apiListenHost, apiListenPort), func() {
 				if err := run(); err != nil {
-					apiservice.GlobalInstance.APIInfo.SetGlobalStatusFatalError(err)
-					log.Error("Fatal error running databricks replication", zap.Error(err))
+					apiservice.GlobalInstance.APIInfo.SetServiceStatusFatalError(err)
+					log.Error("Fatal error running redshift replication", zap.Error(err))
+				} else {
+					apiservice.GlobalInstance.APIInfo.SetServiceStatusIdle()
 				}
 			})
 		},
