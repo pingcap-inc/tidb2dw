@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pingcap-inc/tidb2dw/pkg/bigquerysql"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
+	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
@@ -117,7 +117,7 @@ func (dc *DatabricksConnector) ExecDDL(tableDef cloudstorage.TableDefinition) er
 
 func (dc *DatabricksConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
 	absolutePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, filePath)
-	incrTableColumns := bigquerysql.GenIncrementTableColumns(tableDef.Columns)
+	incrTableColumns := utils.GenIncrementTableColumns(tableDef.Columns)
 	incrTableName := incrementTablePrefix + tableDef.Table
 
 	createTableSQL, err := GenCreateTableSQL(incrTableName, incrTableColumns)

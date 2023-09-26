@@ -2,39 +2,12 @@ package bigquerysql
 
 import (
 	"fmt"
+	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"strings"
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
-
-var (
-	CDC_FLAG_COLUMN_NAME       = "tidb2dw_flag"
-	CDC_TABLENAME_COLUMN_NAME  = "tidb2dw_tablename"
-	CDC_SCHEMANAME_COLUMN_NAME = "tidb2dw_schemaname"
-	CDC_COMMIT_TS_COLUMN_NAME  = "tidb2dw_commit_ts"
-)
-
-func GenIncrementTableColumns(columns []cloudstorage.TableCol) []cloudstorage.TableCol {
-	return append([]cloudstorage.TableCol{
-		{
-			Name: CDC_FLAG_COLUMN_NAME,
-			Tp:   "varchar",
-		},
-		{
-			Name: CDC_TABLENAME_COLUMN_NAME,
-			Tp:   "varchar",
-		},
-		{
-			Name: CDC_SCHEMANAME_COLUMN_NAME,
-			Tp:   "varchar",
-		},
-		{
-			Name: CDC_COMMIT_TS_COLUMN_NAME,
-			Tp:   "bigint",
-		},
-	}, columns...)
-}
 
 func GenMergeInto(tableDef cloudstorage.TableDefinition, datasetID, tableID, externalTableID string) string {
 	pkColumn := make([]string, 0)
@@ -81,13 +54,13 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, datasetID, tableID, ext
 	WHEN NOT MATCHED AND S.%s != 'D' THEN INSERT (%s) VALUES (%s);`,
 		fmt.Sprintf("`%s.%s`", datasetID, tableID),
 		strings.Join(pkColumn, ", "),
-		CDC_COMMIT_TS_COLUMN_NAME,
+		utils.CDCCommitTsColumnName,
 		fmt.Sprintf("`%s.%s`", datasetID, externalTableID),
 		strings.Join(onStat, " AND "),
-		CDC_FLAG_COLUMN_NAME,
+		utils.CDCFlagColumnName,
 		strings.Join(updateStat, ", "),
-		CDC_FLAG_COLUMN_NAME,
-		CDC_FLAG_COLUMN_NAME,
+		utils.CDCFlagColumnName,
+		utils.CDCFlagColumnName,
 		strings.Join(insertStat, ", "),
 		strings.Join(valuesStat, ", "),
 	)

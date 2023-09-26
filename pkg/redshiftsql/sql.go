@@ -4,10 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pingcap-inc/tidb2dw/pkg/snowsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
@@ -27,7 +27,7 @@ func CreateSchema(db *sql.DB, schemaName string) error {
 	return err
 }
 
-// redshift currently can not support ROWS_PRODUCED function
+// LoadSnapshotFromS3 redshift currently can not support ROWS_PRODUCED function
 // use csv file path for storageUri, like s3://tidbbucket/snapshot/stock.csv
 func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUri, filePrefix string, credential *credentials.Value, onSnapshotLoadProgress func(loadedRows int64)) error {
 	sql, err := formatter.Format(`
@@ -36,9 +36,9 @@ func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUri, filePrefix string, 
 	CREDENTIALS 'aws_access_key_id={accessId};aws_secret_access_key={accessKey}'
 	FORMAT AS CSV DELIMITER ',' QUOTE '"';
 	`, formatter.Named{
-		"targetTable": snowsql.EscapeString(targetTable),
-		"storageUrl":  snowsql.EscapeString(storageUri),
-		"filePrefix":  snowsql.EscapeString(filePrefix), // TODO: Verify
+		"targetTable": utils.EscapeString(targetTable),
+		"storageUrl":  utils.EscapeString(storageUri),
+		"filePrefix":  utils.EscapeString(filePrefix), // TODO: Verify
 		"accessId":    credential.AccessKeyID,
 		"accessKey":   credential.SecretAccessKey,
 	})
@@ -107,9 +107,9 @@ func CreateExternalSchema(db *sql.DB, schemaName, databaseName, iamRole string) 
 	IAM_ROLE '{iamRole}'
 	CREATE EXTERNAL DATABASE IF NOT EXISTS;
 	`, formatter.Named{
-		"schemaName":   snowsql.EscapeString(schemaName),
-		"databaseName": snowsql.EscapeString(databaseName),
-		"iamRole":      snowsql.EscapeString(iamRole),
+		"schemaName":   utils.EscapeString(schemaName),
+		"databaseName": utils.EscapeString(databaseName),
+		"iamRole":      utils.EscapeString(iamRole),
 	})
 	if err != nil {
 		return errors.Trace(err)
@@ -147,10 +147,10 @@ func CreateExternalTable(db *sql.DB, columns []cloudstorage.TableCol, tableName,
 	LINES TERMINATED BY '\n'
 	LOCATION '{manifestFile}'
 	`, formatter.Named{
-		"tableName":    snowsql.EscapeString(tableName),
-		"schemaName":   snowsql.EscapeString(schemaName),
+		"tableName":    utils.EscapeString(tableName),
+		"schemaName":   utils.EscapeString(schemaName),
 		"columns":      strings.Join(sqlRows, ",\n"),
-		"manifestFile": snowsql.EscapeString(manifestFile),
+		"manifestFile": utils.EscapeString(manifestFile),
 	})
 	if err != nil {
 		return errors.Trace(err)

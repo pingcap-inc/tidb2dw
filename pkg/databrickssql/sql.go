@@ -4,8 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pingcap-inc/tidb2dw/pkg/bigquerysql"
-	"github.com/pingcap-inc/tidb2dw/pkg/snowsql"
+	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
@@ -59,13 +58,13 @@ func GenMergeIntoSQL(tableDef cloudstorage.TableDefinition, tableName, externalT
 	WHEN NOT MATCHED AND S.%s != 'D' THEN INSERT (%s) VALUES (%s);`,
 		fmt.Sprintf("`%s`", tableName),
 		strings.Join(pkColumn, ", "),
-		bigquerysql.CDC_COMMIT_TS_COLUMN_NAME,
+		utils.CDCCommitTsColumnName,
 		fmt.Sprintf("`%s`", externalTableName),
 		strings.Join(onStat, " AND "),
-		bigquerysql.CDC_FLAG_COLUMN_NAME,
+		utils.CDCFlagColumnName,
 		strings.Join(updateStat, ", "),
-		bigquerysql.CDC_FLAG_COLUMN_NAME,
-		bigquerysql.CDC_FLAG_COLUMN_NAME,
+		utils.CDCFlagColumnName,
+		utils.CDCFlagColumnName,
 		strings.Join(insertStat, ", "),
 		strings.Join(valuesStat, ", "),
 	)
@@ -136,10 +135,10 @@ func LoadCSVFromS3(db *sql.DB, columns []cloudstorage.TableCol, targetTable, sto
 	`, patternSQL)
 
 	sql, err := formatter.Format(copyIntoSQL, formatter.Named{
-		"targetTable":          snowsql.EscapeString(targetTable),
+		"targetTable":          utils.EscapeString(targetTable),
 		"castAndRenameColumns": columnCastAndRenameSQL,
-		"storageUrl":           snowsql.EscapeString(storageUri),
-		"filePrefix":           snowsql.EscapeString(filePrefix), // glob pattern // TODO: Verify
+		"storageUrl":           utils.EscapeString(storageUri),
+		"filePrefix":           utils.EscapeString(filePrefix), // glob pattern // TODO: Verify
 		"accessId":             tempCredential.AccessKeyID,
 		"accessKey":            tempCredential.SecretAccessKey,
 		"sessionToken":         tempCredential.SessionToken,

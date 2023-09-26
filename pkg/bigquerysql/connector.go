@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"net/url"
 	"strings"
 
@@ -116,7 +117,7 @@ func (bc *BigQueryConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 	incrementTableID := bc.incrementTableID
 	absolutePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, filePath)
 
-	tableColumns := GenIncrementTableColumns(tableDef.Columns)
+	tableColumns := utils.GenIncrementTableColumns(tableDef.Columns)
 	createTableSQL, err := GenCreateSchema(tableColumns, []string{}, bc.datasetID, incrementTableID)
 	if err != nil {
 		return errors.Trace(err)
