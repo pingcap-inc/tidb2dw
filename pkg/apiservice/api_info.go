@@ -36,15 +36,15 @@ const (
 )
 
 type TableInfo struct {
-	Stage        TableStage  `json:"stage"`
-	Status       TableStatus `json:"status"`
-	ErrorMessage string      `json:"error_message"`
+	Stage        TableStage  `json:"stage,omitempty"`
+	Status       TableStatus `json:"status,omitempty"`
+	ErrorMessage string      `json:"error_message,omitempty"`
 }
 
 type InfoResponse struct {
-	Status       ServiceStatus         `json:"status"`
-	ErrorMessage string                `json:"error_message"`
-	TablesInfo   map[string]*TableInfo `json:"tables_info"`
+	Status       ServiceStatus         `json:"status,omitempty"`
+	ErrorMessage string                `json:"error_message,omitempty"`
+	TablesInfo   map[string]*TableInfo `json:"tables_info,omitempty"`
 }
 
 type APIInfo struct {
