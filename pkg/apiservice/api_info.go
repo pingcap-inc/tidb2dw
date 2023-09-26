@@ -48,20 +48,17 @@ type InfoResponse struct {
 }
 
 type APIInfo struct {
-	status       ServiceStatus
-	errorMessage string
-
-	tablesInfo map[string]*TableInfo
-
+	r  InfoResponse
 	mu sync.Mutex
 }
 
 func NewAPIInfo() *APIInfo {
 	return &APIInfo{
-		status:       ServiceStatusRunning,
-		errorMessage: "",
-
-		tablesInfo: make(map[string]*TableInfo),
+		r: InfoResponse{
+			Status:       ServiceStatusRunning,
+			ErrorMessage: "",
+			TablesInfo:   make(map[string]*TableInfo),
+		},
 	}
 }
 
@@ -70,17 +67,13 @@ func (s *APIInfo) registerRouter(router *gin.Engine) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
-		c.JSON(http.StatusOK, InfoResponse{
-			Status:       s.status,
-			ErrorMessage: s.errorMessage,
-			TablesInfo:   s.tablesInfo,
-		})
+		c.JSON(http.StatusOK, s.r)
 	})
 }
 
 func (s *APIInfo) initTableInfoIfNotExist(table string) {
-	if _, ok := s.tablesInfo[table]; ok {
-		s.tablesInfo[table] = &TableInfo{
+	if _, ok := s.r.TablesInfo[table]; !ok {
+		s.r.TablesInfo[table] = &TableInfo{
 			Stage:        TableStageUnknown,
 			Status:       TableStatusNormal,
 			ErrorMessage: "",
@@ -93,12 +86,12 @@ func (s *APIInfo) SetTableFatalError(table string, err error) {
 	defer s.mu.Unlock()
 
 	s.initTableInfoIfNotExist(table)
-	if s.tablesInfo[table].Status == TableStatusFatalError {
+	if s.r.TablesInfo[table].Status == TableStatusFatalError {
 		log.Warn("Ignored setting table to fatal error", zap.String("table", table), zap.Error(err))
 		return
 	}
-	s.tablesInfo[table].Status = TableStatusFatalError
-	s.tablesInfo[table].ErrorMessage = err.Error()
+	s.r.TablesInfo[table].Status = TableStatusFatalError
+	s.r.TablesInfo[table].ErrorMessage = err.Error()
 }
 
 func (s *APIInfo) SetTableStage(table string, stage TableStage) {
@@ -106,31 +99,31 @@ func (s *APIInfo) SetTableStage(table string, stage TableStage) {
 	defer s.mu.Unlock()
 
 	s.initTableInfoIfNotExist(table)
-	s.tablesInfo[table].Stage = stage
+	s.r.TablesInfo[table].Stage = stage
 }
 
 func (s *APIInfo) SetServiceStatusIdle() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.status == ServiceStatusFatalError {
-		log.Warn("Ignored setting status to idle", zap.String("current_error", s.errorMessage))
+	if s.r.Status == ServiceStatusFatalError {
+		log.Warn("Ignored setting status to idle", zap.String("current_error", s.r.ErrorMessage))
 		return
 	}
 
-	s.status = ServiceStatusIdle
-	s.errorMessage = ""
+	s.r.Status = ServiceStatusIdle
+	s.r.ErrorMessage = ""
 }
 
 func (s *APIInfo) SetServiceStatusFatalError(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.status == ServiceStatusFatalError {
+	if s.r.Status == ServiceStatusFatalError {
 		log.Warn("Ignored setting status to fatal error", zap.Error(err))
 		return
 	}
 
-	s.status = ServiceStatusFatalError
-	s.errorMessage = err.Error()
+	s.r.Status = ServiceStatusFatalError
+	s.r.ErrorMessage = err.Error()
 }
