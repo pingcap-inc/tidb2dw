@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
@@ -17,30 +16,41 @@ import (
 
 type (
 	DatabricksConnector struct {
-		db  *sql.DB
-		ctx context.Context
-
-		temporaryCredentials *credentials.Credentials
-
+		db         *sql.DB
+		ctx        context.Context
 		storageURL string
-		awsRegion  string
-
-		columns []cloudstorage.TableCol
+		credential string
+		columns    []cloudstorage.TableCol
 	}
 )
 
 const incrementTablePrefix = "incr_"
 
-func NewDatabricksConnector(databricksDB *sql.DB, srcCredentials *credentials.Value,
-	storageURI *url.URL, awsRegion string) (*DatabricksConnector, error) {
+func NewDatabricksConnector(databricksDB *sql.DB, credential string, storageURI *url.URL) (*DatabricksConnector, error) {
 	storageURL := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
 
+	credentialSet, err := GetCredentialNameSet(databricksDB)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	if credential != "" {
+		if _, exist := credentialSet[credential]; !exist {
+			return nil, errors.Errorf("credential name [%s] is not found in databricks", credential)
+		}
+	} else {
+		if len(credentialSet) > 1 {
+			return nil, errors.Errorf("multiple credential found in databricks, please specify one")
+		}
+		for credentialName := range credentialSet {
+			credential = credentialName
+		}
+	}
+
 	return &DatabricksConnector{
-		db:  databricksDB,
-		ctx: context.Background(),
-
-		temporaryCredentials: credentials.NewCredentials(NewTemporaryCredentialsProvider(srcCredentials, awsRegion)),
-
+		db:         databricksDB,
+		ctx:        context.Background(),
+		credential: credential,
 		storageURL: storageURL,
 		columns:    nil,
 	}, nil
@@ -82,7 +92,7 @@ func (dc *DatabricksConnector) CopyTableSchema(sourceDatabase string, sourceTabl
 }
 
 func (dc *DatabricksConnector) LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
-	if err := LoadCSVFromS3(dc.db, dc.columns, targetTable, dc.storageURL, filePrefix, dc.temporaryCredentials); err != nil {
+	if err := LoadCSVFromS3(dc.db, dc.columns, targetTable, dc.storageURL, filePrefix, dc.credential); err != nil {
 		return errors.Trace(err)
 	}
 	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
@@ -120,18 +130,13 @@ func (dc *DatabricksConnector) LoadIncrement(tableDef cloudstorage.TableDefiniti
 	incrTableColumns := utils.GenIncrementTableColumns(tableDef.Columns)
 	incrTableName := incrementTablePrefix + tableDef.Table
 
-	createTableSQL, err := GenCreateTableSQL(incrTableName, incrTableColumns)
+	createExtTableSQL, err := GenCreateExternalTableSQL(incrTableName, incrTableColumns, absolutePath, dc.credential)
 	if err != nil {
 		return errors.Trace(err)
 	}
 
-	_, err = dc.db.Exec(createTableSQL)
+	_, err = dc.db.Exec(createExtTableSQL)
 	if err != nil {
-		return errors.Trace(err)
-	}
-
-	if err := LoadCSVFromS3(dc.db, incrTableColumns, incrTableName, absolutePath, "",
-		dc.temporaryCredentials); err != nil {
 		return errors.Trace(err)
 	}
 

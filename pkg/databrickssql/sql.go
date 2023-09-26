@@ -3,7 +3,6 @@ package databrickssql
 import (
 	"database/sql"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
@@ -103,12 +102,27 @@ func GenCreateTableSQL(tableName string, tableColumns []cloudstorage.TableCol) (
 	return strings.Join(sql, "\n"), nil
 }
 
-func LoadCSVFromS3(db *sql.DB, columns []cloudstorage.TableCol, targetTable, storageUri, filePrefix string, temporaryCredentials *credentials.Credentials) error {
-	tempCredential, err := temporaryCredentials.Get()
-	if err != nil {
-		return errors.Trace(err)
+func GenCreateExternalTableSQL(tableName string, tableColumns []cloudstorage.TableCol, storageUri string, credential string) (string, error) {
+	columnRows := make([]string, 0, len(tableColumns))
+	for _, column := range tableColumns {
+		row, err := GetDatabricksColumnString(column)
+		if err != nil {
+			return "", errors.Trace(err)
+		}
+		columnRows = append(columnRows, row)
 	}
 
+	return fmt.Sprintf(`CREATE EXTERNAL TABLE %s (
+    %s
+	) USING CSV 
+		LOCATION '%s' WITH (
+	    CREDENTIAL %s
+	)`,
+		tableName, strings.Join(columnRows, ",\n"), storageUri, fmt.Sprintf("`%s`", credential),
+	), nil
+}
+
+func LoadCSVFromS3(db *sql.DB, columns []cloudstorage.TableCol, targetTable, storageUri, filePrefix string, credential string) error {
 	columnCastAndRenameSQL, err := buildColumnCastAndRename(columns)
 	if err != nil {
 		return errors.Trace(err)
@@ -125,7 +139,7 @@ func LoadCSVFromS3(db *sql.DB, columns []cloudstorage.TableCol, targetTable, sto
 	FROM (
 		SELECT {castAndRenameColumns}
 		FROM '{storageUrl}' WITH (
-		  CREDENTIAL (AWS_ACCESS_KEY = '{accessId}', AWS_SECRET_KEY = '{accessKey}', AWS_SESSION_TOKEN = '{sessionToken}')
+		  CREDENTIAL {credential}
 		)
 	)
 	FILEFORMAT = CSV
@@ -139,9 +153,7 @@ func LoadCSVFromS3(db *sql.DB, columns []cloudstorage.TableCol, targetTable, sto
 		"castAndRenameColumns": columnCastAndRenameSQL,
 		"storageUrl":           utils.EscapeString(storageUri),
 		"filePrefix":           utils.EscapeString(filePrefix), // glob pattern // TODO: Verify
-		"accessId":             tempCredential.AccessKeyID,
-		"accessKey":            tempCredential.SecretAccessKey,
-		"sessionToken":         tempCredential.SessionToken,
+		"credential":           fmt.Sprintf("`%s`", credential),
 	})
 	if err != nil {
 		return errors.Trace(err)
@@ -149,6 +161,27 @@ func LoadCSVFromS3(db *sql.DB, columns []cloudstorage.TableCol, targetTable, sto
 	log.Info("Loading CSV data from AWS s3", zap.String("query", sql))
 	_, err = db.Exec(sql)
 	return err
+}
+
+// GetCredentialNameSet returns all storage credential names in the database
+func GetCredentialNameSet(db *sql.DB) (map[string]interface{}, error) {
+	row, err := db.Query(`SHOW STORAGE CREDENTIALS`)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	credentialNameSet := make(map[string]interface{})
+	for row.Next() {
+		var name, comment sql.NullString
+		err = row.Scan(&name, &comment)
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
+		if name.Valid {
+			credentialNameSet[name.String] = nil
+		}
+	}
+	return credentialNameSet, nil
 }
 
 // buildColumnCastAndRename spark will generate field names as _c0, _c1, _c2, etc. for CSV files without header.

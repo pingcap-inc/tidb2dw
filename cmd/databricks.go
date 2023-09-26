@@ -33,7 +33,7 @@ func NewDatabricksCmd() *cobra.Command {
 		logLevel                string
 		awsAccessKey            string
 		awsSecretKey            string
-		awsRegion               string
+		credential              string
 		credValue               *credentials.Value
 
 		mode          RunMode
@@ -82,9 +82,8 @@ func NewDatabricksCmd() *cobra.Command {
 			}
 			snapConnector, err := databrickssql.NewDatabricksConnector(
 				db,
-				credValue,
+				credential,
 				snapshotURI,
-				awsRegion,
 			)
 			if err != nil {
 				return errors.Trace(err)
@@ -96,9 +95,8 @@ func NewDatabricksCmd() *cobra.Command {
 			}
 			increConnector, err := databrickssql.NewDatabricksConnector(
 				db,
-				credValue,
+				credential,
 				incrementURI,
-				awsRegion,
 			)
 			if err != nil {
 				return errors.Trace(err)
@@ -135,6 +133,7 @@ func NewDatabricksCmd() *cobra.Command {
 	cmd.Flags().StringVar(&databricksConfigFromCli.Host, "databricks.host", "", "databricks host")
 	cmd.Flags().IntVar(&databricksConfigFromCli.Port, "databricks.port", 443, "databricks port")
 	cmd.Flags().StringVar(&databricksConfigFromCli.Token, "databricks.token", "", "databricks token")
+	cmd.Flags().StringVar(&credential, "databricks.credential", "", "databricks storage credential name. \nIf just one credential in databricks, this property is not required. \nYou can use 'SHOW STORAGE CREDENTIALS' in databricks to check what credential names are available.")
 	cmd.Flags().StringVar(&databricksConfigFromCli.Endpoint, "databricks.endpoint", "", "databricks endpoint")
 	cmd.Flags().StringVar(&databricksConfigFromCli.Schema, "databricks.schema", "", "databricks schema")
 	cmd.Flags().StringVar(&databricksConfigFromCli.Catalog, "databricks.catalog", "", "databricks catalog")
@@ -150,7 +149,6 @@ func NewDatabricksCmd() *cobra.Command {
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
 	cmd.Flags().StringVar(&awsAccessKey, "aws.access-key", "", "aws access key")
 	cmd.Flags().StringVar(&awsSecretKey, "aws.secret-key", "", "aws secret key")
-	cmd.Flags().StringVar(&awsRegion, "aws.region", "", "aws region")
 
 	cmd.MarkFlagRequired("storage")
 	cmd.MarkFlagRequired("databricks.host")
