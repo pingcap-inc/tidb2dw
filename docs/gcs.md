@@ -5,7 +5,7 @@
 To export snapshot and incremental data of a TiDB Table to Google Cloud Storage:
 
 ```shell
-./tidb2dw bigquery \
+./tidb2dw gcs \
     --storage gs://my-demo-bucket/prefix \
     --table <database_name>.<table_name> \
     --credentials-file-path <google_credentials_json_file_path>
