@@ -6,10 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/apiservice"
-	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
-	"github.com/pingcap-inc/tidb2dw/pkg/snowsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
-	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/logutil"
@@ -18,23 +15,22 @@ import (
 	"go.uber.org/zap"
 )
 
-func NewSnowflakeCmd() *cobra.Command {
+func NewS3Cmd() *cobra.Command {
 	var (
-		tidbConfigFromCli      tidbsql.TiDBConfig
-		snowflakeConfigFromCli snowsql.SnowflakeConfig
-		tables                 []string
-		snapshotConcurrency    int
-		storagePath            string
-		cdcHost                string
-		cdcPort                int
-		cdcFlushInterval       time.Duration
-		cdcFileSize            int64
-		timezone               string
-		logFile                string
-		logLevel               string
-		awsAccessKey           string
-		awsSecretKey           string
-		credValue              *credentials.Value
+		tidbConfigFromCli   tidbsql.TiDBConfig
+		tables              []string
+		snapshotConcurrency int
+		storagePath         string
+		cdcHost             string
+		cdcPort             int
+		cdcFlushInterval    time.Duration
+		cdcFileSize         int64
+		timezone            string
+		logFile             string
+		logLevel            string
+		awsAccessKey        string
+		awsSecretKey        string
+		credValue           *credentials.Value
 
 		mode          RunMode
 		apiListenHost string
@@ -72,59 +68,20 @@ func NewSnowflakeCmd() *cobra.Command {
 			return errors.Trace(err)
 		}
 
-		snapConnectorMap := make(map[string]coreinterfaces.Connector)
-		increConnectorMap := make(map[string]coreinterfaces.Connector)
-		for _, tableFQN := range tables {
-			_, sourceTable := utils.SplitTableFQN(tableFQN)
-			db, err := snowflakeConfigFromCli.OpenDB()
-			if err != nil {
-				return errors.Trace(err)
-			}
-			snapConnector, err := snowsql.NewSnowflakeConnector(
-				db,
-				fmt.Sprintf("snapshot_external_%s", sourceTable),
-				snapshotURI,
-				credValue,
-			)
-			if err != nil {
-				return errors.Trace(err)
-			}
-			snapConnectorMap[tableFQN] = snapConnector
-
-			increConnector, err := snowsql.NewSnowflakeConnector(
-				db,
-				fmt.Sprintf("increment_external_%s", sourceTable),
-				incrementURI,
-				credValue,
-			)
-			if err != nil {
-				return errors.Trace(err)
-			}
-			increConnectorMap[tableFQN] = increConnector
-		}
-
-		defer func() {
-			for _, connector := range snapConnectorMap {
-				connector.Close()
-			}
-			for _, connector := range increConnectorMap {
-				connector.Close()
-			}
-		}()
-
-		return Replicate(&tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI,
-			snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize,
-			snapConnectorMap, increConnectorMap, mode)
+		_, err = Export(&tidbConfigFromCli, tables, storageURI, snapshotURI,
+			incrementURI, snapshotConcurrency, cdcHost, cdcPort,
+			cdcFlushInterval, cdcFileSize, mode)
+		return err
 	}
 
 	cmd := &cobra.Command{
-		Use:   "snowflake",
-		Short: "Replicate snapshot and incremental data from TiDB to Snowflake",
+		Use:   "s3",
+		Short: "Export snapshot and incremental data from TiDB to S3",
 		Run: func(_ *cobra.Command, _ []string) {
 			runWithServer(mode == RunModeCloud, fmt.Sprintf("%s:%d", apiListenHost, apiListenPort), func() {
 				if err := run(); err != nil {
 					apiservice.GlobalInstance.APIInfo.SetServiceStatusFatalError(err)
-					log.Error("Fatal error running snowflake replication", zap.Error(err))
+					log.Error("Fatal error running s3 exporter", zap.Error(err))
 				} else {
 					apiservice.GlobalInstance.APIInfo.SetServiceStatusIdle()
 				}
@@ -141,12 +98,6 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&tidbConfigFromCli.User, "tidb.user", "u", "root", "TiDB user")
 	cmd.Flags().StringVarP(&tidbConfigFromCli.Pass, "tidb.pass", "p", "", "TiDB password")
 	cmd.Flags().StringVar(&tidbConfigFromCli.SSLCA, "tidb.ssl-ca", "", "TiDB SSL CA")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.AccountId, "snowflake.account-id", "", "snowflake accound id: <organization>-<account>")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.Warehouse, "snowflake.warehouse", "COMPUTE_WH", "")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.User, "snowflake.user", "", "snowflake user")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.Pass, "snowflake.pass", "", "snowflake password")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.Database, "snowflake.database", "", "snowflake database")
-	cmd.Flags().StringVar(&snowflakeConfigFromCli.Schema, "snowflake.schema", "", "snowflake schema")
 	cmd.Flags().StringArrayVarP(&tables, "table", "t", []string{}, "tables full qualified name, e.g. -t <db1>.<table1> -t <db2>.<table2>")
 	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
 	cmd.Flags().StringVarP(&storagePath, "storage", "s", "", "storage path: s3://<bucket>/<path> or gcs://<bucket>/<path>")
@@ -161,6 +112,5 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&awsSecretKey, "aws.secret-key", "", "aws secret key")
 
 	cmd.MarkFlagRequired("storage")
-
 	return cmd
 }
