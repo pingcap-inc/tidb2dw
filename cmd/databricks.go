@@ -75,7 +75,6 @@ func NewDatabricksCmd() *cobra.Command {
 		snapConnectorMap := make(map[string]coreinterfaces.Connector)
 		increConnectorMap := make(map[string]coreinterfaces.Connector)
 		for _, tableFQN := range tables {
-			//_, sourceTable := utils.SplitTableFQN(tableFQN)
 			db, err := databricksConfigFromCli.OpenDB()
 			if err != nil {
 				return errors.Trace(err)
