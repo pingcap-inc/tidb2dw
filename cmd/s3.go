@@ -1,11 +1,9 @@
 package cmd
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/pingcap-inc/tidb2dw/pkg/apiservice"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
@@ -31,10 +29,7 @@ func NewS3Cmd() *cobra.Command {
 		awsAccessKey        string
 		awsSecretKey        string
 		credValue           *credentials.Value
-
-		mode          RunMode
-		apiListenHost string
-		apiListenPort int
+		mode                RunMode
 	)
 
 	run := func() error {
@@ -78,21 +73,14 @@ func NewS3Cmd() *cobra.Command {
 		Use:   "s3",
 		Short: "Export snapshot and incremental data from TiDB to S3",
 		Run: func(_ *cobra.Command, _ []string) {
-			runWithServer(mode == RunModeCloud, fmt.Sprintf("%s:%d", apiListenHost, apiListenPort), func() {
-				if err := run(); err != nil {
-					apiservice.GlobalInstance.APIInfo.SetServiceStatusFatalError(err)
-					log.Error("Fatal error running s3 exporter", zap.Error(err))
-				} else {
-					apiservice.GlobalInstance.APIInfo.SetServiceStatusIdle()
-				}
-			})
+			if err := run(); err != nil {
+				log.Error("Fatal error running gcs exporter", zap.Error(err))
+			}
 		},
 	}
 
 	cmd.PersistentFlags().BoolP("help", "", false, "help for this command")
 	cmd.Flags().Var(enumflag.New(&mode, "mode", RunModeIds, enumflag.EnumCaseInsensitive), "mode", "replication mode: full, snapshot-only, incremental-only, cloud")
-	cmd.Flags().StringVar(&apiListenHost, "api.host", "0.0.0.0", "API service listen host, only available in --mode=cloud")
-	cmd.Flags().IntVar(&apiListenPort, "api.port", 8185, "API service listen port, only available in --mode=cloud")
 	cmd.Flags().StringVarP(&tidbConfigFromCli.Host, "tidb.host", "h", "127.0.0.1", "TiDB host")
 	cmd.Flags().IntVarP(&tidbConfigFromCli.Port, "tidb.port", "P", 4000, "TiDB port")
 	cmd.Flags().StringVarP(&tidbConfigFromCli.User, "tidb.user", "u", "root", "TiDB user")
