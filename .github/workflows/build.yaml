@@ -39,4 +39,7 @@ jobs:
         env:
           GOARCH: ${{ matrix.arch }}
         run: |
+          if [[ "${{ matrix.os.name }}" == "darwin" ]] && [[ "${{ matrix.arch }}" == "arm64" ]]; then
+            export CGO_ENABLED=1
+          fi
           make build
