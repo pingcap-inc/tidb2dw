@@ -9,6 +9,8 @@ import (
 
 // TiDB2DatabricksTypeMap is a map from TiDB type to Databricks type.
 // Please refer to https://docs.databricks.com/en/sql/language-manual/sql-ref-datatypes.html
+// Databricks don't support the `BINARY` type in the external table with the CSV file which are `tidb2dw` used.
+// So we drop the `binary` and `varbinary` type in the map.
 var TiDB2DatabricksTypeMap = map[string]string{
 	"text":       "STRING",
 	"tinytext":   "STRING",
@@ -20,8 +22,6 @@ var TiDB2DatabricksTypeMap = map[string]string{
 	"longblob":   "STRING",
 	"varchar":    "STRING",
 	"char":       "STRING",
-	"binary":     "BINARY",
-	"varbinary":  "BINARY",
 	"int":        "INT",
 	"mediumint":  "INT",
 	"tinyint":    "TINYINT",

@@ -117,7 +117,7 @@ func NewDatabricksCmd() *cobra.Command {
 			runWithServer(mode == RunModeCloud, fmt.Sprintf("%s:%d", apiListenHost, apiListenPort), func() {
 				if err := run(); err != nil {
 					apiservice.GlobalInstance.APIInfo.SetServiceStatusFatalError(err)
-					log.Error("Fatal error running redshift replication", zap.Error(err))
+					log.Error("Fatal error running databricks replication", zap.Error(err))
 				} else {
 					apiservice.GlobalInstance.APIInfo.SetServiceStatusIdle()
 				}

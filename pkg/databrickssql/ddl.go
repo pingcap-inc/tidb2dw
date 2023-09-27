@@ -47,9 +47,9 @@ func GenDDLViaColumnsDiff(prevColumns []cloudstorage.TableCol, curTableDef cloud
 			ddl += colStr
 		case tidbsql.DROP_COLUMN:
 			ddl += fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", curTableDef.Table, item.Before.Name)
-		// redshift does not support direct data type modify
+		// Databricks does not support direct data type modify
 		case tidbsql.MODIFY_COLUMN:
-			return nil, errors.New("Received modify column ddl, which is not supported by redshift yet")
+			return nil, errors.New("Received modify column ddl, which is not supported by Databricks yet")
 		case tidbsql.RENAME_COLUMN:
 			ddl += fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", curTableDef.Table, item.Before.Name, item.After.Name)
 		default:
