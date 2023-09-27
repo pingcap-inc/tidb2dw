@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"regexp"
 	"strconv"
 	"strings"
@@ -27,11 +28,11 @@ URL = '{url}'
 CREDENTIALS = (AWS_KEY_ID = '{awsKeyId}' AWS_SECRET_KEY = '{awsSecretKey}' AWS_TOKEN = '{awsToken}')
 FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
 	`, formatter.Named{
-		"stageName":    EscapeString(stageName),
-		"url":          EscapeString(s3WorkspaceURL),
-		"awsKeyId":     EscapeString(cred.AccessKeyID),
-		"awsSecretKey": EscapeString(cred.SecretAccessKey),
-		"awsToken":     EscapeString(cred.SessionToken),
+		"stageName":    utils.EscapeString(stageName),
+		"url":          utils.EscapeString(s3WorkspaceURL),
+		"awsKeyId":     utils.EscapeString(cred.AccessKeyID),
+		"awsSecretKey": utils.EscapeString(cred.SecretAccessKey),
+		"awsToken":     utils.EscapeString(cred.SessionToken),
 	})
 	if err != nil {
 		return err
@@ -45,7 +46,7 @@ func CreateInternalStage(db *sql.DB, stageName string) error {
 CREATE OR REPLACE STAGE {stageName}
 FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"');
 `, formatter.Named{
-		"stageName": EscapeString(stageName),
+		"stageName": utils.EscapeString(stageName),
 	})
 	if err != nil {
 		return err
@@ -58,7 +59,7 @@ func DropStage(db *sql.DB, stageName string) error {
 	sql, err := formatter.Format(`
 DROP STAGE IF EXISTS {stageName};
 `, formatter.Named{
-		"stageName": EscapeString(stageName),
+		"stageName": utils.EscapeString(stageName),
 	})
 	if err != nil {
 		return errors.Trace(err)
@@ -92,10 +93,10 @@ FILE_FORMAT = (TYPE = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OP
 PATTERN = '.*{filePrefix}.*\.csv'
 ON_ERROR = CONTINUE;
 `, formatter.Named{
-		"reqId":       EscapeString(reqId.String()),
-		"targetTable": EscapeString(targetTable),
-		"stageName":   EscapeString(stageName),
-		"filePrefix":  EscapeString(regexp.QuoteMeta(filePrefix)),
+		"reqId":       utils.EscapeString(reqId.String()),
+		"targetTable": utils.EscapeString(targetTable),
+		"stageName":   utils.EscapeString(stageName),
+		"filePrefix":  utils.EscapeString(regexp.QuoteMeta(filePrefix)),
 	})
 	if err != nil {
 		return errors.Trace(err)

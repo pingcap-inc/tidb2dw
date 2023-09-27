@@ -39,10 +39,12 @@ func init() {
 		cmd.NewSnowflakeCmd(),
 		cmd.NewRedshiftCmd(),
 		cmd.NewBigQueryCmd(),
+		cmd.NewDatabricksCmd(),
 
 		// exporters
 		cmd.NewS3Cmd(),
 		cmd.NewGCSCmd(),
+		cmd.NewDatabricksCmd(),
 	)
 }
 

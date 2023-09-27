@@ -4,9 +4,10 @@ A tool to replicate data change from TiDB to Data Warehouses in real-time.
 
 ## Supported Data Warehouses
 
-- [Snowflake](https://github.com/pingcap-inc/tidb2dw/blob/main/docs/snowflake.md)
-- [Amazon Redshift](https://github.com/pingcap-inc/tidb2dw/blob/main/docs/redshift.md)
-- [Bigquery](https://github.com/pingcap-inc/tidb2dw/blob/main/docs/bigquery.md)
+- [Snowflake](/docs/snowflake.md)
+- [Amazon Redshift](/docs/redshift.md)
+- [Bigquery](/docs/bigquery.md)
+- [Databricks](/docs/databricks.md)
 
 ## Supported Storage Service
 
