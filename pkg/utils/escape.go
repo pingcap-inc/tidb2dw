@@ -1,4 +1,4 @@
-package snowsql
+package utils
 
 import (
 	"strconv"

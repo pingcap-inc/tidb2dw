@@ -38,6 +38,7 @@ func init() {
 		cmd.NewSnowflakeCmd(),
 		cmd.NewRedshiftCmd(),
 		cmd.NewBigQueryCmd(),
+		cmd.NewDatabricksCmd(),
 	)
 }
 
