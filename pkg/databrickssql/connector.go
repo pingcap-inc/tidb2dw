@@ -14,15 +14,13 @@ import (
 	"strings"
 )
 
-type (
-	DatabricksConnector struct {
-		db         *sql.DB
-		ctx        context.Context
-		storageURL string
-		credential string
-		columns    []cloudstorage.TableCol
-	}
-)
+type DatabricksConnector struct {
+	db         *sql.DB
+	ctx        context.Context
+	storageURL string
+	credential string
+	columns    []cloudstorage.TableCol
+}
 
 const incrementTablePrefix = "incr_"
 
