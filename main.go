@@ -44,7 +44,6 @@ func init() {
 		// exporters
 		cmd.NewS3Cmd(),
 		cmd.NewGCSCmd(),
-		cmd.NewDatabricksCmd(),
 	)
 }
 
