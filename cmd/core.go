@@ -148,40 +148,38 @@ func resolveAWSCredential(storagePath string) (*credentials.Value, error) {
 	return nil, errors.New("Not a s3 storage")
 }
 
-func Replicate(
+func Export(
 	tidbConfig *tidbsql.TiDBConfig,
 	tables []string,
 	storageURI *url.URL,
+	snapshotURI *url.URL,
+	incrementURI *url.URL,
 	snapshotConcurrency int,
 	cdcHost string,
 	cdcPort int,
 	cdcFlushInterval time.Duration,
 	cdcFileSize int64,
-	snapConnectorMap map[string]coreinterfaces.Connector,
-	increConnectorMap map[string]coreinterfaces.Connector,
 	mode RunMode,
-) error {
+) (
+	stage Stage,
+	err error) {
 	ctx := context.Background()
 	storage, err := putil.GetExternalStorageFromURI(ctx, storageURI.String())
 	if err != nil {
-		return errors.Trace(err)
+		return "", errors.Trace(err)
 	}
-	stage, err := checkStage(storage)
+	stage, err = checkStage(storage)
 	if err != nil {
-		return errors.Trace(err)
+		return "", errors.Trace(err)
 	}
-	log.Info("Start Replicate", zap.String("stage", string(stage)), zap.String("mode", RunModeIds[mode][0]))
+	log.Info("Start Export", zap.String("stage", string(stage)), zap.String("mode", RunModeIds[mode][0]))
 
 	startTSO := uint64(0)
 	if mode == RunModeFull {
 		startTSO, err = tidbsql.GetCurrentTSO(tidbConfig)
 		if err != nil {
-			return errors.Annotate(err, "Failed to get current TSO")
+			return "", errors.Annotate(err, "Failed to get current TSO")
 		}
-	}
-	snapshotURI, incrementURI, err := genSnapshotAndIncrementURIs(storageURI)
-	if err != nil {
-		return errors.Trace(err)
 	}
 
 	onSnapshotDumpProgress := func(dumpedRows, totalRows int64) {
@@ -193,19 +191,43 @@ func Replicate(
 		if mode != RunModeSnapshotOnly && mode != RunModeCloud {
 			cdcConnector, err := cdc.NewCDCConnector(cdcHost, cdcPort, tables, startTSO, incrementURI, cdcFlushInterval, cdcFileSize)
 			if err != nil {
-				return errors.Trace(err)
+				return "", errors.Trace(err)
 			}
 			if err = cdcConnector.CreateChangefeed(); err != nil {
-				return errors.Trace(err)
+				return "", errors.Trace(err)
 			}
 		}
 		fallthrough
 	case StageChangefeedCreated:
 		if mode != RunModeIncrementalOnly && mode != RunModeCloud {
 			if err := dumpling.RunDump(tidbConfig, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), tables, onSnapshotDumpProgress); err != nil {
-				return errors.Trace(err)
+				return "", errors.Trace(err)
 			}
 		}
+	}
+
+	return stage, nil
+}
+
+func Replicate(
+	tidbConfig *tidbsql.TiDBConfig,
+	tables []string,
+	storageURI *url.URL,
+	snapshotURI *url.URL,
+	incrementURI *url.URL,
+	snapshotConcurrency int,
+	cdcHost string,
+	cdcPort int,
+	cdcFlushInterval time.Duration,
+	cdcFileSize int64,
+	snapConnectorMap map[string]coreinterfaces.Connector,
+	increConnectorMap map[string]coreinterfaces.Connector,
+	mode RunMode,
+) error {
+	stage, err := Export(tidbConfig, tables, storageURI, snapshotURI, incrementURI,
+		snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, mode)
+	if err != nil {
+		return errors.Trace(err)
 	}
 
 	var wg sync.WaitGroup

@@ -9,6 +9,13 @@ A tool to replicate data change from TiDB to Data Warehouses in real-time.
 - [Bigquery](/docs/bigquery.md)
 - [Databricks](/docs/databricks.md)
 
+## Supported Storage Service
+
+You can also export data to cloud storage service only.
+
+- [AWS S3](https://github.com/pingcap-inc/tidb2dw/blob/main/docs/s3.md)
+- [Google Cloud Storage](https://github.com/pingcap-inc/tidb2dw/blob/main/docs/gcs.md)
+
 ## Download
 
 ```bash

@@ -35,10 +35,15 @@ func init() {
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version of tidb2dw")
 
 	rootCmd.AddCommand(
+		// replications
 		cmd.NewSnowflakeCmd(),
 		cmd.NewRedshiftCmd(),
 		cmd.NewBigQueryCmd(),
 		cmd.NewDatabricksCmd(),
+
+		// exporters
+		cmd.NewS3Cmd(),
+		cmd.NewGCSCmd(),
 	)
 }
 
