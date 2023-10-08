@@ -3,7 +3,6 @@ package metrics
 import (
 	"math"
 
-	"github.com/pingcap/tidb/util/promutil"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 )
@@ -13,54 +12,54 @@ const (
 )
 
 type Metrics struct {
-	tableNumGauge             prometheus.Gauge
-	snapshotTotalSizeCounter  *prometheus.CounterVec
-	snapshotLoadedSizeCounter *prometheus.CounterVec
-	incrementPeddingSizeGauge *prometheus.GaugeVec
-	incrementLoadedCounter    *prometheus.CounterVec
-	tableVersionsCounter      *prometheus.CounterVec
-	errorCounter              *prometheus.CounterVec
+	TableNumGauge             prometheus.Gauge
+	SnapshotTotalSizeCounter  *prometheus.CounterVec
+	SnapshotLoadedSizeCounter *prometheus.CounterVec
+	IncrementPeddingSizeGauge *prometheus.GaugeVec
+	IncrementLoadedCounter    *prometheus.CounterVec
+	TableVersionsCounter      *prometheus.CounterVec
+	ErrorCounter              *prometheus.CounterVec
 }
 
-func NewMetrics(f promutil.Factory) *Metrics {
+func NewMetrics() *Metrics {
 	m := Metrics{}
-	m.tableNumGauge = f.NewGauge(
+	m.TableNumGauge = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: Namespace,
 			Name:      "table_num",
 			Help:      "number of replication tables",
 		})
-	m.snapshotTotalSizeCounter = f.NewCounterVec(
+	m.SnapshotTotalSizeCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: Namespace,
 			Name:      "snapshot_total_size",
 			Help:      "total file size of snapshot",
 		}, []string{"table"})
-	m.snapshotLoadedSizeCounter = f.NewCounterVec(
+	m.SnapshotLoadedSizeCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: Namespace,
 			Name:      "snapshot_loaded_size",
 			Help:      "loaded file size of snapshot",
 		}, []string{"table"})
-	m.incrementPeddingSizeGauge = f.NewGaugeVec(
+	m.IncrementPeddingSizeGauge = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: Namespace,
 			Name:      "increment_pedding_size",
 			Help:      "pedding increment file size in object storage",
 		}, []string{"table"})
-	m.incrementLoadedCounter = f.NewCounterVec(
+	m.IncrementLoadedCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: Namespace,
 			Name:      "increment_loaded_count",
 			Help:      "loaded increment file size",
 		}, []string{"table"})
-	m.tableVersionsCounter = f.NewCounterVec(
+	m.TableVersionsCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: Namespace,
 			Name:      "table_versions",
 			Help:      "table version of each table",
 		}, []string{"table"})
-	m.errorCounter = f.NewCounterVec(
+	m.ErrorCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: Namespace,
 			Name:      "error_count",
@@ -69,28 +68,28 @@ func NewMetrics(f promutil.Factory) *Metrics {
 	return &m
 }
 
-func (m *Metrics) SetTableNum(v float64) {
-	m.tableNumGauge.Set(v)
+func (m *Metrics) SetTableNum(v int) {
+	m.TableNumGauge.Set(float64(v))
 }
 
-func (m *Metrics) RegisterTo(registry promutil.Registry) {
-	registry.MustRegister(m.tableNumGauge)
-	registry.MustRegister(m.snapshotTotalSizeCounter)
-	registry.MustRegister(m.snapshotLoadedSizeCounter)
-	registry.MustRegister(m.incrementPeddingSizeGauge)
-	registry.MustRegister(m.incrementLoadedCounter)
-	registry.MustRegister(m.tableVersionsCounter)
-	registry.MustRegister(m.errorCounter)
+func (m *Metrics) Register() {
+	prometheus.MustRegister(m.TableNumGauge)
+	prometheus.MustRegister(m.SnapshotTotalSizeCounter)
+	prometheus.MustRegister(m.SnapshotLoadedSizeCounter)
+	prometheus.MustRegister(m.IncrementPeddingSizeGauge)
+	prometheus.MustRegister(m.IncrementLoadedCounter)
+	prometheus.MustRegister(m.TableVersionsCounter)
+	prometheus.MustRegister(m.ErrorCounter)
 }
 
-func (m *Metrics) UnregisterFrom(registry promutil.Registry) {
-	registry.Unregister(m.tableNumGauge)
-	registry.Unregister(m.snapshotTotalSizeCounter)
-	registry.Unregister(m.snapshotLoadedSizeCounter)
-	registry.Unregister(m.incrementPeddingSizeGauge)
-	registry.Unregister(m.incrementLoadedCounter)
-	registry.Unregister(m.tableVersionsCounter)
-	registry.Unregister(m.errorCounter)
+func (m *Metrics) Unregister() {
+	prometheus.Unregister(m.TableNumGauge)
+	prometheus.Unregister(m.SnapshotTotalSizeCounter)
+	prometheus.Unregister(m.SnapshotLoadedSizeCounter)
+	prometheus.Unregister(m.IncrementPeddingSizeGauge)
+	prometheus.Unregister(m.IncrementLoadedCounter)
+	prometheus.Unregister(m.TableVersionsCounter)
+	prometheus.Unregister(m.ErrorCounter)
 }
 
 // ReadCounter reports the current value of the counter for a specific table.

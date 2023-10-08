@@ -4,14 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
+	"strings"
+
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"go.uber.org/zap"
-	"net/url"
-	"strings"
 )
 
 type DatabricksConnector struct {
@@ -68,20 +69,21 @@ func (dc *DatabricksConnector) InitSchema(columns []cloudstorage.TableCol) error
 
 func (dc *DatabricksConnector) CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {
 	dropTableSQL := GenDropTableSQL(sourceTable)
-	_, err := dc.db.Exec(dropTableSQL)
-	if err != nil {
+	if _, err := dc.db.Exec(dropTableSQL); err != nil {
 		return errors.Trace(err)
 	}
 
-	err = dc.setColumns(sourceDatabase, sourceTable, sourceTiDBConn)
+	if err := dc.setColumns(sourceDatabase, sourceTable, sourceTiDBConn); err != nil {
+		return errors.Trace(err)
+	}
+
 	createTableSQL, err := GenCreateTableSQL(sourceTable, dc.columns)
 	if err != nil {
 		return errors.Trace(err)
 	}
 	log.Info("Creating table in Databricks Warehouse", zap.String("query", createTableSQL))
 
-	_, err = dc.db.Exec(createTableSQL)
-	if err != nil {
+	if _, err := dc.db.Exec(createTableSQL); err != nil {
 		return errors.Trace(err)
 	}
 
@@ -89,11 +91,11 @@ func (dc *DatabricksConnector) CopyTableSchema(sourceDatabase string, sourceTabl
 	return nil
 }
 
-func (dc *DatabricksConnector) LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
-	if err := LoadCSVFromS3(dc.db, dc.columns, targetTable, dc.storageURL, filePrefix, dc.credential); err != nil {
+func (dc *DatabricksConnector) LoadSnapshot(targetTable, filePath string) error {
+	if err := LoadCSVFromS3(dc.db, dc.columns, targetTable, dc.storageURL, filePath, dc.credential); err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
+	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePath", filePath))
 	return nil
 }
 

@@ -2,7 +2,6 @@ package bigquerysql
 
 import (
 	"context"
-	"fmt"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/pingcap/errors"
@@ -18,7 +17,7 @@ func runQuery(ctx context.Context, client *bigquery.Client, query string) error 
 		return errors.Trace(err)
 	}
 	if status.Err() != nil {
-		return errors.Trace(fmt.Errorf("Bigquery job completed with error: %v", status.Err()))
+		return errors.Trace(errors.Errorf("Bigquery job completed with error: %v", status.Err()))
 	}
 	return nil
 }
@@ -49,7 +48,7 @@ func loadGCSFileToBigQuery(ctx context.Context, client *bigquery.Client, dataset
 		return errors.Trace(err)
 	}
 	if status.Err() != nil {
-		return errors.Trace(fmt.Errorf("Bigquery load snapshot job completed with error: %v", status.Err()))
+		return errors.Trace(errors.Errorf("Bigquery load snapshot job completed with error: %v", status.Err()))
 	}
 	return nil
 }

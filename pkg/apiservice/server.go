@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/pingcap-inc/tidb2dw/pkg/metrics"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/util/promutil"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
@@ -40,10 +39,8 @@ func New() *APIService {
 
 // RegisterMetric registers the metric handler.
 func RegisterMetric(router *gin.Engine) *metrics.Metrics {
-	metric := metrics.NewMetrics(promutil.NewDefaultFactory())
-	registry := promutil.NewDefaultRegistry()
-	metric.RegisterTo(registry)
-	metric.UnregisterFrom(registry)
+	metric := metrics.NewMetrics()
+	metric.Register()
 
 	router.GET("/metrics", func(c *gin.Context) {
 		promhttp.Handler().ServeHTTP(c.Writer, c.Request)
@@ -63,5 +60,6 @@ func (service *APIService) Serve(l net.Listener) {
 	s := <-quit
 	log.Info("Received exit signal, shutting down API service ...", zap.String("signal", s.String()))
 
+	service.Metric.Unregister()
 	_ = l.Close()
 }

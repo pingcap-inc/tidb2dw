@@ -29,10 +29,17 @@ LDFLAGS += -X "$(REPO)/version.GitHash=$(COMMIT)"
 LDFLAGS += -X "$(REPO)/version.GitRef=$(GITREF)"
 LDFLAGS += $(EXTRA_LDFLAGS)
 
+CGO_ENABLED ?= 0
+ifeq ($(shell uname -s),Darwin)
+	ifeq ($(shell uname -m),arm64)
+		CGO_ENABLED=1
+	endif
+endif
+
 .PHONY: build
 build:
 	@echo "Build using CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH)"
-	go build $(BUILD_FLAGS) -gcflags '$(GCFLAGS)' -ldflags '$(LDFLAGS)' -tags "$(BUILD_TAGS)" -o $(BUILD_OUTPUT) main.go
+	CGO_ENABLED=$(CGO_ENABLED) go build $(BUILD_FLAGS) -gcflags '$(GCFLAGS)' -ldflags '$(LDFLAGS)' -tags "$(BUILD_TAGS)" -o $(BUILD_OUTPUT) main.go
 
 .PHONY: fmt
 fmt:

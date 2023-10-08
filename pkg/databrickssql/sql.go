@@ -3,13 +3,14 @@ package databrickssql
 import (
 	"database/sql"
 	"fmt"
+	"strings"
+
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"gitlab.com/tymonx/go-formatter/formatter"
 	"go.uber.org/zap"
-	"strings"
 )
 
 func GenMergeIntoSQL(tableDef cloudstorage.TableDefinition, tableName, externalTableName string) string {
@@ -122,37 +123,30 @@ func GenCreateExternalTableSQL(tableName string, tableColumns []cloudstorage.Tab
 	), nil
 }
 
-func LoadCSVFromS3(db *sql.DB, columns []cloudstorage.TableCol, targetTable, storageUri, filePrefix string, credential string) error {
+func LoadCSVFromS3(db *sql.DB, columns []cloudstorage.TableCol, targetTable, storageUri, filePath string, credential string) error {
 	columnCastAndRenameSQL, err := buildColumnCastAndRename(columns)
 	if err != nil {
 		return errors.Trace(err)
 	}
 
-	patternSQL := `PATTERN = '*{filePrefix}*.csv'`
-	if filePrefix == "" {
-		// Without prefix, we need to specify the file name
-		patternSQL = ""
-	}
-
-	copyIntoSQL := fmt.Sprintf(`
+	copyIntoSQL := `
 	COPY INTO {targetTable}
 	FROM (
 		SELECT {castAndRenameColumns}
-		FROM '{storageUrl}' WITH (
+		FROM '{storageUrl}/{filePath}' WITH (
 		  CREDENTIAL {credential}
 		)
 	)
 	FILEFORMAT = CSV
-	%s
 	FORMAT_OPTIONS ('delimiter' = ',', 'inferSchema' = 'true')
 	COPY_OPTIONS ('mergeSchema' = 'true');
-	`, patternSQL)
+	`
 
 	sql, err := formatter.Format(copyIntoSQL, formatter.Named{
 		"targetTable":          utils.EscapeString(targetTable),
 		"castAndRenameColumns": columnCastAndRenameSQL,
 		"storageUrl":           utils.EscapeString(storageUri),
-		"filePrefix":           utils.EscapeString(filePrefix), // glob pattern // TODO: Verify
+		"filePath":             utils.EscapeString(filePath), // glob pattern // TODO: Verifyc
 		"credential":           fmt.Sprintf("`%s`", credential),
 	})
 	if err != nil {

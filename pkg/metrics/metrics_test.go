@@ -4,17 +4,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/pingcap/tidb/util/promutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 )
-
-func TestMetricsRegistration(t *testing.T) {
-	m := NewMetrics(promutil.NewDefaultFactory())
-	registry := promutil.NewDefaultRegistry()
-	m.RegisterTo(registry)
-	m.UnregisterFrom(registry)
-}
 
 func TestReadCounter(t *testing.T) {
 	counterVec := prometheus.NewCounterVec(prometheus.CounterOpts{
