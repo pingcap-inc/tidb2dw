@@ -225,7 +225,7 @@ func Replicate(
 	increConnectorMap map[string]coreinterfaces.Connector,
 	mode RunMode,
 ) error {
-	apiservice.GlobalInstance.Metric.SetTableNum(len(tables))
+	metrics.TableNumGauge.Add(float64(len(tables)))
 	stage, err := Export(tidbConfig, tables, storageURI, snapshotURI, incrementURI,
 		snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, mode)
 	if err != nil {
@@ -242,7 +242,7 @@ func Replicate(
 				apiservice.GlobalInstance.APIInfo.SetTableStage(table, apiservice.TableStageLoadingSnapshot)
 				if err = replicate.StartReplicateSnapshot(ctx, snapConnectorMap[table], table, tidbConfig, snapshotURI); err != nil {
 					apiservice.GlobalInstance.APIInfo.SetTableFatalError(table, err)
-					metrics.AddCounter(apiservice.GlobalInstance.Metric.ErrorCounter, 1, table)
+					metrics.AddCounter(metrics.ErrorCounter, 1, table)
 					return
 				}
 			}
@@ -250,7 +250,7 @@ func Replicate(
 				apiservice.GlobalInstance.APIInfo.SetTableStage(table, apiservice.TableStageLoadingIncremental)
 				if err = replicate.StartReplicateIncrement(ctx, increConnectorMap[table], table, incrementURI, cdcFlushInterval/5); err != nil {
 					apiservice.GlobalInstance.APIInfo.SetTableFatalError(table, err)
-					metrics.AddCounter(apiservice.GlobalInstance.Metric.ErrorCounter, 1, table)
+					metrics.AddCounter(metrics.ErrorCounter, 1, table)
 					return
 				}
 			}

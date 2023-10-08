@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pingcap-inc/tidb2dw/pkg/apiservice"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/metrics"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
@@ -222,7 +221,7 @@ func (sess *IncrementReplicateSession) getNewFiles() (map[cloudstorage.DmlPathKe
 			}
 			if !sess.CheckpointExists(path) {
 				sess.dataFileMap[path] = size
-				metrics.AddGauge(apiservice.GlobalInstance.Metric.IncrementPeddingSizeGauge, float64(size), sess.tableFQN)
+				metrics.AddGauge(metrics.IncrementPendingSizeGauge, float64(size), sess.tableFQN)
 			}
 		} else {
 			sess.logger.Debug("ignore handling file", zap.String("path", path))
@@ -291,8 +290,8 @@ func (sess *IncrementReplicateSession) syncExecDMLEvents(
 	}
 
 	// update metrics
-	metrics.SubGauge(apiservice.GlobalInstance.Metric.IncrementPeddingSizeGauge, float64(sess.dataFileMap[filePath]), sess.tableFQN)
-	metrics.AddCounter(apiservice.GlobalInstance.Metric.IncrementLoadedCounter, float64(sess.dataFileMap[filePath]), sess.tableFQN)
+	metrics.SubGauge(metrics.IncrementPendingSizeGauge, float64(sess.dataFileMap[filePath]), sess.tableFQN)
+	metrics.AddCounter(metrics.IncrementLoadedCounter, float64(sess.dataFileMap[filePath]), sess.tableFQN)
 	return nil
 }
 
@@ -312,7 +311,7 @@ func (sess *IncrementReplicateSession) syncExecDDLEvents(tableDef cloudstorage.T
 				"and restart the program",
 				sess.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
 	}
-	metrics.AddCounter(apiservice.GlobalInstance.Metric.TableVersionsCounter, float64(tableDef.TableVersion), fmt.Sprintf("%s/%s", sess.sourceDatabase, sess.sourceTable))
+	metrics.AddCounter(metrics.TableVersionsCounter, float64(tableDef.TableVersion), fmt.Sprintf("%s/%s", sess.sourceDatabase, sess.sourceTable))
 
 	// The following logic is used to handle pause and resume.
 	// Keep the current table definition file with len(query) == 0 and delete all the outdated files.

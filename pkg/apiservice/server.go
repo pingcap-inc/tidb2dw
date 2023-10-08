@@ -15,7 +15,6 @@ import (
 
 type APIService struct {
 	APIInfo *APIInfo
-	Metric  *metrics.Metrics
 	router  *gin.Engine
 }
 
@@ -28,24 +27,22 @@ func New() *APIService {
 	apiInfo := NewAPIInfo()
 	apiInfo.registerRouter(r)
 
-	metric := RegisterMetric(r)
+	RegisterMetric(r)
 
 	return &APIService{
 		APIInfo: apiInfo,
-		Metric:  metric,
 		router:  r,
 	}
 }
 
 // RegisterMetric registers the metric handler.
-func RegisterMetric(router *gin.Engine) *metrics.Metrics {
-	metric := metrics.NewMetrics()
-	metric.Register()
+func RegisterMetric(router *gin.Engine) {
+	metrics.InitMetrics()
+	metrics.Register()
 
 	router.GET("/metrics", func(c *gin.Context) {
 		promhttp.Handler().ServeHTTP(c.Writer, c.Request)
 	})
-	return metric
 }
 
 func (service *APIService) Serve(l net.Listener) {
@@ -60,6 +57,6 @@ func (service *APIService) Serve(l net.Listener) {
 	s := <-quit
 	log.Info("Received exit signal, shutting down API service ...", zap.String("signal", s.String()))
 
-	service.Metric.Unregister()
 	_ = l.Close()
+	metrics.Unregister()
 }

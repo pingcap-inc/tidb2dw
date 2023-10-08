@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pingcap-inc/tidb2dw/pkg/apiservice"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/metrics"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
@@ -100,13 +99,13 @@ func (sess *SnapshotReplicateSession) Run() error {
 	}); err != nil {
 		return errors.Trace(err)
 	}
-	metrics.AddCounter(apiservice.GlobalInstance.Metric.SnapshotTotalSizeCounter, float64(snapshotFileSize), tableFQN)
+	metrics.AddCounter(metrics.SnapshotTotalSizeCounter, float64(snapshotFileSize), tableFQN)
 	if err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
 		if strings.HasSuffix(path, CSVFileExtension) {
 			if err := sess.loadSnapshotDataIntoDataWarehouse(path); err != nil {
 				return errors.Annotate(err, "Failed to load snapshot data into data warehouse")
 			}
-			metrics.AddCounter(apiservice.GlobalInstance.Metric.SnapshotLoadedSizeCounter, float64(size), tableFQN)
+			metrics.AddCounter(metrics.SnapshotLoadedSizeCounter, float64(size), tableFQN)
 		}
 		return nil
 	}); err != nil {
