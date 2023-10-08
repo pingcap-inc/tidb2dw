@@ -11,7 +11,7 @@ A tool to replicate data change from TiDB to Data Warehouses in real-time.
 
 ## Supported Storage Service
 
-You can also export data to cloud object storage.
+You can also export data to cloud object storage only.
 
 - [AWS S3](https://github.com/pingcap-inc/tidb2dw/blob/main/docs/s3.md)
 - [Google Cloud Storage](https://github.com/pingcap-inc/tidb2dw/blob/main/docs/gcs.md)
