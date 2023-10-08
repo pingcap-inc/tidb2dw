@@ -31,9 +31,7 @@ LDFLAGS += $(EXTRA_LDFLAGS)
 
 CGO_ENABLED ?= 0
 ifeq ($(shell uname -s),Darwin)
-	ifeq ($(shell uname -m),arm64)
-		CGO_ENABLED=1
-	endif
+	CGO_ENABLED=1
 endif
 
 .PHONY: build
