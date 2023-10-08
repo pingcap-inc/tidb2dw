@@ -21,7 +21,7 @@ var (
 	ErrorCounter              *prometheus.CounterVec
 )
 
-func InitMetrics() {
+func init() {
 	TableNumGauge = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: Namespace,
@@ -64,6 +64,8 @@ func InitMetrics() {
 			Name:      "error_count",
 			Help:      "Total error count during replicating",
 		}, []string{"table"})
+
+	Register()
 }
 
 func Register() {
@@ -74,16 +76,6 @@ func Register() {
 	prometheus.MustRegister(IncrementLoadedCounter)
 	prometheus.MustRegister(TableVersionsCounter)
 	prometheus.MustRegister(ErrorCounter)
-}
-
-func Unregister() {
-	prometheus.Unregister(TableNumGauge)
-	prometheus.Unregister(SnapshotTotalSizeCounter)
-	prometheus.Unregister(SnapshotLoadedSizeCounter)
-	prometheus.Unregister(IncrementPendingSizeGauge)
-	prometheus.Unregister(IncrementLoadedCounter)
-	prometheus.Unregister(TableVersionsCounter)
-	prometheus.Unregister(ErrorCounter)
 }
 
 // ReadCounter reports the current value of the counter for a specific table.
