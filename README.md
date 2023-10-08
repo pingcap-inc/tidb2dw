@@ -11,7 +11,7 @@ A tool to replicate data change from TiDB to Data Warehouses in real-time.
 
 ## Supported Storage Service
 
-You can also export data to cloud storage service only.
+You can also export data to cloud object storage.
 
 - [AWS S3](https://github.com/pingcap-inc/tidb2dw/blob/main/docs/s3.md)
 - [Google Cloud Storage](https://github.com/pingcap-inc/tidb2dw/blob/main/docs/gcs.md)
@@ -20,13 +20,16 @@ You can also export data to cloud storage service only.
 
 ```bash
 # Linux AMD64:
-wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.2/tidb2dw-v0.0.2-linux-amd64
+wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.3/tidb2dw-v0.0.3-linux-amd64
 
 # Linux ARM64:
-wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.2/tidb2dw-v0.0.2-linux-arm64
+wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.3/tidb2dw-v0.0.3-linux-arm64
 
 # MacOS AMD64:
-wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.2/tidb2dw-v0.0.2-darwin-amd64
+wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.3/tidb2dw-v0.0.3-darwin-amd64
+
+# MacOS ARM64:
+wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.3/tidb2dw-v0.0.3-darwin-arm64
 ```
 
 ## Build from source
