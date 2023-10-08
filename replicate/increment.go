@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
+	"github.com/pingcap-inc/tidb2dw/pkg/metrics"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
@@ -40,10 +41,13 @@ type IncrementReplicateSession struct {
 	// tableDMLIdxMap maintains a map of <dmlPathKey, max file index>
 	tableDMLIdxMap map[cloudstorage.DmlPathKey]uint64
 	// tableDefMap maintains a map of <tableVersion, tableDef>
-	tableDefMap    map[uint64]*cloudstorage.TableDefinition
+	tableDefMap map[uint64]*cloudstorage.TableDefinition
+	// dataFileMap maintains a map of <dataFilePath, fileSize>
+	dataFileMap    map[string]int64
 	fileExtension  string
 	sourceDatabase string
 	sourceTable    string
+	tableFQN       string
 	storageURI     *url.URL
 	logger         *zap.Logger
 }
@@ -53,14 +57,14 @@ func NewIncrementReplicateSession(
 	dwConnector coreinterfaces.Connector,
 	fileExtension string,
 	storageURI *url.URL,
-	sourceDatabase string,
-	sourceTable string,
+	tableFQN string,
 	logger *zap.Logger,
 ) (*IncrementReplicateSession, error) {
 	externalStorage, err := putil.GetExternalStorageFromURI(ctx, storageURI.String())
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
 	return &IncrementReplicateSession{
 		dwConnector:     dwConnector,
 		externalStorage: externalStorage,
@@ -70,6 +74,7 @@ func NewIncrementReplicateSession(
 		fileExtension:   fileExtension,
 		sourceDatabase:  sourceDatabase,
 		sourceTable:     sourceTable,
+		tableFQN:        tableFQN,
 		storageURI:      storageURI,
 		logger:          logger,
 	}, nil
@@ -195,13 +200,12 @@ func diffDMLMaps(
 // getNewFiles returns newly created dml files in specific ranges
 func (sess *IncrementReplicateSession) getNewFiles() (map[cloudstorage.DmlPathKey]fileIndexRange, error) {
 	tableDMLMap := make(map[cloudstorage.DmlPathKey]fileIndexRange)
-	opt := &storage.WalkOption{SubDir: fmt.Sprintf("%s/%s", sess.sourceDatabase, sess.sourceTable)}
-
 	origDMLIdxMap := make(map[cloudstorage.DmlPathKey]uint64, len(sess.tableDMLIdxMap))
 	for k, v := range sess.tableDMLIdxMap {
 		origDMLIdxMap[k] = v
 	}
-
+	sess.dataFileMap = make(map[string]int64)
+	opt := &storage.WalkOption{SubDir: fmt.Sprintf("%s/%s", sess.sourceDatabase, sess.sourceTable)}
 	err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
 		if cloudstorage.IsSchemaFile(path) {
 			if err := sess.parseSchemaFilePath(path); err != nil {
@@ -215,16 +219,9 @@ func (sess *IncrementReplicateSession) getNewFiles() (map[cloudstorage.DmlPathKe
 				// skip handling this file
 				return nil
 			}
-			// generate manifest file for each dml file
-			manifestFileName := strings.TrimSuffix(path, sess.fileExtension) + ".manifest"
-			exist, err := sess.externalStorage.FileExists(sess.ctx, manifestFileName)
-			if err != nil {
-				return err
-			}
-			if !exist {
-				if err = sess.GenManifestFile(path, size); err != nil {
-					return nil
-				}
+			if !sess.CheckpointExists(path) {
+				sess.dataFileMap[path] = size
+				metrics.AddGauge(metrics.IncrementPendingSizeGauge, float64(size), sess.tableFQN)
 			}
 		} else {
 			sess.logger.Debug("ignore handling file", zap.String("path", path))
@@ -248,22 +245,31 @@ func (sess *IncrementReplicateSession) getTableDef(tableVersion uint64) cloudsto
 	}
 }
 
+func (sess *IncrementReplicateSession) CheckpointExists(filePath string) bool {
+	checkpointFileName := strings.TrimSuffix(filePath, sess.fileExtension) + ".checkpoint"
+	exist, err := sess.externalStorage.FileExists(sess.ctx, checkpointFileName)
+	if err != nil {
+		return false
+	}
+	return exist
+}
+
 func (sess *IncrementReplicateSession) syncExecDMLEvents(
 	tableDef cloudstorage.TableDefinition,
 	key cloudstorage.DmlPathKey,
 	fileIdx uint64,
 ) error {
 	filePath := key.GenerateDMLFilePath(fileIdx, sess.fileExtension, config.DefaultFileIndexWidth)
-	exist, err := sess.externalStorage.FileExists(sess.ctx, filePath)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	// We will remove the file after flush complete, so if the program restarts,
-	// the file range will start from 1 again, but the file may not exist.
-	// So we just ignore the non-exist file.
-	if !exist {
-		sess.logger.Warn("file not exists", zap.String("path", filePath))
+
+	// check if the file has been loaded into data warehouse
+	if sess.CheckpointExists(filePath) {
+		sess.logger.Info("file has been loaded into data warehouse, just ignore", zap.String("filePath", filePath))
 		return nil
+	}
+
+	// generate manifest file for each dml file
+	if err := sess.GenManifestFile(filePath, sess.dataFileMap[filePath]); err != nil {
+		return errors.Annotate(err, "failed to generate manifest file")
 	}
 
 	// merge file into data warehouse
@@ -271,16 +277,21 @@ func (sess *IncrementReplicateSession) syncExecDMLEvents(
 		return errors.Trace(err)
 	}
 
-	// delete file after merge complete in order to avoid duplicate merge when program restarts
-	if err = sess.externalStorage.DeleteFile(sess.ctx, filePath); err != nil {
-		return errors.Trace(err)
-	}
-	// delete manifest file after merge complete
-	manifestFilePath := strings.TrimSuffix(filePath, sess.fileExtension) + ".manifest"
-	if err = sess.externalStorage.DeleteFile(sess.ctx, manifestFilePath); err != nil {
+	// delete manifest file
+	manifestFileName := strings.TrimSuffix(filePath, sess.fileExtension) + ".manifest"
+	if err := sess.externalStorage.DeleteFile(sess.ctx, manifestFileName); err != nil {
 		return errors.Trace(err)
 	}
 
+	// upload a checkpoint file to indicate that the file has been loaded into data warehouse
+	checkpointFileName := strings.TrimSuffix(filePath, sess.fileExtension) + ".checkpoint"
+	if err := sess.externalStorage.WriteFile(sess.ctx, checkpointFileName, []byte{}); err != nil {
+		return errors.Trace(err)
+	}
+
+	// update metrics
+	metrics.SubGauge(metrics.IncrementPendingSizeGauge, float64(sess.dataFileMap[filePath]), sess.tableFQN)
+	metrics.AddCounter(metrics.IncrementLoadedCounter, float64(sess.dataFileMap[filePath]), sess.tableFQN)
 	return nil
 }
 
@@ -300,6 +311,7 @@ func (sess *IncrementReplicateSession) syncExecDDLEvents(tableDef cloudstorage.T
 				"and restart the program",
 				sess.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
 	}
+	metrics.AddCounter(metrics.TableVersionsCounter, float64(tableDef.TableVersion), fmt.Sprintf("%s/%s", sess.sourceDatabase, sess.sourceTable))
 
 	// The following logic is used to handle pause and resume.
 	// Keep the current table definition file with len(query) == 0 and delete all the outdated files.
@@ -411,8 +423,7 @@ func StartReplicateIncrement(
 	defer stop()
 
 	logger := log.L().With(zap.String("table", tableFQN))
-	sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
-	session, err := NewIncrementReplicateSession(ctx, dwConnector, fileExtension, storageURI, sourceDatabase, sourceTable, logger)
+	session, err := NewIncrementReplicateSession(ctx, dwConnector, fileExtension, storageURI, tableFQN, logger)
 	if err != nil {
 		logger.Error("error occurred while creating increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
 		return errors.Trace(err)

@@ -2,9 +2,10 @@ package databrickssql
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
-	"strings"
 )
 
 // TiDB2DatabricksTypeMap is a map from TiDB type to Databricks type.
@@ -46,7 +47,7 @@ func GetDatabricksTypeString(column cloudstorage.TableCol) (string, error) {
 		return fmt.Sprintf("%s(%s, %s)", TiDB2DatabricksTypeMap[tp], column.Precision, column.Scale), nil
 	default:
 		if databricksTp, exist := TiDB2DatabricksTypeMap[tp]; exist {
-			return fmt.Sprintf("%s", databricksTp), nil
+			return databricksTp, nil
 		} else {
 			return "", errors.Errorf("Unsupported data type: %s", column.Tp)
 		}

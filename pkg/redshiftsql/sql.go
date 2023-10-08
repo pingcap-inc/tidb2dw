@@ -4,8 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"strings"
+
+	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
@@ -29,16 +30,16 @@ func CreateSchema(db *sql.DB, schemaName string) error {
 
 // LoadSnapshotFromS3 redshift currently can not support ROWS_PRODUCED function
 // use csv file path for storageUri, like s3://tidbbucket/snapshot/stock.csv
-func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUri, filePrefix string, credential *credentials.Value, onSnapshotLoadProgress func(loadedRows int64)) error {
+func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUri, filePath string, credential *credentials.Value) error {
 	sql, err := formatter.Format(`
 	COPY {targetTable}
-	FROM '{storageUrl}/{filePrefix}'
+	FROM '{storageUrl}/{filePath}'
 	CREDENTIALS 'aws_access_key_id={accessId};aws_secret_access_key={accessKey}'
 	FORMAT AS CSV DELIMITER ',' QUOTE '"';
 	`, formatter.Named{
 		"targetTable": utils.EscapeString(targetTable),
 		"storageUrl":  utils.EscapeString(storageUri),
-		"filePrefix":  utils.EscapeString(filePrefix), // TODO: Verify
+		"filePath":    utils.EscapeString(filePath), // TODO: Verify
 		"accessId":    credential.AccessKeyID,
 		"accessKey":   credential.SecretAccessKey,
 	})

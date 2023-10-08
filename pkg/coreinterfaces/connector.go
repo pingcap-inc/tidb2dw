@@ -17,8 +17,8 @@ type Connector interface {
 	InitSchema(columns []cloudstorage.TableCol) error
 	// CopyTableSchema copies the table schema from the source database to the Data Warehouse
 	CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error
-	// LoadSnapshot loads the snapshot into the Data Warehouse
-	LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error
+	// LoadSnapshot loads the snapshot file into the Data Warehouse
+	LoadSnapshot(targetTable, filePath string) error
 	// ExecDDL executes the DDL statements in Data Warehouse
 	ExecDDL(tableDef cloudstorage.TableDefinition) error
 	// LoadIncrement loads the increment data into the Data Warehouse

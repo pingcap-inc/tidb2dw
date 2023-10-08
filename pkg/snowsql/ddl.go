@@ -2,7 +2,6 @@ package snowsql
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
@@ -99,14 +98,6 @@ func GenDDLViaColumnsDiff(prevColumns []cloudstorage.TableCol, curTableDef cloud
 	return ddls, nil
 }
 
-func getDefaultString(val interface{}) string {
-	_, err := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
-	if err != nil {
-		return fmt.Sprintf("'%v'", val) // FIXME: escape
-	}
-	return fmt.Sprintf("%v", val)
-}
-
 // GetSnowflakeColumnString returns a string describing the column in Snowflake, e.g.
 // "id INT NOT NULL DEFAULT '0'"
 // Refer to:
@@ -123,7 +114,7 @@ func GetSnowflakeColumnString(column cloudstorage.TableCol) (string, error) {
 		sb.WriteString(" NOT NULL")
 	}
 	if column.Default != nil {
-		sb.WriteString(fmt.Sprintf(` DEFAULT %s`, getDefaultString(column.Default)))
+		sb.WriteString(fmt.Sprintf(` DEFAULT %s`, GetDefaultString(column.Default)))
 	} else if column.Nullable == "true" {
 		sb.WriteString(" DEFAULT NULL")
 	}

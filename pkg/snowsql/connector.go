@@ -100,11 +100,11 @@ func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable
 	return nil
 }
 
-func (sc *SnowflakeConnector) LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
-	if err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, filePrefix, onSnapshotLoadProgress); err != nil {
+func (sc *SnowflakeConnector) LoadSnapshot(targetTable, filePath string) error {
+	if err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, filePath); err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
+	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePath))
 	return nil
 }
 

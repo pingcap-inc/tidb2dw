@@ -98,12 +98,11 @@ func (rc *RedshiftConnector) CopyTableSchema(sourceDatabase string, sourceTable 
 	return nil
 }
 
-// filePrefix should be
-func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
-	if err := LoadSnapshotFromS3(rc.db, targetTable, rc.storageUri.String(), filePrefix, rc.s3Credentials, onSnapshotLoadProgress); err != nil {
+func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePath string) error {
+	if err := LoadSnapshotFromS3(rc.db, targetTable, rc.storageUri.String(), filePath, rc.s3Credentials); err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
+	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePath", filePath))
 	return nil
 }
 

@@ -4,9 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"net/url"
 	"strings"
+
+	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
@@ -102,14 +103,13 @@ func (bc *BigQueryConnector) CopyTableSchema(sourceDatabase string, sourceTable 
 	return nil
 }
 
-func (bc *BigQueryConnector) LoadSnapshot(targetTable, filePrefix string, onSnapshotLoadProgress func(loadedRows int64)) error {
-	gcsFilePath := fmt.Sprintf("%s/%s*.csv", bc.storageURL, filePrefix)
+func (bc *BigQueryConnector) LoadSnapshot(targetTable, filePath string) error {
 	// FIXME: if source table is empty, bigquery will fail to load (file not found)
-	err := loadGCSFileToBigQuery(bc.ctx, bc.bqClient, bc.datasetID, bc.tableID, gcsFilePath)
+	err := loadGCSFileToBigQuery(bc.ctx, bc.bqClient, bc.datasetID, bc.tableID, filePath)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePrefix))
+	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePath", filePath))
 	return nil
 }
 

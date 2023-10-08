@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/pingcap/log"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -25,10 +26,19 @@ func New() *APIService {
 	apiInfo := NewAPIInfo()
 	apiInfo.registerRouter(r)
 
+	RegisterMetric(r)
+
 	return &APIService{
 		APIInfo: apiInfo,
 		router:  r,
 	}
+}
+
+// RegisterMetric registers the metric handler.
+func RegisterMetric(router *gin.Engine) {
+	router.GET("/metrics", func(c *gin.Context) {
+		promhttp.Handler().ServeHTTP(c.Writer, c.Request)
+	})
 }
 
 func (service *APIService) Serve(l net.Listener) {

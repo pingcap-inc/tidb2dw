@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
+	"github.com/pingcap-inc/tidb2dw/pkg/metrics"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
@@ -25,8 +27,6 @@ type SnapshotReplicateSession struct {
 
 	SourceDatabase string
 	SourceTable    string
-
-	OnSnapshotLoadProgress func(loadedRows int64)
 
 	StorageWorkspaceUri url.URL
 	externalStorage     storage.ExternalStorage
@@ -53,20 +53,13 @@ func NewSnapshotReplicateSession(
 		logger:              logger,
 	}
 	sess.logger.Info("Creating replicate session",
-		zap.String("storage", sess.StorageWorkspaceUri.String()),
-		zap.String("source", fmt.Sprintf("%s.%s", sourceDatabase, sourceTable)))
+		zap.String("storage", sess.StorageWorkspaceUri.Path))
 	{
 		db, err := tidbConfig.OpenDB()
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
 		sess.TiDBPool = db
-	}
-	{
-		// Setup progress reporters
-		sess.OnSnapshotLoadProgress = func(loadedRows int64) {
-			sess.logger.Info("Snapshot load progress", zap.Int64("loadedRows", loadedRows))
-		}
 	}
 	{
 		externalStorage, err := putil.GetExternalStorageFromURI(sess.ctx, storageUri.String())
@@ -95,10 +88,31 @@ func (sess *SnapshotReplicateSession) Run() error {
 	}
 
 	startTime := time.Now()
-	if err := sess.loadSnapshotDataIntoDataWarehouse(); err != nil {
-		return errors.Annotate(err, "Failed to load snapshot data into data warehouse")
+	var snapshotFileSize int64
+	tableFQN := fmt.Sprintf("%s.%s", sess.SourceDatabase, sess.SourceTable)
+	opt := &storage.WalkOption{}
+	if err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
+		if strings.HasSuffix(path, CSVFileExtension) {
+			snapshotFileSize += size
+		}
+		return nil
+	}); err != nil {
+		return errors.Trace(err)
+	}
+	metrics.AddCounter(metrics.SnapshotTotalSizeCounter, float64(snapshotFileSize), tableFQN)
+	if err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
+		if strings.HasSuffix(path, CSVFileExtension) {
+			if err := sess.loadSnapshotDataIntoDataWarehouse(path); err != nil {
+				return errors.Annotate(err, "Failed to load snapshot data into data warehouse")
+			}
+			metrics.AddCounter(metrics.SnapshotLoadedSizeCounter, float64(size), tableFQN)
+		}
+		return nil
+	}); err != nil {
+		return errors.Trace(err)
 	}
 	endTime := time.Now()
+	sess.logger.Info("Successfully load snapshot data into data warehouse", zap.Int64("size", snapshotFileSize), zap.Duration("cost", endTime.Sub(startTime)))
 
 	// Write load info to workspace to record the status of load,
 	// loadinfo exists means the data has been all loaded into data warehouse.
@@ -110,9 +124,8 @@ func (sess *SnapshotReplicateSession) Run() error {
 	return nil
 }
 
-func (sess *SnapshotReplicateSession) loadSnapshotDataIntoDataWarehouse() error {
-	dumpFilePrefix := fmt.Sprintf("%s.%s.", sess.SourceDatabase, sess.SourceTable)
-	if err := sess.DataWarehousePool.LoadSnapshot(sess.SourceTable, dumpFilePrefix, sess.OnSnapshotLoadProgress); err != nil {
+func (sess *SnapshotReplicateSession) loadSnapshotDataIntoDataWarehouse(filePath string) error {
+	if err := sess.DataWarehousePool.LoadSnapshot(sess.SourceTable, filePath); err != nil {
 		return errors.Trace(err)
 	}
 	return nil
@@ -137,6 +150,5 @@ func StartReplicateSnapshot(
 		logger.Error("Failed to load snapshot", zap.Error(err), zap.String("tableFQN", tableFQN))
 		return errors.Trace(err)
 	}
-	logger.Info("Successfully load snapshot", zap.String("tableFQN", tableFQN))
 	return nil
 }
