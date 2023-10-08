@@ -57,6 +57,6 @@ func (service *APIService) Serve(l net.Listener) {
 	s := <-quit
 	log.Info("Received exit signal, shutting down API service ...", zap.String("signal", s.String()))
 
-	_ = l.Close()
 	metrics.Unregister()
+	_ = l.Close()
 }
