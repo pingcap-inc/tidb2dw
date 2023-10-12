@@ -49,7 +49,7 @@ func init() {
 	IncrementLoadedCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: Namespace,
-			Name:      "increment_loaded_count",
+			Name:      "increment_loaded_size",
 			Help:      "loaded increment file size",
 		}, []string{"table"})
 	TableVersionsCounter = prometheus.NewCounterVec(
