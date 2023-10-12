@@ -43,7 +43,7 @@ func init() {
 	IncrementPendingSizeGauge = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: Namespace,
-			Name:      "increment_pedding_size",
+			Name:      "increment_pending_size",
 			Help:      "pedding increment file size in object storage",
 		}, []string{"table"})
 	IncrementLoadedCounter = prometheus.NewCounterVec(
