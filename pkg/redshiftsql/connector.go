@@ -21,19 +21,17 @@ type RedshiftConnector struct {
 	tableName     string
 	storageUri    *url.URL
 	s3Credentials *credentials.Value
-	iamRole       string
 	columns       []cloudstorage.TableCol
 }
 
-func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName, iamRole string, storageURI *url.URL, s3Credentials *credentials.Value) (*RedshiftConnector, error) {
+func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName string, storageURI *url.URL, s3Credentials *credentials.Value) (*RedshiftConnector, error) {
 	var err error
 	// create schema
 	err = CreateSchema(db, schemaName)
 	if err != nil {
 		return nil, errors.Annotate(err, "Failed to create schema")
 	}
-	// need iam role to create external schema
-	if err = CreateExternalSchema(db, fmt.Sprintf("%s_schema", externalTableName), fmt.Sprintf("%s_database", externalTableName), iamRole); err != nil {
+	if err = CreateExternalSchema(db, fmt.Sprintf("%s_schema", externalTableName), fmt.Sprintf("%s_database", externalTableName)); err != nil {
 		return nil, errors.Annotate(err, "Failed to create external table")
 	}
 	return &RedshiftConnector{
@@ -42,7 +40,6 @@ func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName, iamRole str
 		tableName:     externalTableName,
 		storageUri:    storageURI,
 		s3Credentials: s3Credentials,
-		iamRole:       iamRole,
 		columns:       nil,
 	}, nil
 }
@@ -99,7 +96,8 @@ func (rc *RedshiftConnector) CopyTableSchema(sourceDatabase string, sourceTable 
 }
 
 func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePath string) error {
-	if err := LoadSnapshotFromS3(rc.db, targetTable, rc.storageUri.String(), filePath, rc.s3Credentials); err != nil {
+	filePath = fmt.Sprintf("%s://%s%s/%s", rc.storageUri.Scheme, rc.storageUri.Host, rc.storageUri.Path, filePath)
+	if err := LoadSnapshotFromS3(rc.db, targetTable, filePath, rc.s3Credentials); err != nil {
 		return errors.Trace(err)
 	}
 	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePath", filePath))
@@ -137,9 +135,7 @@ func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 }
 
 func (rc *RedshiftConnector) Close() {
-	// drop schema
-	schemaName := fmt.Sprintf("%s_schema", rc.tableName)
-	if err := DropExternalSchema(rc.db, schemaName); err != nil {
+	if err := DropExternalSchema(rc.db, rc.tableName); err != nil {
 		log.Error("fail to drop schema", zap.Error(err))
 	}
 	rc.db.Close()

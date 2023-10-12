@@ -16,7 +16,6 @@ type RedshiftConfig struct {
 	Pass     string
 	Database string
 	Schema   string
-	Role     string
 }
 
 // Open a connection to Redshift.

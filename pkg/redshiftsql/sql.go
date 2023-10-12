@@ -30,15 +30,14 @@ func CreateSchema(db *sql.DB, schemaName string) error {
 
 // LoadSnapshotFromS3 redshift currently can not support ROWS_PRODUCED function
 // use csv file path for storageUri, like s3://tidbbucket/snapshot/stock.csv
-func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUri, filePath string, credential *credentials.Value) error {
+func LoadSnapshotFromS3(db *sql.DB, targetTable, filePath string, credential *credentials.Value) error {
 	sql, err := formatter.Format(`
 	COPY {targetTable}
-	FROM '{storageUrl}/{filePath}'
+	FROM '{filePath}'
 	CREDENTIALS 'aws_access_key_id={accessId};aws_secret_access_key={accessKey}'
 	FORMAT AS CSV DELIMITER ',' QUOTE '"';
 	`, formatter.Named{
 		"targetTable": utils.EscapeString(targetTable),
-		"storageUrl":  utils.EscapeString(storageUri),
 		"filePath":    utils.EscapeString(filePath), // TODO: Verify
 		"accessId":    credential.AccessKeyID,
 		"accessKey":   credential.SecretAccessKey,
@@ -46,7 +45,7 @@ func LoadSnapshotFromS3(db *sql.DB, targetTable, storageUri, filePath string, cr
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Loading snapshot data from external table", zap.String("query", sql))
+	log.Info("Loading snapshot data from external table", zap.String("filepath", filePath), zap.String("table", targetTable))
 	_, err = db.Exec(sql)
 	return err
 }
@@ -100,17 +99,16 @@ func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, redC
 	return err
 }
 
-func CreateExternalSchema(db *sql.DB, schemaName, databaseName, iamRole string) error {
+func CreateExternalSchema(db *sql.DB, schemaName, databaseName string) error {
 	sql, err := formatter.Format(`
 	CREATE EXTERNAL SCHEMA IF NOT EXISTS {schemaName}
 	FROM DATA CATALOG
 	DATABASE '{databaseName}'
-	IAM_ROLE '{iamRole}'
+	IAM_ROLE default
 	CREATE EXTERNAL DATABASE IF NOT EXISTS;
 	`, formatter.Named{
 		"schemaName":   utils.EscapeString(schemaName),
 		"databaseName": utils.EscapeString(databaseName),
-		"iamRole":      utils.EscapeString(iamRole),
 	})
 	if err != nil {
 		return errors.Trace(err)
@@ -247,8 +245,10 @@ func DeleteTable(db *sql.DB, tableName, schemaName string) error {
 	return err
 }
 
-func DropExternalSchema(db *sql.DB, schemaName string) error {
-	sql := fmt.Sprintf("DROP SCHEMA IF EXISTS %s DROP EXTERNAL DATABASE CASCADE", schemaName)
+// DropExternalSchema drop the external database associated with the external schema
+func DropExternalSchema(db *sql.DB, tableName string) error {
+	schemaName := fmt.Sprintf("%s_schema", tableName)
+	sql := fmt.Sprintf("DROP SCHEMA IF EXISTS %s", schemaName)
 	_, err := db.Exec(sql)
 	return err
 }

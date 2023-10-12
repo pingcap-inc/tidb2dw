@@ -83,8 +83,7 @@ func NewRedshiftCmd() *cobra.Command {
 			snapConnector, err := redshiftsql.NewRedshiftConnector(
 				db,
 				redshiftConfigFromCli.Schema,
-				fmt.Sprintf("snapshot_external_%s", sourceTable),
-				redshiftConfigFromCli.Role,
+				fmt.Sprintf("redshift_snapshot_external_%s", sourceTable),
 				snapshotURI,
 				credValue,
 			)
@@ -99,8 +98,7 @@ func NewRedshiftCmd() *cobra.Command {
 			increConnector, err := redshiftsql.NewRedshiftConnector(
 				db,
 				redshiftConfigFromCli.Schema,
-				fmt.Sprintf("increment_external_%s", sourceTable),
-				redshiftConfigFromCli.Role,
+				fmt.Sprintf("redshift_increment_external_%s", sourceTable),
 				incrementURI,
 				credValue,
 			)
@@ -145,7 +143,6 @@ func NewRedshiftCmd() *cobra.Command {
 	cmd.Flags().StringVar(&redshiftConfigFromCli.Pass, "redshift.pass", "", "redshift password")
 	cmd.Flags().StringVar(&redshiftConfigFromCli.Database, "redshift.database", "", "redshift database")
 	cmd.Flags().StringVar(&redshiftConfigFromCli.Schema, "redshift.schema", "", "redshift schema")
-	cmd.Flags().StringVar(&redshiftConfigFromCli.Role, "redshift.role", "", "iam role for redshift")
 	cmd.Flags().StringArrayVarP(&tables, "table", "t", []string{}, "tables full qualified name, e.g. -t <db1>.<table1> -t <db2>.<table2>")
 	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
 	cmd.Flags().StringVarP(&storagePath, "storage", "s", "", "storage path: s3://<bucket>/<path> or gcs://<bucket>/<path>")
