@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
@@ -103,16 +104,28 @@ func (sess *SnapshotReplicateSession) Run() error {
 		return errors.Trace(err)
 	}
 	metrics.AddCounter(metrics.SnapshotTotalSizeCounter, float64(snapshotFileSize), tableFQN)
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
 	if err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
 		if strings.HasSuffix(path, CSVFileExtension) {
-			if err := sess.loadSnapshotDataIntoDataWarehouse(path); err != nil {
-				return errors.Annotate(err, "Failed to load snapshot data into data warehouse")
-			}
-			metrics.AddCounter(metrics.SnapshotLoadedSizeCounter, float64(size), tableFQN)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := sess.loadSnapshotDataIntoDataWarehouse(path); err != nil {
+					sess.logger.Error("Failed to load snapshot data into data warehouse", zap.Error(err), zap.String("path", path))
+					errCh <- errors.Annotate(err, "Failed to load snapshot data into data warehouse")
+					return
+				}
+				metrics.AddCounter(metrics.SnapshotLoadedSizeCounter, float64(size), tableFQN)
+			}()
 		}
 		return nil
 	}); err != nil {
 		return errors.Trace(err)
+	}
+	wg.Wait()
+	if len(errCh) > 0 {
+		return errors.Trace(<-errCh)
 	}
 	endTime := time.Now()
 	sess.logger.Info("Successfully load snapshot data into data warehouse", zap.Int64("size", snapshotFileSize), zap.Duration("cost", endTime.Sub(startTime)))
