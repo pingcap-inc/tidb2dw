@@ -50,13 +50,6 @@ func LoadSnapshotFromS3(db *sql.DB, targetTable, filePath string, credential *cr
 	return err
 }
 
-func DropTable(sourceTable string, db *sql.DB) error {
-	sql := fmt.Sprintf("DROP TABLE IF EXISTS %s", sourceTable)
-	log.Info("Dropping table in Redshift if exists", zap.String("query", sql))
-	_, err := db.Exec(sql)
-	return err
-}
-
 func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, redConn *sql.DB) error {
 	tableColumns, err := tidbsql.GetTiDBTableColumn(sourceTiDBConn, sourceDatabase, sourceTable)
 	if err != nil {
@@ -238,8 +231,13 @@ func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTabl
 	return err
 }
 
-func DeleteTable(db *sql.DB, tableName, schemaName string) error {
-	sql := fmt.Sprintf("DROP TABLE %s.%s", tableName, schemaName)
+func DropTable(db *sql.DB, tableName, schemaName string) error {
+	var sql string
+	if schemaName == "" {
+		sql = fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName)
+	} else {
+		sql = fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", schemaName, tableName)
+	}
 	log.Info("delete table", zap.String("query", sql))
 	_, err := db.Exec(sql)
 	return err

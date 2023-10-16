@@ -83,7 +83,7 @@ func (rc *RedshiftConnector) ExecDDL(tableDef cloudstorage.TableDefinition) erro
 }
 
 func (rc *RedshiftConnector) CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {
-	err := DropTable(sourceTable, rc.db)
+	err := DropTable(rc.db, sourceTable, "")
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -110,7 +110,12 @@ func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 	externalTableSchema := fmt.Sprintf("%s_schema", rc.tableName)
 	fileSuffix := filepath.Ext(filePath)
 	manifestFilePath := fmt.Sprintf("%s://%s%s/%s.manifest", uri.Scheme, uri.Host, uri.Path, strings.TrimSuffix(filePath, fileSuffix))
-	err := CreateExternalTable(rc.db, tableDef.Columns, externalTableName, externalTableSchema, manifestFilePath)
+	// drop external table if exists
+	err := DropTable(rc.db, externalTableName, externalTableSchema)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	err = CreateExternalTable(rc.db, tableDef.Columns, externalTableName, externalTableSchema, manifestFilePath)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -126,7 +131,7 @@ func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 		return errors.Trace(err)
 	}
 
-	err = DeleteTable(rc.db, externalTableSchema, externalTableName)
+	err = DropTable(rc.db, externalTableName, externalTableSchema)
 	if err != nil {
 		return errors.Trace(err)
 	}
