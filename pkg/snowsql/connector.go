@@ -104,7 +104,7 @@ func (sc *SnowflakeConnector) LoadSnapshot(targetTable, filePath string) error {
 	if err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, filePath); err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePrefix", filePath))
+	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePath", filePath))
 	return nil
 }
 

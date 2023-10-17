@@ -35,6 +35,8 @@ func buildDumperConfig(
 	conf.CsvDelimiter = "\""
 	conf.EscapeBackslash = true
 	conf.TransactionalConsistency = true
+	// pass any positive integer to `Rows` enable concurrent dumping
+	conf.Rows = 1
 	conf.OutputDirPath = storageURI.String()
 	if snapshotTSO != "0" {
 		conf.Snapshot = snapshotTSO

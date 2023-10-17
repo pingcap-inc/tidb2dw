@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
@@ -92,27 +93,45 @@ func (sess *SnapshotReplicateSession) Run() error {
 
 	startTime := time.Now()
 	var snapshotFileSize int64
+	var fileCount int64
 	tableFQN := fmt.Sprintf("%s.%s", sess.SourceDatabase, sess.SourceTable)
 	opt := &storage.WalkOption{}
 	if err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
 		if strings.HasSuffix(path, CSVFileExtension) {
 			snapshotFileSize += size
+			fileCount++
 		}
 		return nil
 	}); err != nil {
 		return errors.Trace(err)
 	}
 	metrics.AddCounter(metrics.SnapshotTotalSizeCounter, float64(snapshotFileSize), tableFQN)
+	errFileCh := make(chan string, fileCount)
+	var wg sync.WaitGroup
 	if err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
 		if strings.HasSuffix(path, CSVFileExtension) {
-			if err := sess.loadSnapshotDataIntoDataWarehouse(path); err != nil {
-				return errors.Annotate(err, "Failed to load snapshot data into data warehouse")
-			}
-			metrics.AddCounter(metrics.SnapshotLoadedSizeCounter, float64(size), tableFQN)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := sess.loadSnapshotDataIntoDataWarehouse(path); err != nil {
+					sess.logger.Error("Failed to load snapshot data into data warehouse", zap.Error(err), zap.String("path", path))
+					errFileCh <- path
+					return
+				}
+				metrics.AddCounter(metrics.SnapshotLoadedSizeCounter, float64(size), tableFQN)
+			}()
 		}
 		return nil
 	}); err != nil {
 		return errors.Trace(err)
+	}
+	wg.Wait()
+	errFileList := make([]string, 0, len(errFileCh))
+	for len(errFileCh) > 0 {
+		errFileList = append(errFileList, <-errFileCh)
+	}
+	if len(errFileList) > 0 {
+		return errors.Errorf("Failed to load snapshot data into data warehouse, error files: %v", errFileList)
 	}
 	endTime := time.Now()
 	sess.logger.Info("Successfully load snapshot data into data warehouse", zap.Int64("size", snapshotFileSize), zap.Duration("cost", endTime.Sub(startTime)))
@@ -145,12 +164,12 @@ func StartReplicateSnapshot(
 	sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
 	session, err := NewSnapshotReplicateSession(ctx, dwConnector, tidbConfig, sourceDatabase, sourceTable, storageUri, logger)
 	if err != nil {
-		logger.Error("Failed to create snapshot replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+		logger.Error("Failed to create snapshot replicate session", zap.Error(err))
 		return errors.Trace(err)
 	}
 	defer session.Close()
 	if err := session.Run(); err != nil {
-		logger.Error("Failed to load snapshot", zap.Error(err), zap.String("tableFQN", tableFQN))
+		logger.Error("Failed to load snapshot", zap.Error(err))
 		return errors.Trace(err)
 	}
 	return nil
