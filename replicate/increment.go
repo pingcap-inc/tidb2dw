@@ -422,15 +422,17 @@ func StartReplicateIncrement(
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// init metric IncrementPendingSizeGauge
+	metrics.AddGauge(metrics.IncrementPendingSizeGauge, 0, tableFQN)
 	logger := log.L().With(zap.String("table", tableFQN))
 	session, err := NewIncrementReplicateSession(ctx, dwConnector, fileExtension, storageURI, tableFQN, logger)
 	if err != nil {
-		logger.Error("error occurred while creating increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+		logger.Error("error occurred while creating increment replicate session", zap.Error(err))
 		return errors.Trace(err)
 	}
 	defer session.Close()
 	if err = session.Run(flushInterval); err != nil {
-		logger.Error("error occurred while running increment replicate session", zap.Error(err), zap.String("tableFQN", tableFQN))
+		logger.Error("error occurred while running increment replicate session", zap.Error(err))
 		return errors.Trace(err)
 	}
 	return nil
