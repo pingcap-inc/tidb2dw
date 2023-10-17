@@ -106,7 +106,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 		return errors.Trace(err)
 	}
 	metrics.AddCounter(metrics.SnapshotTotalSizeCounter, float64(snapshotFileSize), tableFQN)
-	errCh := make(chan error, fileCount)
+	errFileCh := make(chan string, fileCount)
 	var wg sync.WaitGroup
 	if err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
 		if strings.HasSuffix(path, CSVFileExtension) {
@@ -115,7 +115,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 				defer wg.Done()
 				if err := sess.loadSnapshotDataIntoDataWarehouse(path); err != nil {
 					sess.logger.Error("Failed to load snapshot data into data warehouse", zap.Error(err), zap.String("path", path))
-					errCh <- errors.Annotate(err, "Failed to load snapshot data into data warehouse")
+					errFileCh <- path
 					return
 				}
 				metrics.AddCounter(metrics.SnapshotLoadedSizeCounter, float64(size), tableFQN)
@@ -126,8 +126,12 @@ func (sess *SnapshotReplicateSession) Run() error {
 		return errors.Trace(err)
 	}
 	wg.Wait()
-	if len(errCh) > 0 {
-		return errors.Trace(<-errCh)
+	errFileList := make([]string, 0, len(errFileCh))
+	for len(errFileCh) > 0 {
+		errFileList = append(errFileList, <-errFileCh)
+	}
+	if len(errFileList) > 0 {
+		return errors.Errorf("Failed to load snapshot data into data warehouse, error files: %v", errFileList)
 	}
 	endTime := time.Now()
 	sess.logger.Info("Successfully load snapshot data into data warehouse", zap.Int64("size", snapshotFileSize), zap.Duration("cost", endTime.Sub(startTime)))
