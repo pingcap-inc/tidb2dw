@@ -12,13 +12,13 @@ const (
 )
 
 var (
-	TableNumGauge             prometheus.Gauge
-	SnapshotTotalSizeCounter  *prometheus.CounterVec
-	SnapshotLoadedSizeCounter *prometheus.CounterVec
-	IncrementPendingSizeGauge *prometheus.GaugeVec
-	IncrementLoadedCounter    *prometheus.CounterVec
-	TableVersionsCounter      *prometheus.CounterVec
-	ErrorCounter              *prometheus.CounterVec
+	TableNumGauge              prometheus.Gauge
+	SnapshotTotalSizeCounter   *prometheus.CounterVec
+	SnapshotLoadedSizeCounter  *prometheus.CounterVec
+	IncrementPendingSizeGauge  *prometheus.GaugeVec
+	IncrementLoadedSizeCounter *prometheus.CounterVec
+	TableVersionsCounter       *prometheus.CounterVec
+	ErrorCounter               *prometheus.CounterVec
 )
 
 func init() {
@@ -46,7 +46,7 @@ func init() {
 			Name:      "increment_pending_size",
 			Help:      "pedding increment file size in object storage",
 		}, []string{"table"})
-	IncrementLoadedCounter = prometheus.NewCounterVec(
+	IncrementLoadedSizeCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: Namespace,
 			Name:      "increment_loaded_size",
@@ -73,7 +73,7 @@ func Register() {
 	prometheus.MustRegister(SnapshotTotalSizeCounter)
 	prometheus.MustRegister(SnapshotLoadedSizeCounter)
 	prometheus.MustRegister(IncrementPendingSizeGauge)
-	prometheus.MustRegister(IncrementLoadedCounter)
+	prometheus.MustRegister(IncrementLoadedSizeCounter)
 	prometheus.MustRegister(TableVersionsCounter)
 	prometheus.MustRegister(ErrorCounter)
 }

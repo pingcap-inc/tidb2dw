@@ -291,7 +291,7 @@ func (sess *IncrementReplicateSession) syncExecDMLEvents(
 
 	// update metrics
 	metrics.SubGauge(metrics.IncrementPendingSizeGauge, float64(sess.dataFileMap[filePath]), sess.tableFQN)
-	metrics.AddCounter(metrics.IncrementLoadedCounter, float64(sess.dataFileMap[filePath]), sess.tableFQN)
+	metrics.AddCounter(metrics.IncrementLoadedSizeCounter, float64(sess.dataFileMap[filePath]), sess.tableFQN)
 	return nil
 }
 
