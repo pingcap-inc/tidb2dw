@@ -87,12 +87,7 @@ func (rc *RedshiftConnector) CopyTableSchema(sourceDatabase string, sourceTable 
 	if err != nil {
 		return errors.Trace(err)
 	}
-	err = CreateTable(sourceDatabase, sourceTable, sourceTiDBConn, rc.db)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	log.Info("Successfully copying table scheme", zap.String("database", sourceDatabase), zap.String("table", sourceTable))
-	return nil
+	return CreateTable(sourceDatabase, sourceTable, sourceTiDBConn, rc.db)
 }
 
 func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePath string) error {
@@ -100,7 +95,6 @@ func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePath string) error {
 	if err := LoadSnapshotFromS3(rc.db, targetTable, filePath, rc.s3Credentials); err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePath", filePath))
 	return nil
 }
 

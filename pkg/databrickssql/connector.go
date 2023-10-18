@@ -83,19 +83,14 @@ func (dc *DatabricksConnector) CopyTableSchema(sourceDatabase string, sourceTabl
 	}
 	log.Info("Creating table in Databricks Warehouse", zap.String("query", createTableSQL))
 
-	if _, err := dc.db.Exec(createTableSQL); err != nil {
-		return errors.Trace(err)
-	}
-
-	log.Info("Successfully copying table scheme", zap.String("database", sourceDatabase), zap.String("table", sourceTable))
-	return nil
+	_, err = dc.db.Exec(createTableSQL)
+	return err
 }
 
 func (dc *DatabricksConnector) LoadSnapshot(targetTable, filePath string) error {
 	if err := LoadCSVFromS3(dc.db, dc.columns, targetTable, dc.storageURL, filePath, dc.credential); err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePath", filePath))
 	return nil
 }
 
