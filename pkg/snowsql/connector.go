@@ -92,19 +92,13 @@ func (sc *SnowflakeConnector) CopyTableSchema(sourceDatabase string, sourceTable
 	}
 	log.Info("Creating table in Snowflake", zap.String("query", createTableQuery))
 	_, err = sc.db.Exec(createTableQuery)
-	if err != nil {
-		return errors.Trace(err)
-	}
-
-	log.Info("Successfully copying table scheme", zap.String("database", sourceDatabase), zap.String("table", sourceTable))
-	return nil
+	return err
 }
 
 func (sc *SnowflakeConnector) LoadSnapshot(targetTable, filePath string) error {
 	if err := LoadSnapshotFromStage(sc.db, targetTable, sc.stageName, filePath); err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePath", filePath))
 	return nil
 }
 

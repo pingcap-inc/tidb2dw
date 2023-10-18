@@ -99,7 +99,6 @@ func (bc *BigQueryConnector) CopyTableSchema(sourceDatabase string, sourceTable 
 	if err = runQuery(bc.ctx, bc.bqClient, createTableSQL); err != nil {
 		return errors.Annotate(err, "Failed to create table")
 	}
-	log.Info("Successfully copying table scheme", zap.String("database", sourceDatabase), zap.String("table", sourceTable))
 	return nil
 }
 
@@ -109,7 +108,6 @@ func (bc *BigQueryConnector) LoadSnapshot(targetTable, filePath string) error {
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Successfully load snapshot", zap.String("table", targetTable), zap.String("filePath", filePath))
 	return nil
 }
 

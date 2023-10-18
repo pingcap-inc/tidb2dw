@@ -20,6 +20,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	DataWarehouseLoadConcurrency = 16
+)
+
 type SnapshotReplicateSession struct {
 	TiDBConfig *tidbsql.TiDBConfig
 
@@ -87,6 +91,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 		if err := sess.DataWarehousePool.CopyTableSchema(sess.SourceDatabase, sess.SourceTable, sess.TiDBPool); err != nil {
 			return errors.Trace(err)
 		}
+		sess.logger.Info("Successfully copy table schema")
 	default:
 		return errors.Errorf("%s does not supprt data warehouse connector now...", sess.StorageWorkspaceUri.Scheme)
 	}
@@ -107,18 +112,25 @@ func (sess *SnapshotReplicateSession) Run() error {
 	}
 	metrics.AddCounter(metrics.SnapshotTotalSizeCounter, float64(snapshotFileSize), tableFQN)
 	errFileCh := make(chan string, fileCount)
+	blockCh := make(chan struct{}, DataWarehouseLoadConcurrency)
 	var wg sync.WaitGroup
 	if err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
 		if strings.HasSuffix(path, CSVFileExtension) {
+			blockCh <- struct{}{}
 			wg.Add(1)
 			go func() {
-				defer wg.Done()
-				if err := sess.loadSnapshotDataIntoDataWarehouse(path); err != nil {
+				defer func() {
+					<-blockCh
+					wg.Done()
+				}()
+				sess.logger.Info("Loading snapshot data into data warehouse", zap.String("path", path))
+				if err := sess.DataWarehousePool.LoadSnapshot(sess.SourceTable, path); err != nil {
 					sess.logger.Error("Failed to load snapshot data into data warehouse", zap.Error(err), zap.String("path", path))
 					errFileCh <- path
-					return
+				} else {
+					sess.logger.Info("Successfully load snapshot data into data warehouse", zap.String("path", path))
+					metrics.AddCounter(metrics.SnapshotLoadedSizeCounter, float64(size), tableFQN)
 				}
-				metrics.AddCounter(metrics.SnapshotLoadedSizeCounter, float64(size), tableFQN)
 			}()
 		}
 		return nil
@@ -126,6 +138,8 @@ func (sess *SnapshotReplicateSession) Run() error {
 		return errors.Trace(err)
 	}
 	wg.Wait()
+	close(errFileCh)
+	close(blockCh)
 	errFileList := make([]string, 0, len(errFileCh))
 	for len(errFileCh) > 0 {
 		errFileList = append(errFileList, <-errFileCh)
@@ -134,7 +148,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 		return errors.Errorf("Failed to load snapshot data into data warehouse, error files: %v", errFileList)
 	}
 	endTime := time.Now()
-	sess.logger.Info("Successfully load snapshot data into data warehouse", zap.Int64("size", snapshotFileSize), zap.Duration("cost", endTime.Sub(startTime)))
+	sess.logger.Info("Successfully load all snapshot data into data warehouse", zap.Int64("size", snapshotFileSize), zap.Duration("cost", endTime.Sub(startTime)))
 
 	// Write load info to workspace to record the status of load,
 	// loadinfo exists means the data has been all loaded into data warehouse.
@@ -143,13 +157,6 @@ func (sess *SnapshotReplicateSession) Run() error {
 		sess.logger.Error("Failed to upload loadinfo", zap.Error(err))
 	}
 	sess.logger.Info("Successfully upload loadinfo", zap.String("loadinfo", loadinfo))
-	return nil
-}
-
-func (sess *SnapshotReplicateSession) loadSnapshotDataIntoDataWarehouse(filePath string) error {
-	if err := sess.DataWarehousePool.LoadSnapshot(sess.SourceTable, filePath); err != nil {
-		return errors.Trace(err)
-	}
 	return nil
 }
 
