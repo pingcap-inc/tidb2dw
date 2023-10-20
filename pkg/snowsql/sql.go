@@ -20,7 +20,7 @@ func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred *cre
 CREATE OR REPLACE STAGE {stageName}
 URL = '{url}'
 CREDENTIALS = (AWS_KEY_ID = '{awsKeyId}' AWS_SECRET_KEY = '{awsSecretKey}' AWS_TOKEN = '{awsToken}')
-FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\');
+FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\');
 	`, formatter.Named{
 		"stageName":    utils.EscapeString(stageName),
 		"url":          utils.EscapeString(s3WorkspaceURL),
@@ -38,7 +38,7 @@ FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OP
 func CreateInternalStage(db *sql.DB, stageName string) error {
 	sql, err := formatter.Format(`
 CREATE OR REPLACE STAGE {stageName}
-FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\');
+FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\');
 `, formatter.Named{
 		"stageName": utils.EscapeString(stageName),
 	})
@@ -66,7 +66,7 @@ func LoadSnapshotFromStage(db *sql.DB, targetTable, stageName, filePath string) 
 	sql, err := formatter.Format(`
 COPY INTO {targetTable}
 FROM @{stageName}/{filePath}
-FILE_FORMAT = (TYPE = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\')
+FILE_FORMAT = (TYPE = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\')
 ON_ERROR = CONTINUE;
 `, formatter.Named{
 		"targetTable": utils.EscapeString(targetTable),

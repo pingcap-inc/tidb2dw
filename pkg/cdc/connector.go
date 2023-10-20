@@ -12,6 +12,7 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	apiv2 "github.com/pingcap/tiflow/cdc/api/v2"
+	"github.com/pingcap/tiflow/pkg/config"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
 )
@@ -53,7 +54,7 @@ func (c *CDCConnector) CreateChangefeed() error {
 		FileSize:       putil.AddressOf(c.sinkURIConfig.fileSize),
 		OutputColumnID: putil.AddressOf(true),
 	}
-	replicateCfg.Sink.DateSeparator = putil.AddressOf("day")
+	replicateCfg.Sink.DateSeparator = putil.AddressOf(config.DateSeparatorDay.String())
 	replicateCfg.EnableOldValue = false
 	replicateCfg.Filter = &apiv2.FilterConfig{Rules: c.tables}
 	cfCfg := &ChangefeedConfig{
