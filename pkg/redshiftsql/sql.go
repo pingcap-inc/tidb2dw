@@ -123,25 +123,22 @@ func CreateExternalTable(db *sql.DB, columns []cloudstorage.TableCol, tableName,
 		}
 		columnRows = append(columnRows, row)
 	}
-	sqlRows := make([]string, 0, len(columnRows)+1)
-	sqlRows = append(sqlRows, columnRows...)
 
 	sql, err := formatter.Format(`
 	CREATE EXTERNAL TABLE {schemaName}.{tableName} (
 		FLAG VARCHAR(10),
 		TABLENAME VARCHAR(255),
 		SCHEMANAME VARCHAR(255),
-		TIMESTAMP VARCHAR(255),
+		COMMITTS BIGINT,
 		{columns}
 	)
-	ROW FORMAT DELIMITED
-	FIELDS TERMINATED by ','
-	LINES TERMINATED BY '\n'
+	ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.OpenCSVSerde'
 	LOCATION '{manifestFile}'
+	TABLE PROPERTIES('serialization.null.format'='\N');
 	`, formatter.Named{
 		"tableName":    utils.EscapeString(tableName),
 		"schemaName":   utils.EscapeString(schemaName),
-		"columns":      strings.Join(sqlRows, ",\n"),
+		"columns":      strings.Join(columnRows, ",\n"),
 		"manifestFile": utils.EscapeString(manifestFile),
 	})
 	if err != nil {
@@ -171,7 +168,7 @@ func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTabl
 		SELECT
 		{selectStat}
 		FROM {externalSchema}.{externalTable} WHERE tablename IS NOT NULL
-		QUALIFY row_number() OVER (PARTITION BY {pkStat} ORDER BY timestamp DESC) = 1
+		QUALIFY row_number() OVER (PARTITION BY {pkStat} ORDER BY committs DESC) = 1
 	) AS S
 	WHERE 
 		{onStat};
@@ -212,7 +209,7 @@ func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTabl
 		flag, 
 		{selectStat}
 		FROM {externalSchema}.{externalTable} WHERE tablename IS NOT NULL
-		QUALIFY row_number() OVER (PARTITION BY {pkStat} ORDER BY timestamp DESC) = 1
+		QUALIFY row_number() OVER (PARTITION BY {pkStat} ORDER BY committs DESC) = 1
 	) AS S
 	WHERE
 		S.flag != 'D'

@@ -11,6 +11,7 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	apiv2 "github.com/pingcap/tiflow/cdc/api/v2"
 	"github.com/pingcap/tiflow/pkg/config"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
@@ -24,7 +25,7 @@ type CDCConnector struct {
 	SinkURI       *url.URL
 }
 
-func NewCDCConnector(cdcHost string, cdcPort int, tables []string, startTSO uint64, storageUri *url.URL, flushInterval time.Duration, fileSize int64) (*CDCConnector, error) {
+func NewCDCConnector(cdcHost string, cdcPort int, tables []string, startTSO uint64, storageUri *url.URL, flushInterval time.Duration, fileSize int) (*CDCConnector, error) {
 	sinkURIConfig := &SinkURIConfig{
 		storageUri:    storageUri,
 		flushInterval: flushInterval,
@@ -33,7 +34,7 @@ func NewCDCConnector(cdcHost string, cdcPort int, tables []string, startTSO uint
 	}
 	sinkURI, err := sinkURIConfig.genSinkURI()
 	if err != nil {
-		return nil, err
+		return nil, errors.Trace(err)
 	}
 	return &CDCConnector{
 		cdcServer:     fmt.Sprintf("http://%s:%d", cdcHost, cdcPort),
@@ -46,18 +47,19 @@ func NewCDCConnector(cdcHost string, cdcPort int, tables []string, startTSO uint
 
 func (c *CDCConnector) CreateChangefeed() error {
 	client := &http.Client{}
+	replicateCfg := apiv2.GetDefaultReplicaConfig()
+	replicateCfg.Sink.CSVConfig.IncludeCommitTs = true
+	replicateCfg.Sink.CloudStorageConfig = &apiv2.CloudStorageConfig{
+		FlushInterval:  putil.AddressOf(c.sinkURIConfig.flushInterval.String()),
+		FileSize:       putil.AddressOf(c.sinkURIConfig.fileSize),
+		OutputColumnID: putil.AddressOf(true),
+	}
+	replicateCfg.Sink.DateSeparator = putil.AddressOf(config.DateSeparatorDay.String())
+	replicateCfg.EnableOldValue = false
+	replicateCfg.Filter = &apiv2.FilterConfig{Rules: c.tables}
 	cfCfg := &ChangefeedConfig{
-		SinkURI: c.SinkURI.String(),
-		ReplicaConfig: &ReplicaConfig{
-			Filter: &FilterConfig{Rules: c.tables},
-			Sink: &SinkConfig{
-				CSVConfig:          &CSVConfig{IncludeCommitTs: true, Quote: ""},
-				CloudStorageConfig: &CloudStorageConfig{OutputColumnID: putil.AddressOf(true)},
-				DateSeparator:      config.DateSeparatorDay.String(),
-			},
-			EnableOldValue: false,
-		},
-		StartTs: 0,
+		SinkURI:       c.SinkURI.String(),
+		ReplicaConfig: replicateCfg,
 	}
 	if c.startTSO != 0 {
 		cfCfg.StartTs = c.startTSO
