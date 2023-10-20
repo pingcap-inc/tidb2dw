@@ -22,7 +22,7 @@ func NewGCSCmd() *cobra.Command {
 		cdcHost             string
 		cdcPort             int
 		cdcFlushInterval    time.Duration
-		cdcFileSize         int64
+		cdcFileSize         int
 		logFile             string
 		logLevel            string
 		mode                RunMode
@@ -78,7 +78,7 @@ func NewGCSCmd() *cobra.Command {
 	cmd.Flags().StringVar(&cdcHost, "cdc.host", "127.0.0.1", "TiCDC server host")
 	cmd.Flags().IntVar(&cdcPort, "cdc.port", 8300, "TiCDC server port")
 	cmd.Flags().DurationVar(&cdcFlushInterval, "cdc.flush-interval", 60*time.Second, "")
-	cmd.Flags().Int64Var(&cdcFileSize, "cdc.file-size", 64*1024*1024, "")
+	cmd.Flags().IntVar(&cdcFileSize, "cdc.file-size", 64*1024*1024, "")
 	cmd.Flags().StringVar(&logFile, "log.file", "", "log file path")
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
 

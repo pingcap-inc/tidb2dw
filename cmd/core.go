@@ -159,7 +159,7 @@ func Export(
 	cdcHost string,
 	cdcPort int,
 	cdcFlushInterval time.Duration,
-	cdcFileSize int64,
+	cdcFileSize int,
 	mode RunMode,
 ) (
 	stage Stage,
@@ -220,7 +220,7 @@ func Replicate(
 	cdcHost string,
 	cdcPort int,
 	cdcFlushInterval time.Duration,
-	cdcFileSize int64,
+	cdcFileSize int,
 	snapConnectorMap map[string]coreinterfaces.Connector,
 	increConnectorMap map[string]coreinterfaces.Connector,
 	mode RunMode,

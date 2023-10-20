@@ -28,7 +28,7 @@ func NewSnowflakeCmd() *cobra.Command {
 		cdcHost                string
 		cdcPort                int
 		cdcFlushInterval       time.Duration
-		cdcFileSize            int64
+		cdcFileSize            int
 		timezone               string
 		logFile                string
 		logLevel               string
@@ -147,7 +147,7 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&cdcHost, "cdc.host", "127.0.0.1", "TiCDC server host")
 	cmd.Flags().IntVar(&cdcPort, "cdc.port", 8300, "TiCDC server port")
 	cmd.Flags().DurationVar(&cdcFlushInterval, "cdc.flush-interval", 60*time.Second, "")
-	cmd.Flags().Int64Var(&cdcFileSize, "cdc.file-size", 64*1024*1024, "")
+	cmd.Flags().IntVar(&cdcFileSize, "cdc.file-size", 64*1024*1024, "")
 	cmd.Flags().StringVar(&timezone, "tz", "System", "specify time zone of storage consumer")
 	cmd.Flags().StringVar(&logFile, "log.file", "", "log file path")
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
