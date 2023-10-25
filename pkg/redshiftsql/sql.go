@@ -35,7 +35,7 @@ func LoadSnapshotFromS3(db *sql.DB, targetTable, filePath string, credential *cr
 	COPY {targetTable}
 	FROM '{filePath}'
 	CREDENTIALS 'aws_access_key_id={accessId};aws_secret_access_key={accessKey}'
-	FORMAT AS CSV DELIMITER ',' QUOTE '"';
+	FORMAT AS CSV DELIMITER ',' QUOTE '"' NULL AS '\N';
 	`, formatter.Named{
 		"targetTable": utils.EscapeString(targetTable),
 		"filePath":    utils.EscapeString(filePath), // TODO: Verify
