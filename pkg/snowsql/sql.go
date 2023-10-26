@@ -20,27 +20,13 @@ func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred *cre
 CREATE OR REPLACE STAGE {stageName}
 URL = '{url}'
 CREDENTIALS = (AWS_KEY_ID = '{awsKeyId}' AWS_SECRET_KEY = '{awsSecretKey}' AWS_TOKEN = '{awsToken}')
-FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\');
+FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\' BINARY_FORMAT = 'BASE64');
 	`, formatter.Named{
 		"stageName":    utils.EscapeString(stageName),
 		"url":          utils.EscapeString(s3WorkspaceURL),
 		"awsKeyId":     utils.EscapeString(cred.AccessKeyID),
 		"awsSecretKey": utils.EscapeString(cred.SecretAccessKey),
 		"awsToken":     utils.EscapeString(cred.SessionToken),
-	})
-	if err != nil {
-		return err
-	}
-	_, err = db.Exec(sql)
-	return err
-}
-
-func CreateInternalStage(db *sql.DB, stageName string) error {
-	sql, err := formatter.Format(`
-CREATE OR REPLACE STAGE {stageName}
-FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\');
-`, formatter.Named{
-		"stageName": utils.EscapeString(stageName),
 	})
 	if err != nil {
 		return err
@@ -66,8 +52,7 @@ func LoadSnapshotFromStage(db *sql.DB, targetTable, stageName, filePath string) 
 	sql, err := formatter.Format(`
 COPY INTO {targetTable}
 FROM @{stageName}/{filePath}
-FILE_FORMAT = (TYPE = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\')
-ON_ERROR = CONTINUE;
+FILE_FORMAT = (TYPE = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\' BINARY_FORMAT = 'UTF8');
 `, formatter.Named{
 		"targetTable": utils.EscapeString(targetTable),
 		"stageName":   utils.EscapeString(stageName),
@@ -131,7 +116,11 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 	selectStat := make([]string, 0, len(tableDef.Columns)+1)
 	selectStat = append(selectStat, `$1 AS "METADATA$FLAG"`)
 	for i, col := range tableDef.Columns {
-		selectStat = append(selectStat, fmt.Sprintf(`$%d AS %s`, i+5, col.Name))
+		if TiDB2SnowflakeTypeMap[strings.ToLower(col.Tp)] == "BINARY" {
+			selectStat = append(selectStat, fmt.Sprintf(`TO_BINARY($%d, 'BASE64') AS %s`, i+5, col.Name))
+		} else {
+			selectStat = append(selectStat, fmt.Sprintf(`$%d AS %s`, i+5, col.Name))
+		}
 	}
 
 	pkColumn := make([]string, 0)

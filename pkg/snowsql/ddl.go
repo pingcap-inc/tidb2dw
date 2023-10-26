@@ -115,8 +115,6 @@ func GetSnowflakeColumnString(column cloudstorage.TableCol) (string, error) {
 	}
 	if column.Default != nil {
 		sb.WriteString(fmt.Sprintf(` DEFAULT %s`, GetDefaultString(column.Default)))
-	} else if column.Nullable == "true" {
-		sb.WriteString(" DEFAULT NULL")
 	}
 	return sb.String(), nil
 }

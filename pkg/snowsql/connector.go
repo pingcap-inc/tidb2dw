@@ -28,14 +28,8 @@ type SnowflakeConnector struct {
 
 func NewSnowflakeConnector(db *sql.DB, stageName string, storageURI *url.URL, credentials *credentials.Value) (*SnowflakeConnector, error) {
 	// create stage
-	var err error
-	if storageURI.Host == "" {
-		err = CreateInternalStage(db, stageName)
-	} else {
-		stageUrl := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
-		err = CreateExternalStage(db, stageName, stageUrl, credentials)
-	}
-	if err != nil {
+	stageUrl := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
+	if err := CreateExternalStage(db, stageName, stageUrl, credentials); err != nil {
 		return nil, errors.Annotate(err, "Failed to create stage")
 	}
 
