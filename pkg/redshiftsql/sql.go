@@ -117,7 +117,7 @@ func CreateExternalSchema(db *sql.DB, schemaName, databaseName string) error {
 func CreateExternalTable(db *sql.DB, columns []cloudstorage.TableCol, tableName, schemaName, manifestFile string) error {
 	columnRows := make([]string, 0, len(columns))
 	for _, column := range columns {
-		row, err := GetRedshiftTypeString(column)
+		row, err := GetRedshiftTypeStringForExternalTable(column)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -149,18 +149,24 @@ func CreateExternalTable(db *sql.DB, columns []cloudstorage.TableCol, tableName,
 	return err
 }
 
-func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTableName string) error {
-	selectStat := make([]string, 0, len(tableDef.Columns)+1)
-	selectStat = append(selectStat, `flag`)
-	for _, col := range tableDef.Columns {
-		selectStat = append(selectStat, col.Name)
+func TryTransBinaryColumn(col cloudstorage.TableCol) string {
+	switch strings.ToLower(col.Tp) {
+	case "tinyblob", "blob", "binary", "varbinary":
+		return fmt.Sprintf("TO_VARBYTE(%s, 'base64') AS %s", col.Name, col.Name)
+	default:
+		return col.Name
 	}
+}
+
+func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTableName string) error {
 	pkColumn := make([]string, 0)
+	selectStat := make([]string, 0)
 	onStat := make([]string, 0)
 	for _, col := range tableDef.Columns {
 		if col.IsPK == "true" {
 			pkColumn = append(pkColumn, col.Name)
 			onStat = append(onStat, fmt.Sprintf(`%s.%s = S.%s`, tableDef.Table, col.Name, col.Name))
+			selectStat = append(selectStat, TryTransBinaryColumn(col))
 		}
 	}
 	sql, err := formatter.Format(`
@@ -176,7 +182,7 @@ func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTabl
 		"tableName":      tableDef.Table,
 		"externalSchema": fmt.Sprintf("%s_schema", externalTableName),
 		"externalTable":  externalTableName,
-		"selectStat":     strings.Join(selectStat, ",\n"),
+		"selectStat":     strings.Join(selectStat, ", "),
 		"pkStat":         strings.Join(pkColumn, ", "),
 		"onStat":         strings.Join(onStat, " AND "),
 	})
@@ -189,9 +195,11 @@ func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTabl
 }
 
 func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTableName string) error {
-	selectStat := make([]string, 0, len(tableDef.Columns)+1)
+	selectStat := make([]string, 0, len(tableDef.Columns))
+	exTableSelectStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
 		selectStat = append(selectStat, col.Name)
+		exTableSelectStat = append(exTableSelectStat, TryTransBinaryColumn(col))
 	}
 	pkColumn := make([]string, 0)
 
@@ -207,18 +215,19 @@ func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTabl
 	FROM (
 	SELECT
 		flag, 
-		{selectStat}
+		{exTableSelectStat}
 		FROM {externalSchema}.{externalTable} WHERE tablename IS NOT NULL
 		QUALIFY row_number() OVER (PARTITION BY {pkStat} ORDER BY committs DESC) = 1
 	) AS S
 	WHERE
 		S.flag != 'D'
 	`, formatter.Named{
-		"tableName":      tableDef.Table,
-		"externalSchema": fmt.Sprintf("%s_schema", externalTableName),
-		"externalTable":  externalTableName,
-		"selectStat":     strings.Join(selectStat, ",\n"),
-		"pkStat":         strings.Join(pkColumn, ", "),
+		"tableName":         tableDef.Table,
+		"externalSchema":    fmt.Sprintf("%s_schema", externalTableName),
+		"exTableSelectStat": strings.Join(exTableSelectStat, ", "),
+		"externalTable":     externalTableName,
+		"selectStat":        strings.Join(selectStat, ", "),
+		"pkStat":            strings.Join(pkColumn, ", "),
 	})
 	if err != nil {
 		return errors.Trace(err)
