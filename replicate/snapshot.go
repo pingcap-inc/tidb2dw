@@ -118,7 +118,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 		if strings.HasSuffix(path, CSVFileExtension) {
 			blockCh <- struct{}{}
 			wg.Add(1)
-			go func() {
+			go func(path string, size int64) {
 				defer func() {
 					<-blockCh
 					wg.Done()
@@ -131,7 +131,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 					sess.logger.Info("Successfully load snapshot data into data warehouse", zap.String("path", path))
 					metrics.AddCounter(metrics.SnapshotLoadedSizeCounter, float64(size), tableFQN)
 				}
-			}()
+			}(path, size)
 		}
 		return nil
 	}); err != nil {
