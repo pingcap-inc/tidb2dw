@@ -20,7 +20,7 @@ func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred *cre
 CREATE OR REPLACE STAGE {stageName}
 URL = '{url}'
 CREDENTIALS = (AWS_KEY_ID = '{awsKeyId}' AWS_SECRET_KEY = '{awsSecretKey}' AWS_TOKEN = '{awsToken}')
-FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\' BINARY_FORMAT = 'BASE64');
+FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\' BINARY_FORMAT = 'HEX');
 	`, formatter.Named{
 		"stageName":    utils.EscapeString(stageName),
 		"url":          utils.EscapeString(s3WorkspaceURL),
@@ -117,7 +117,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 	selectStat = append(selectStat, `$1 AS "METADATA$FLAG"`)
 	for i, col := range tableDef.Columns {
 		if TiDB2SnowflakeTypeMap[strings.ToLower(col.Tp)] == "BINARY" {
-			selectStat = append(selectStat, fmt.Sprintf(`TO_BINARY($%d, 'BASE64') AS %s`, i+5, col.Name))
+			selectStat = append(selectStat, fmt.Sprintf(`TO_BINARY($%d, 'HEX') AS %s`, i+5, col.Name))
 		} else {
 			selectStat = append(selectStat, fmt.Sprintf(`$%d AS %s`, i+5, col.Name))
 		}

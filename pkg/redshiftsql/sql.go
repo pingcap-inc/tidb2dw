@@ -152,7 +152,7 @@ func CreateExternalTable(db *sql.DB, columns []cloudstorage.TableCol, tableName,
 func TryTransBinaryColumn(col cloudstorage.TableCol) string {
 	switch strings.ToLower(col.Tp) {
 	case "tinyblob", "blob", "binary", "varbinary":
-		return fmt.Sprintf("TO_VARBYTE(%s, 'base64') AS %s", col.Name, col.Name)
+		return fmt.Sprintf("TO_VARBYTE(%s, 'hex') AS %s", col.Name, col.Name)
 	default:
 		return col.Name
 	}
