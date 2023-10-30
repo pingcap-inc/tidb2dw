@@ -35,7 +35,7 @@ func LoadSnapshotFromS3(db *sql.DB, targetTable, filePath string, credential *cr
 	COPY {targetTable}
 	FROM '{filePath}'
 	CREDENTIALS 'aws_access_key_id={accessId};aws_secret_access_key={accessKey}'
-	FORMAT AS CSV DELIMITER ',' QUOTE '"' NULL AS '\N';
+	FORMAT AS CSV DELIMITER ',' QUOTE '"' NULL AS '\\N';
 	`, formatter.Named{
 		"targetTable": utils.EscapeString(targetTable),
 		"filePath":    utils.EscapeString(filePath), // TODO: Verify
@@ -134,7 +134,7 @@ func CreateExternalTable(db *sql.DB, columns []cloudstorage.TableCol, tableName,
 	)
 	ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.OpenCSVSerde'
 	LOCATION '{manifestFile}'
-	TABLE PROPERTIES('serialization.null.format'='\N');
+	TABLE PROPERTIES('serialization.null.format'='\\N');
 	`, formatter.Named{
 		"tableName":    utils.EscapeString(tableName),
 		"schemaName":   utils.EscapeString(schemaName),
