@@ -115,7 +115,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 	blockCh := make(chan struct{}, DataWarehouseLoadConcurrency)
 	var wg sync.WaitGroup
 	if err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
-		if strings.HasSuffix(path, CSVFileExtension) {
+		if strings.HasSuffix(path, CSVFileExtension) && strings.HasPrefix(path, tableFQN) {
 			blockCh <- struct{}{}
 			wg.Add(1)
 			go func(path string, size int64) {
