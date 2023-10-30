@@ -100,7 +100,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 	var snapshotFileSize int64
 	var fileCount int64
 	tableFQN := fmt.Sprintf("%s.%s", sess.SourceDatabase, sess.SourceTable)
-	opt := &storage.WalkOption{}
+	opt := &storage.WalkOption{ObjPrefix: tableFQN}
 	if err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
 		if strings.HasSuffix(path, CSVFileExtension) {
 			snapshotFileSize += size
@@ -115,7 +115,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 	blockCh := make(chan struct{}, DataWarehouseLoadConcurrency)
 	var wg sync.WaitGroup
 	if err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
-		if strings.HasSuffix(path, CSVFileExtension) && strings.HasPrefix(path, tableFQN) {
+		if strings.HasSuffix(path, CSVFileExtension) {
 			blockCh <- struct{}{}
 			wg.Add(1)
 			go func(path string, size int64) {
