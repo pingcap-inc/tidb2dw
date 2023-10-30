@@ -100,7 +100,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 	var snapshotFileSize int64
 	var fileCount int64
 	tableFQN := fmt.Sprintf("%s.%s", sess.SourceDatabase, sess.SourceTable)
-	opt := &storage.WalkOption{ObjPrefix: tableFQN}
+	opt := &storage.WalkOption{ObjPrefix: fmt.Sprintf("%s.", tableFQN)}
 	if err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
 		if strings.HasSuffix(path, CSVFileExtension) {
 			snapshotFileSize += size
