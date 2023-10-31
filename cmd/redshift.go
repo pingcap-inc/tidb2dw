@@ -82,8 +82,7 @@ func NewRedshiftCmd() *cobra.Command {
 			}
 			snapConnector, err := redshiftsql.NewRedshiftConnector(
 				db,
-				redshiftConfigFromCli.Schema,
-				fmt.Sprintf("redshift_snapshot_external_%s", sourceTable),
+				fmt.Sprintf("snapshot_temp_%s", sourceTable), // Actually, this is not used
 				snapshotURI,
 				credValue,
 			)
@@ -97,8 +96,7 @@ func NewRedshiftCmd() *cobra.Command {
 			}
 			increConnector, err := redshiftsql.NewRedshiftConnector(
 				db,
-				redshiftConfigFromCli.Schema,
-				fmt.Sprintf("redshift_increment_external_%s", sourceTable),
+				fmt.Sprintf("increment_temp_%s", sourceTable),
 				incrementURI,
 				credValue,
 			)

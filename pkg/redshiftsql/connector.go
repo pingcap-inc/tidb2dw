@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
-	"path/filepath"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -16,31 +15,20 @@ import (
 
 type RedshiftConnector struct {
 	// db is the connection to redshift.
-	db            *sql.DB
-	schemaName    string
-	tableName     string
-	storageUri    *url.URL
-	s3Credentials *credentials.Value
-	columns       []cloudstorage.TableCol
+	db             *sql.DB
+	increTableName string
+	storageUri     *url.URL
+	s3Credentials  *credentials.Value
+	columns        []cloudstorage.TableCol
 }
 
-func NewRedshiftConnector(db *sql.DB, schemaName, externalTableName string, storageURI *url.URL, s3Credentials *credentials.Value) (*RedshiftConnector, error) {
-	var err error
-	// create schema
-	err = CreateSchema(db, schemaName)
-	if err != nil {
-		return nil, errors.Annotate(err, "Failed to create schema")
-	}
-	if err = CreateExternalSchema(db, fmt.Sprintf("%s_schema", externalTableName), fmt.Sprintf("%s_database", externalTableName)); err != nil {
-		return nil, errors.Annotate(err, "Failed to create external table")
-	}
+func NewRedshiftConnector(db *sql.DB, externalTableName string, storageURI *url.URL, s3Credentials *credentials.Value) (*RedshiftConnector, error) {
 	return &RedshiftConnector{
-		db:            db,
-		schemaName:    schemaName,
-		tableName:     externalTableName,
-		storageUri:    storageURI,
-		s3Credentials: s3Credentials,
-		columns:       nil,
+		db:             db,
+		increTableName: externalTableName,
+		storageUri:     storageURI,
+		s3Credentials:  s3Credentials,
+		columns:        nil,
 	}, nil
 }
 
@@ -83,8 +71,7 @@ func (rc *RedshiftConnector) ExecDDL(tableDef cloudstorage.TableDefinition) erro
 }
 
 func (rc *RedshiftConnector) CopyTableSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *sql.DB) error {
-	err := DropTable(rc.db, sourceTable, "")
-	if err != nil {
+	if err := DropTableIfExists(rc.db, sourceTable); err != nil {
 		return errors.Trace(err)
 	}
 	return CreateTable(sourceDatabase, sourceTable, sourceTiDBConn, rc.db)
@@ -99,43 +86,33 @@ func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePath string) error {
 }
 
 func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
-	// create external table, need S3 manifest file location
-	externalTableName := rc.tableName
-	externalTableSchema := fmt.Sprintf("%s_schema", rc.tableName)
-	fileSuffix := filepath.Ext(filePath)
-	manifestFilePath := fmt.Sprintf("%s://%s%s/%s.manifest", uri.Scheme, uri.Host, uri.Path, strings.TrimSuffix(filePath, fileSuffix))
-	// drop external table if exists
-	err := DropTable(rc.db, externalTableName, externalTableSchema)
-	if err != nil {
+	// create incremental table
+	if err := CreateIncrementalTable(rc.db, tableDef.Columns, rc.increTableName); err != nil {
 		return errors.Trace(err)
 	}
-	err = CreateExternalTable(rc.db, tableDef.Columns, externalTableName, externalTableSchema, manifestFilePath)
-	if err != nil {
+	// There are may be DDLs executed in upstream, so the schema may be changed.
+	// Drop the table here instead of truncating the table.
+	defer DropTableIfExists(rc.db, rc.increTableName)
+
+	// merge incremental table file into table
+	// 1. copy data from S3 to temp table
+	// 2. delete rows with same pk in temp table from source table
+	// 3. insert rows in temp table to source table
+	filePath = fmt.Sprintf("%s://%s%s/%s", rc.storageUri.Scheme, rc.storageUri.Host, rc.storageUri.Path, filePath)
+	if err := LoadSnapshotFromS3(rc.db, rc.increTableName, filePath, rc.s3Credentials); err != nil {
+		return errors.Trace(err)
+	}
+	if err := DeleteQuery(rc.db, tableDef, rc.increTableName); err != nil {
+		return errors.Trace(err)
+	}
+	if err := InsertQuery(rc.db, tableDef, rc.increTableName); err != nil {
 		return errors.Trace(err)
 	}
 
-	// merge external table file into table
-	err = DeleteQuery(rc.db, tableDef, rc.tableName)
-	if err != nil {
-		return errors.Trace(err)
-	}
-
-	err = InsertQuery(rc.db, tableDef, rc.tableName)
-	if err != nil {
-		return errors.Trace(err)
-	}
-
-	err = DropTable(rc.db, externalTableName, externalTableSchema)
-	if err != nil {
-		return errors.Trace(err)
-	}
 	log.Info("Successfully merge file", zap.String("file", filePath))
 	return nil
 }
 
 func (rc *RedshiftConnector) Close() {
-	if err := DropExternalSchema(rc.db, rc.tableName); err != nil {
-		log.Error("fail to drop schema", zap.Error(err))
-	}
 	rc.db.Close()
 }

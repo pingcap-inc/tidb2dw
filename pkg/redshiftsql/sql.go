@@ -1,7 +1,6 @@
 package redshiftsql
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -28,7 +27,7 @@ func CreateSchema(db *sql.DB, schemaName string) error {
 	return err
 }
 
-// LoadSnapshotFromS3 redshift currently can not support ROWS_PRODUCED function
+// LoadSnapshotFromS3 load snapshot data from s3 to redshift
 // use csv file path for storageUri, like s3://tidbbucket/snapshot/stock.csv
 func LoadSnapshotFromS3(db *sql.DB, targetTable, filePath string, credential *credentials.Value) error {
 	sql, err := formatter.Format(`
@@ -45,7 +44,7 @@ func LoadSnapshotFromS3(db *sql.DB, targetTable, filePath string, credential *cr
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Loading snapshot data from external table", zap.String("filepath", filePath), zap.String("table", targetTable))
+	log.Info("Loading snapshot data from external storage", zap.String("filepath", filePath), zap.String("table", targetTable))
 	_, err = db.Exec(sql)
 	return err
 }
@@ -92,32 +91,16 @@ func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, redC
 	return err
 }
 
-func CreateExternalSchema(db *sql.DB, schemaName, databaseName string) error {
-	sql, err := formatter.Format(`
-	CREATE EXTERNAL SCHEMA IF NOT EXISTS {schemaName}
-	FROM DATA CATALOG
-	DATABASE '{databaseName}'
-	IAM_ROLE default
-	CREATE EXTERNAL DATABASE IF NOT EXISTS;
-	`, formatter.Named{
-		"schemaName":   utils.EscapeString(schemaName),
-		"databaseName": utils.EscapeString(databaseName),
-	})
-	if err != nil {
-		return errors.Trace(err)
-	}
-	log.Info("Creating external schema", zap.String("query", sql))
-	ctx := context.Background()
-	_, err = db.ExecContext(ctx, sql)
-
-	return err
-}
-
-// Redshift external table does not support NOT NULL or PRIMARY KEY
-func CreateExternalTable(db *sql.DB, columns []cloudstorage.TableCol, tableName, schemaName, manifestFile string) error {
+// CreateIncrementalTable create a temp table to store incremental data
+// Note: We do not use external table here, because redshift external table has a lot of limitations:
+// 1. Does not support NOT NULL or PRIMARY KEY
+// 2. Does not support specifying null value
+// 3. Need a manifest file to specify the file location
+// 4. ...
+func CreateIncrementalTable(db *sql.DB, columns []cloudstorage.TableCol, tableName string) error {
 	columnRows := make([]string, 0, len(columns))
 	for _, column := range columns {
-		row, err := GetRedshiftTypeStringForExternalTable(column)
+		row, err := GetRedshiftColumnString(column)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -125,85 +108,62 @@ func CreateExternalTable(db *sql.DB, columns []cloudstorage.TableCol, tableName,
 	}
 
 	sql, err := formatter.Format(`
-	CREATE EXTERNAL TABLE {schemaName}.{tableName} (
+	CREATE TEMP TABLE IF NOT EXISTS {tableName} (
 		FLAG VARCHAR(10),
 		TABLENAME VARCHAR(255),
 		SCHEMANAME VARCHAR(255),
 		COMMITTS BIGINT,
 		{columns}
 	)
-	ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.OpenCSVSerde'
-	LOCATION '{manifestFile}'
-	TABLE PROPERTIES('serialization.null.format'='\\N');
 	`, formatter.Named{
-		"tableName":    utils.EscapeString(tableName),
-		"schemaName":   utils.EscapeString(schemaName),
-		"columns":      strings.Join(columnRows, ",\n"),
-		"manifestFile": utils.EscapeString(manifestFile),
+		"tableName": utils.EscapeString(tableName),
+		"columns":   strings.Join(columnRows, ",\n"),
 	})
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("Creating external table", zap.String("query", sql))
+	log.Info("Creating incurmental table", zap.String("query", sql))
 	_, err = db.Exec(sql)
 	return err
 }
 
-func TryTransBinaryColumn(col cloudstorage.TableCol) string {
-	switch strings.ToLower(col.Tp) {
-	case "tinyblob", "blob", "binary", "varbinary":
-		return fmt.Sprintf("TO_VARBYTE(%s, 'hex') AS %s", col.Name, col.Name)
-	default:
-		return col.Name
-	}
-}
-
-func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTableName string) error {
+func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, incurmentalTableName string) error {
 	pkColumn := make([]string, 0)
-	selectStat := make([]string, 0)
 	onStat := make([]string, 0)
 	for _, col := range tableDef.Columns {
 		if col.IsPK == "true" {
 			pkColumn = append(pkColumn, col.Name)
 			onStat = append(onStat, fmt.Sprintf(`%s.%s = S.%s`, tableDef.Table, col.Name, col.Name))
-			selectStat = append(selectStat, TryTransBinaryColumn(col))
 		}
 	}
 	sql, err := formatter.Format(`
 	DELETE FROM {tableName} USING (
 		SELECT
-		{selectStat}
-		FROM {externalSchema}.{externalTable} WHERE tablename IS NOT NULL
+		{pkStat}
+		FROM {incurmentalTableName} WHERE tablename IS NOT NULL
 		QUALIFY row_number() OVER (PARTITION BY {pkStat} ORDER BY committs DESC) = 1
 	) AS S
 	WHERE 
 		{onStat};
 	`, formatter.Named{
-		"tableName":      tableDef.Table,
-		"externalSchema": fmt.Sprintf("%s_schema", externalTableName),
-		"externalTable":  externalTableName,
-		"selectStat":     strings.Join(selectStat, ", "),
-		"pkStat":         strings.Join(pkColumn, ", "),
-		"onStat":         strings.Join(onStat, " AND "),
+		"tableName":            tableDef.Table,
+		"incurmentalTableName": incurmentalTableName,
+		"pkStat":               strings.Join(pkColumn, ", "),
+		"onStat":               strings.Join(onStat, " AND "),
 	})
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("delete external table into table", zap.String("query", sql))
+	log.Info("delete incurmental table from source table", zap.String("query", sql))
 	_, err = db.Exec(sql)
 	return err
 }
 
-func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTableName string) error {
+func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, incurmentalTableName string) error {
 	selectStat := make([]string, 0, len(tableDef.Columns))
-	exTableSelectStat := make([]string, 0, len(tableDef.Columns))
+	pkColumn := make([]string, 0)
 	for _, col := range tableDef.Columns {
 		selectStat = append(selectStat, col.Name)
-		exTableSelectStat = append(exTableSelectStat, TryTransBinaryColumn(col))
-	}
-	pkColumn := make([]string, 0)
-
-	for _, col := range tableDef.Columns {
 		if col.IsPK == "true" {
 			pkColumn = append(pkColumn, col.Name)
 		}
@@ -215,44 +175,29 @@ func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, externalTabl
 	FROM (
 	SELECT
 		flag, 
-		{exTableSelectStat}
-		FROM {externalSchema}.{externalTable} WHERE tablename IS NOT NULL
+		{selectStat}
+		FROM {incurmentalTableName} WHERE tablename IS NOT NULL
 		QUALIFY row_number() OVER (PARTITION BY {pkStat} ORDER BY committs DESC) = 1
 	) AS S
 	WHERE
 		S.flag != 'D'
 	`, formatter.Named{
-		"tableName":         tableDef.Table,
-		"externalSchema":    fmt.Sprintf("%s_schema", externalTableName),
-		"exTableSelectStat": strings.Join(exTableSelectStat, ", "),
-		"externalTable":     externalTableName,
-		"selectStat":        strings.Join(selectStat, ", "),
-		"pkStat":            strings.Join(pkColumn, ", "),
+		"tableName":            tableDef.Table,
+		"incurmentalTableName": incurmentalTableName,
+		"selectStat":           strings.Join(selectStat, ", "),
+		"pkStat":               strings.Join(pkColumn, ", "),
 	})
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Info("insert external table into table", zap.String("query", sql))
+	log.Info("insert incurmental table into source table", zap.String("query", sql))
 	_, err = db.Exec(sql)
 	return err
 }
 
-func DropTable(db *sql.DB, tableName, schemaName string) error {
-	var sql string
-	if schemaName == "" {
-		sql = fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName)
-	} else {
-		sql = fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", schemaName, tableName)
-	}
-	log.Info("delete table", zap.String("query", sql))
-	_, err := db.Exec(sql)
-	return err
-}
-
-// DropExternalSchema drop the external database associated with the external schema
-func DropExternalSchema(db *sql.DB, tableName string) error {
-	schemaName := fmt.Sprintf("%s_schema", tableName)
-	sql := fmt.Sprintf("DROP SCHEMA IF EXISTS %s", schemaName)
+func DropTableIfExists(db *sql.DB, tableName string) error {
+	sql := fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName)
+	log.Info("drop table", zap.String("query", sql))
 	_, err := db.Exec(sql)
 	return err
 }

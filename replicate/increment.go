@@ -169,13 +169,6 @@ func (sess *IncrementReplicateSession) parseSchemaFilePath(path string) error {
 	return nil
 }
 
-func (sess *IncrementReplicateSession) GenManifestFile(path string, size int64) error {
-	fileName := strings.TrimSuffix(path, sess.fileExtension) + ".manifest"
-	content := fmt.Sprintf("{\"entries\":[{\"url\":\"%s%s\",\"mandatory\":true, \"meta\": { \"content_length\": %d } }]}", sess.externalStorage.URI(), path, size)
-	sess.externalStorage.WriteFile(sess.ctx, fileName, []byte(content))
-	return nil
-}
-
 // map1 - map2
 func diffDMLMaps(
 	map1, map2 map[cloudstorage.DmlPathKey]uint64,
@@ -260,16 +253,16 @@ func (sess *IncrementReplicateSession) syncExecDMLEvents(
 	fileIdx uint64,
 ) error {
 	filePath := key.GenerateDMLFilePath(fileIdx, sess.fileExtension, config.DefaultFileIndexWidth)
+	checkpointFileName := strings.TrimSuffix(filePath, sess.fileExtension) + ".checkpoint"
 
 	// check if the file has been loaded into data warehouse
-	if sess.CheckpointExists(filePath) {
+	exist, err := sess.externalStorage.FileExists(sess.ctx, checkpointFileName)
+	if err != nil {
+		return errors.Annotate(err, "failed to check if checkpoint file exists")
+	}
+	if exist {
 		sess.logger.Info("file has been loaded into data warehouse, just ignore", zap.String("filePath", filePath))
 		return nil
-	}
-
-	// generate manifest file for each dml file
-	if err := sess.GenManifestFile(filePath, sess.dataFileMap[filePath]); err != nil {
-		return errors.Annotate(err, "failed to generate manifest file")
 	}
 
 	// merge file into data warehouse
@@ -277,14 +270,7 @@ func (sess *IncrementReplicateSession) syncExecDMLEvents(
 		return errors.Trace(err)
 	}
 
-	// delete manifest file
-	manifestFileName := strings.TrimSuffix(filePath, sess.fileExtension) + ".manifest"
-	if err := sess.externalStorage.DeleteFile(sess.ctx, manifestFileName); err != nil {
-		return errors.Trace(err)
-	}
-
 	// upload a checkpoint file to indicate that the file has been loaded into data warehouse
-	checkpointFileName := strings.TrimSuffix(filePath, sess.fileExtension) + ".checkpoint"
 	if err := sess.externalStorage.WriteFile(sess.ctx, checkpointFileName, []byte{}); err != nil {
 		return errors.Trace(err)
 	}

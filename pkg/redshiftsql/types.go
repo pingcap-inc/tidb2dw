@@ -61,16 +61,3 @@ func GetRedshiftTypeString(column cloudstorage.TableCol) (string, error) {
 		return "", errors.Errorf("Unsupported data type: %s", column.Tp)
 	}
 }
-
-// GetRedshiftTypeStringForExternalTable returns the column string for Redshift external table.
-// It mainly the same as GetRedshiftTypeString, but for tinyblob, blob, binary and varbinary, it returns TEXT.
-// Because Redshift external table does not support these types.
-func GetRedshiftTypeStringForExternalTable(column cloudstorage.TableCol) (string, error) {
-	tp := strings.ToLower(column.Tp)
-	switch tp {
-	case "tinyblob", "blob", "binary", "varbinary":
-		return fmt.Sprintf("%s %s", column.Name, "TEXT"), nil
-	default:
-		return GetRedshiftTypeString(column)
-	}
-}

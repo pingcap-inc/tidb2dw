@@ -32,6 +32,9 @@ func (config *RedshiftConfig) OpenDB() (*sql.DB, error) {
 	if err = db.Ping(); err != nil {
 		return nil, errors.Annotate(err, "Failed to ping Redshift")
 	}
+	if err := CreateSchema(db, config.Schema); err != nil {
+		return nil, errors.Trace(err)
+	}
 	log.Info("Redshift connection established")
 	return db, nil
 }
