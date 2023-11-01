@@ -75,14 +75,10 @@ func NewRedshiftCmd() *cobra.Command {
 		snapConnectorMap := make(map[string]coreinterfaces.Connector)
 		increConnectorMap := make(map[string]coreinterfaces.Connector)
 		for _, tableFQN := range tables {
-			_, sourceTable := utils.SplitTableFQN(tableFQN)
-			db, err := redshiftConfigFromCli.OpenDB()
-			if err != nil {
-				return errors.Trace(err)
-			}
+			sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
 			snapConnector, err := redshiftsql.NewRedshiftConnector(
-				db,
-				fmt.Sprintf("snapshot_temp_%s", sourceTable), // Actually, this is not used
+				&redshiftConfigFromCli,
+				fmt.Sprintf("snapshot_temp_%s_%s", sourceDatabase, sourceTable), // Actually, this is not used
 				snapshotURI,
 				credValue,
 			)
@@ -90,13 +86,9 @@ func NewRedshiftCmd() *cobra.Command {
 				return errors.Trace(err)
 			}
 			snapConnectorMap[tableFQN] = snapConnector
-			db, err = redshiftConfigFromCli.OpenDB()
-			if err != nil {
-				return errors.Trace(err)
-			}
 			increConnector, err := redshiftsql.NewRedshiftConnector(
-				db,
-				fmt.Sprintf("increment_temp_%s", sourceTable),
+				&redshiftConfigFromCli,
+				fmt.Sprintf("increment_temp_%s_%s", sourceDatabase, sourceTable),
 				incrementURI,
 				credValue,
 			)
@@ -105,6 +97,15 @@ func NewRedshiftCmd() *cobra.Command {
 			}
 			increConnectorMap[tableFQN] = increConnector
 		}
+
+		defer func() {
+			for _, connector := range snapConnectorMap {
+				connector.Close()
+			}
+			for _, connector := range increConnectorMap {
+				connector.Close()
+			}
+		}()
 
 		return Replicate(&tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI,
 			snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize,

@@ -48,7 +48,6 @@ type IncrementReplicateSession struct {
 	sourceDatabase string
 	sourceTable    string
 	tableFQN       string
-	storageURI     *url.URL
 	logger         *zap.Logger
 }
 
@@ -75,7 +74,6 @@ func NewIncrementReplicateSession(
 		sourceDatabase:  sourceDatabase,
 		sourceTable:     sourceTable,
 		tableFQN:        tableFQN,
-		storageURI:      storageURI,
 		logger:          logger,
 	}, nil
 }
@@ -266,7 +264,7 @@ func (sess *IncrementReplicateSession) syncExecDMLEvents(
 	}
 
 	// merge file into data warehouse
-	if err := sess.dwConnector.LoadIncrement(tableDef, sess.storageURI, filePath); err != nil {
+	if err := sess.dwConnector.LoadIncrement(tableDef, filePath); err != nil {
 		return errors.Trace(err)
 	}
 
@@ -390,12 +388,6 @@ func (sess *IncrementReplicateSession) Run(flushInterval time.Duration) error {
 	}
 }
 
-func (sess *IncrementReplicateSession) Close() {
-	if sess.dwConnector != nil {
-		sess.dwConnector.Close()
-	}
-}
-
 func StartReplicateIncrement(
 	ctx context.Context,
 	dwConnector coreinterfaces.Connector,
@@ -416,7 +408,6 @@ func StartReplicateIncrement(
 		logger.Error("error occurred while creating increment replicate session", zap.Error(err))
 		return errors.Trace(err)
 	}
-	defer session.Close()
 	if err = session.Run(flushInterval); err != nil {
 		logger.Error("error occurred while running increment replicate session", zap.Error(err))
 		return errors.Trace(err)

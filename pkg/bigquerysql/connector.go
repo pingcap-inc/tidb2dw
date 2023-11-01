@@ -29,7 +29,11 @@ type BigQueryConnector struct {
 	columns []cloudstorage.TableCol
 }
 
-func NewBigQueryConnector(bqClient *bigquery.Client, incrementTableID, datasetID, tableID string, storageURI *url.URL) (*BigQueryConnector, error) {
+func NewBigQueryConnector(bqConfig *BigQueryConfig, incrementTableID, datasetID, tableID string, storageURI *url.URL) (*BigQueryConnector, error) {
+	bqClient, err := bqConfig.NewClient()
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
 	storageURL := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
 	return &BigQueryConnector{
 		bqClient:         bqClient,
@@ -111,12 +115,10 @@ func (bc *BigQueryConnector) LoadSnapshot(targetTable, filePath string) error {
 	return nil
 }
 
-func (bc *BigQueryConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
-	incrementTableID := bc.incrementTableID
-	absolutePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, filePath)
-
+func (bc *BigQueryConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, filePath string) error {
+	absolutePath := fmt.Sprintf("%s/%s", bc.storageURL, filePath)
 	tableColumns := utils.GenIncrementTableColumns(tableDef.Columns)
-	createTableSQL, err := GenCreateSchema(tableColumns, []string{}, bc.datasetID, incrementTableID)
+	createTableSQL, err := GenCreateSchema(tableColumns, []string{}, bc.datasetID, bc.incrementTableID)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -124,17 +126,17 @@ func (bc *BigQueryConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 		return errors.Annotate(err, "Failed to create increment table")
 	}
 
-	err = loadGCSFileToBigQuery(bc.ctx, bc.bqClient, bc.datasetID, incrementTableID, absolutePath)
+	err = loadGCSFileToBigQuery(bc.ctx, bc.bqClient, bc.datasetID, bc.incrementTableID, absolutePath)
 	if err != nil {
 		return errors.Trace(err)
 	}
 
-	mergeSQL := GenMergeInto(tableDef, bc.datasetID, bc.tableID, incrementTableID)
+	mergeSQL := GenMergeInto(tableDef, bc.datasetID, bc.tableID, bc.incrementTableID)
 	if err = runQuery(bc.ctx, bc.bqClient, mergeSQL); err != nil {
 		return errors.Annotate(err, "Failed to merge increment table")
 	}
 
-	err = deleteTable(bc.ctx, bc.bqClient, bc.datasetID, incrementTableID)
+	err = deleteTable(bc.ctx, bc.bqClient, bc.datasetID, bc.incrementTableID)
 	if err != nil {
 		return errors.Trace(err)
 	}

@@ -22,10 +22,14 @@ type RedshiftConnector struct {
 	columns        []cloudstorage.TableCol
 }
 
-func NewRedshiftConnector(db *sql.DB, externalTableName string, storageURI *url.URL, s3Credentials *credentials.Value) (*RedshiftConnector, error) {
+func NewRedshiftConnector(rsConfig *RedshiftConfig, increTableName string, storageURI *url.URL, s3Credentials *credentials.Value) (*RedshiftConnector, error) {
+	db, err := rsConfig.OpenDB()
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
 	return &RedshiftConnector{
 		db:             db,
-		increTableName: externalTableName,
+		increTableName: increTableName,
 		storageUri:     storageURI,
 		s3Credentials:  s3Credentials,
 		columns:        nil,
@@ -85,7 +89,7 @@ func (rc *RedshiftConnector) LoadSnapshot(targetTable, filePath string) error {
 	return nil
 }
 
-func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
+func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, filePath string) error {
 	// create incremental table
 	if err := CreateIncrementalTable(rc.db, tableDef.Columns, rc.increTableName); err != nil {
 		return errors.Trace(err)

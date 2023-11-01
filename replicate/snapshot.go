@@ -80,9 +80,6 @@ func (sess *SnapshotReplicateSession) Close() {
 	if sess.TiDBPool != nil {
 		sess.TiDBPool.Close()
 	}
-	if sess.DataWarehousePool != nil {
-		sess.DataWarehousePool.Close()
-	}
 }
 
 func (sess *SnapshotReplicateSession) Run() error {

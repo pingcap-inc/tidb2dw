@@ -75,14 +75,10 @@ func NewSnowflakeCmd() *cobra.Command {
 		snapConnectorMap := make(map[string]coreinterfaces.Connector)
 		increConnectorMap := make(map[string]coreinterfaces.Connector)
 		for _, tableFQN := range tables {
-			_, sourceTable := utils.SplitTableFQN(tableFQN)
-			db, err := snowflakeConfigFromCli.OpenDB()
-			if err != nil {
-				return errors.Trace(err)
-			}
+			sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
 			snapConnector, err := snowsql.NewSnowflakeConnector(
-				db,
-				fmt.Sprintf("snapshot_external_%s", sourceTable),
+				&snowflakeConfigFromCli,
+				fmt.Sprintf("snapshot_external_%s_%s", sourceDatabase, sourceTable),
 				snapshotURI,
 				credValue,
 			)
@@ -90,13 +86,9 @@ func NewSnowflakeCmd() *cobra.Command {
 				return errors.Trace(err)
 			}
 			snapConnectorMap[tableFQN] = snapConnector
-			db, err = snowflakeConfigFromCli.OpenDB()
-			if err != nil {
-				return errors.Trace(err)
-			}
 			increConnector, err := snowsql.NewSnowflakeConnector(
-				db,
-				fmt.Sprintf("increment_external_%s", sourceTable),
+				&snowflakeConfigFromCli,
+				fmt.Sprintf("increment_external_%s_%s", sourceDatabase, sourceTable),
 				incrementURI,
 				credValue,
 			)
@@ -105,6 +97,15 @@ func NewSnowflakeCmd() *cobra.Command {
 			}
 			increConnectorMap[tableFQN] = increConnector
 		}
+
+		defer func() {
+			for _, connector := range snapConnectorMap {
+				connector.Close()
+			}
+			for _, connector := range increConnectorMap {
+				connector.Close()
+			}
+		}()
 
 		return Replicate(&tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI,
 			snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize,

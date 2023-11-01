@@ -59,12 +59,8 @@ func NewBigQueryCmd() *cobra.Command {
 		increConnectorMap := make(map[string]coreinterfaces.Connector)
 		for _, tableFQN := range tables {
 			_, sourceTable := utils.SplitTableFQN(tableFQN)
-			bqClient, err := bigqueryConfigFromCli.NewClient()
-			if err != nil {
-				return errors.Trace(err)
-			}
 			snapConnector, err := bigquerysql.NewBigQueryConnector(
-				bqClient,
+				&bigqueryConfigFromCli,
 				fmt.Sprintf("snapshot_external_%s", sourceTable),
 				bigqueryConfigFromCli.DatasetID,
 				sourceTable,
@@ -74,15 +70,8 @@ func NewBigQueryCmd() *cobra.Command {
 				return errors.Trace(err)
 			}
 			snapConnectorMap[tableFQN] = snapConnector
-			if err != nil {
-				return errors.Trace(err)
-			}
-			bqClient, err = bigqueryConfigFromCli.NewClient()
-			if err != nil {
-				return errors.Trace(err)
-			}
 			increConnector, err := bigquerysql.NewBigQueryConnector(
-				bqClient,
+				&bigqueryConfigFromCli,
 				fmt.Sprintf("increment_external_%s", sourceTable),
 				bigqueryConfigFromCli.DatasetID,
 				sourceTable,
@@ -93,6 +82,15 @@ func NewBigQueryCmd() *cobra.Command {
 			}
 			increConnectorMap[tableFQN] = increConnector
 		}
+
+		defer func() {
+			for _, connector := range snapConnectorMap {
+				connector.Close()
+			}
+			for _, connector := range increConnectorMap {
+				connector.Close()
+			}
+		}()
 
 		return Replicate(
 			&tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI, snapshotConcurrency,

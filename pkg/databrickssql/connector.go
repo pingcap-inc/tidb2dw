@@ -25,10 +25,13 @@ type DatabricksConnector struct {
 
 const incrementTablePrefix = "incr_"
 
-func NewDatabricksConnector(databricksDB *sql.DB, credential string, storageURI *url.URL) (*DatabricksConnector, error) {
+func NewDatabricksConnector(dbConfig *DataBricksConfig, credential string, storageURI *url.URL) (*DatabricksConnector, error) {
+	db, err := dbConfig.OpenDB()
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
 	storageURL := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
-
-	credentialSet, err := GetCredentialNameSet(databricksDB)
+	credentialSet, err := GetCredentialNameSet(db)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -47,7 +50,7 @@ func NewDatabricksConnector(databricksDB *sql.DB, credential string, storageURI 
 	}
 
 	return &DatabricksConnector{
-		db:         databricksDB,
+		db:         db,
 		ctx:        context.Background(),
 		credential: credential,
 		storageURL: storageURL,
@@ -120,8 +123,8 @@ func (dc *DatabricksConnector) ExecDDL(tableDef cloudstorage.TableDefinition) er
 	return nil
 }
 
-func (dc *DatabricksConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
-	absolutePath := fmt.Sprintf("%s://%s%s/%s", uri.Scheme, uri.Host, uri.Path, filePath)
+func (dc *DatabricksConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, filePath string) error {
+	absolutePath := fmt.Sprintf("%s/%s", dc.storageURL, filePath)
 	incrTableColumns := utils.GenIncrementTableColumns(tableDef.Columns)
 	incrTableName := incrementTablePrefix + tableDef.Table
 

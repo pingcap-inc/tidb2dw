@@ -76,12 +76,8 @@ func NewDatabricksCmd() *cobra.Command {
 		snapConnectorMap := make(map[string]coreinterfaces.Connector)
 		increConnectorMap := make(map[string]coreinterfaces.Connector)
 		for _, tableFQN := range tables {
-			db, err := databricksConfigFromCli.OpenDB()
-			if err != nil {
-				return errors.Trace(err)
-			}
 			snapConnector, err := databrickssql.NewDatabricksConnector(
-				db,
+				&databricksConfigFromCli,
 				credential,
 				snapshotURI,
 			)
@@ -89,12 +85,8 @@ func NewDatabricksCmd() *cobra.Command {
 				return errors.Trace(err)
 			}
 			snapConnectorMap[tableFQN] = snapConnector
-			db, err = databricksConfigFromCli.OpenDB()
-			if err != nil {
-				return errors.Trace(err)
-			}
 			increConnector, err := databrickssql.NewDatabricksConnector(
-				db,
+				&databricksConfigFromCli,
 				credential,
 				incrementURI,
 			)
@@ -103,6 +95,15 @@ func NewDatabricksCmd() *cobra.Command {
 			}
 			increConnectorMap[tableFQN] = increConnector
 		}
+
+		defer func() {
+			for _, connector := range snapConnectorMap {
+				connector.Close()
+			}
+			for _, connector := range increConnectorMap {
+				connector.Close()
+			}
+		}()
 
 		return Replicate(&tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI,
 			snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, snapConnectorMap,

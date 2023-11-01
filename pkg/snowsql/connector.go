@@ -26,7 +26,11 @@ type SnowflakeConnector struct {
 	columns []cloudstorage.TableCol
 }
 
-func NewSnowflakeConnector(db *sql.DB, stageName string, storageURI *url.URL, credentials *credentials.Value) (*SnowflakeConnector, error) {
+func NewSnowflakeConnector(sfConfig *SnowflakeConfig, stageName string, storageURI *url.URL, credentials *credentials.Value) (*SnowflakeConnector, error) {
+	db, err := sfConfig.OpenDB()
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
 	// create stage
 	stageUrl := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
 	if err := CreateExternalStage(db, stageName, stageUrl, credentials); err != nil {
@@ -96,35 +100,13 @@ func (sc *SnowflakeConnector) LoadSnapshot(targetTable, filePath string) error {
 	return nil
 }
 
-func (sc *SnowflakeConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, uri *url.URL, filePath string) error {
-	if uri.Scheme == "file" {
-		// if the file is local, we need to upload it to stage first
-		putQuery := fmt.Sprintf(`PUT file://%s/%s '@%s/%s';`, uri.Path, filePath, sc.stageName, filePath)
-		_, err := sc.db.Exec(putQuery)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		log.Debug("put file to stage", zap.String("query", putQuery))
-	}
-
+func (sc *SnowflakeConnector) LoadIncrement(tableDef cloudstorage.TableDefinition, filePath string) error {
 	// merge staged file into table
 	mergeQuery := GenMergeInto(tableDef, filePath, sc.stageName)
 	_, err := sc.db.Exec(mergeQuery)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	log.Debug("merge staged file into table", zap.String("query", mergeQuery))
-
-	if uri.Scheme == "file" {
-		// if the file is local, we need to remove it from stage
-		removeQuery := fmt.Sprintf(`REMOVE '@%s/%s';`, sc.stageName, filePath)
-		_, err = sc.db.Exec(removeQuery)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		log.Debug("remove file from stage", zap.String("query", removeQuery))
-	}
-
 	log.Info("Successfully merge file", zap.String("file", filePath))
 	return nil
 }
