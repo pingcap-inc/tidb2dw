@@ -19,25 +19,32 @@ var TiDB2SnowflakeTypeMap map[string]string = map[string]string{
 	// The maximum size of Snowflake's BINARY type is 8 MB, so can not support mediumblob and longblob.
 	// "mediumblob": "TEXT",
 	// "longblob":   "TEXT",
-	"varchar":   "VARCHAR",
-	"char":      "CHAR",
-	"binary":    "BINARY",
-	"varbinary": "BINARY",
-	"int":       "INT",
-	"mediumint": "INT",
-	"tinyint":   "TINYINT",
-	"smallint":  "SMALLINT",
-	"bigint":    "BIGINT",
-	"float":     "FLOAT",
-	"double":    "DOUBLE",
-	"decimal":   "DECIMAL",
-	"numeric":   "NUMERIC",
-	"bool":      "BOOLEAN",
-	"boolean":   "BOOLEAN",
-	"date":      "DATE",
-	"datetime":  "DATETIME",
-	"timestamp": "TIMESTAMP",
-	"time":      "TIME",
+	"varchar":            "VARCHAR",
+	"char":               "CHAR",
+	"binary":             "BINARY",
+	"varbinary":          "BINARY",
+	"tinyint":            "NUMBER",
+	"smallint":           "NUMBER",
+	"int":                "NUMBER",
+	"mediumint":          "NUMBER",
+	"bigint":             "NUMBER",
+	"tinyint unsigned":   "NUMBER",
+	"smallint unsigned":  "NUMBER",
+	"int unsigned":       "NUMBER",
+	"mediumint unsigned": "NUMBER",
+	"bigint unsigned":    "NUMBER",
+	"float":              "FLOAT",
+	"float unsigned":     "FLOAT",
+	"double":             "FLOAT",
+	"double unsigned":    "FLOAT",
+	"decimal":            "NUMBER",
+	"numeric":            "NUMBER",
+	"bool":               "BOOLEAN",
+	"boolean":            "BOOLEAN",
+	"date":               "DATE",
+	"datetime":           "DATETIME",
+	"timestamp":          "TIMESTAMP",
+	"time":               "TIME",
 }
 
 func GetSnowflakeTypeString(column cloudstorage.TableCol) (string, error) {
@@ -50,6 +57,8 @@ func GetSnowflakeTypeString(column cloudstorage.TableCol) (string, error) {
 	case "longblob", "mediumblob":
 		return "", errors.Errorf("The maximum size of Snowflake's BINARY type is 8 MB, so can not support mediumblob and longblob.")
 	case "int", "mediumint", "bigint", "tinyint", "smallint", "float", "double", "bool", "boolean", "date":
+		return fmt.Sprintf("%s %s", column.Name, TiDB2SnowflakeTypeMap[tp]), nil
+	case "int unsigned", "mediumint unsigned", "tinyint unsigned", "smallint unsigned", "bigint unsigned", "float unsigned", "double unsigned":
 		return fmt.Sprintf("%s %s", column.Name, TiDB2SnowflakeTypeMap[tp]), nil
 	case "varchar", "char", "binary", "varbinary":
 		return fmt.Sprintf("%s %s(%s)", column.Name, TiDB2SnowflakeTypeMap[tp], column.Precision), nil

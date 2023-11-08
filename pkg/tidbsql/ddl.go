@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/dumpling/export"
@@ -113,7 +114,7 @@ func GetColumnDiff(prev []cloudstorage.TableCol, curr []cloudstorage.TableCol) (
 
 func GetTiDBTableColumn(db *sql.DB, sourceDatabase, sourceTable string) ([]cloudstorage.TableCol, error) {
 	columnQuery := fmt.Sprintf(`SELECT COLUMN_NAME, COLUMN_DEFAULT, IS_NULLABLE, DATA_TYPE, 
-CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION
+CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION, COLUMN_TYPE
 FROM information_schema.columns
 WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) // FIXME: Escape
 	rows, err := db.Query(columnQuery)
@@ -133,6 +134,7 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 			NumPrecision  *int
 			NumScale      *int
 			DateTimePrec  *int
+			ColumnType    string
 		}
 		err = rows.Scan(
 			&column.ColumnName,
@@ -143,6 +145,7 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 			&column.NumPrecision,
 			&column.NumScale,
 			&column.DateTimePrec,
+			&column.ColumnType,
 		)
 		if err != nil {
 			return nil, errors.Trace(err)
@@ -166,6 +169,10 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 		var defaultVal interface{}
 		if column.ColumnDefault != nil {
 			defaultVal = *column.ColumnDefault
+		}
+		// handle unsigned
+		if strings.HasSuffix(column.DataType, " unsigned") {
+			column.DataType = column.DataType + " unsigned"
 		}
 		tableCol := cloudstorage.TableCol{
 			Name:      column.ColumnName,

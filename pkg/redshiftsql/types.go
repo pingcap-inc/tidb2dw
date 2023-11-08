@@ -19,25 +19,32 @@ var TiDB2RedshiftTypeMap map[string]string = map[string]string{
 	// The maximum size of Redshift's VARBYTE type is 100 KB, so can not support mediumblob and longblob.
 	// "mediumblob": "TEXT",
 	// "longblob":   "TEXT",
-	"varchar":   "VARCHAR",
-	"char":      "CHAR",
-	"binary":    "VARBYTE",
-	"varbinary": "VARBYTE",
-	"int":       "INT",
-	"mediumint": "INT",
-	"tinyint":   "SMALLINT",
-	"smallint":  "SMALLINT",
-	"bigint":    "BIGINT",
-	"float":     "FLOAT",
-	"double":    "FLOAT",
-	"decimal":   "DECIMAL",
-	"numeric":   "NUMERIC",
-	"bool":      "BOOLEAN",
-	"boolean":   "BOOLEAN",
-	"date":      "DATE",
-	"datetime":  "TIMESTAMP",
-	"timestamp": "TIMESTAMP",
-	"time":      "TIME",
+	"varchar":            "VARCHAR",
+	"char":               "CHAR",
+	"binary":             "VARBYTE",
+	"varbinary":          "VARBYTE",
+	"tinyint":            "SMALLINT",
+	"tinyint unsigned":   "SMALLINT",
+	"smallint":           "SMALLINT",
+	"smallint unsigned":  "INT",
+	"int":                "INT",
+	"int unsigned":       "BIGINT",
+	"mediumint":          "INT",
+	"mediumint unsigned": "BIGINT",
+	"bigint":             "BIGINT",
+	"bigint unsigned":    "DECIMAL(20,0)",
+	"float":              "REAL",
+	"float unsigned":     "REAL",
+	"double":             "DOUBLE PRECISION",
+	"double unsigned":    "DOUBLE PRECISION",
+	"decimal":            "DECIMAL",
+	"numeric":            "NUMERIC",
+	"bool":               "BOOLEAN",
+	"boolean":            "BOOLEAN",
+	"date":               "DATE",
+	"datetime":           "TIMESTAMP",
+	"timestamp":          "TIMESTAMP",
+	"time":               "TIME",
 }
 
 // GetRedshiftColumnString returns the column string for Redshift.
@@ -50,6 +57,8 @@ func GetRedshiftTypeString(column cloudstorage.TableCol) (string, error) {
 	case "tinyblob", "blob":
 		return fmt.Sprintf("%s %s(%s)", column.Name, TiDB2RedshiftTypeMap[tp], column.Precision), nil
 	case "int", "mediumint", "bigint", "tinyint", "smallint", "float", "double", "bool", "boolean", "date":
+		return fmt.Sprintf("%s %s", column.Name, TiDB2RedshiftTypeMap[tp]), nil
+	case "int unsigned", "mediumint unsigned", "tinyint unsigned", "smallint unsigned", "bigint unsigned", "float unsigned", "double unsigned":
 		return fmt.Sprintf("%s %s", column.Name, TiDB2RedshiftTypeMap[tp]), nil
 	case "varchar", "char", "binary", "varbinary":
 		return fmt.Sprintf("%s %s(%s)", column.Name, TiDB2RedshiftTypeMap[tp], column.Precision), nil

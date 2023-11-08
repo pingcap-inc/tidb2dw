@@ -33,7 +33,7 @@ func buildDumperConfig(
 	conf.FileType = "csv"
 	conf.CsvSeparator = ","
 	conf.CsvDelimiter = "\""
-	conf.EscapeBackslash = true
+	conf.EscapeBackslash = false
 	conf.TransactionalConsistency = true
 	// pass any positive integer to `Rows` enable concurrent dumping
 	conf.Rows = 1
