@@ -108,7 +108,8 @@ func (bc *BigQueryConnector) CopyTableSchema(sourceDatabase string, sourceTable 
 
 func (bc *BigQueryConnector) LoadSnapshot(targetTable, filePath string) error {
 	// FIXME: if source table is empty, bigquery will fail to load (file not found)
-	err := loadGCSFileToBigQuery(bc.ctx, bc.bqClient, bc.datasetID, bc.tableID, filePath)
+	absolutePath := fmt.Sprintf("%s/%s", bc.storageURL, filePath)
+	err := loadGCSFileToBigQuery(bc.ctx, bc.bqClient, bc.datasetID, bc.tableID, absolutePath)
 	if err != nil {
 		return errors.Trace(err)
 	}

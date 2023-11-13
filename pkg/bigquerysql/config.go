@@ -14,5 +14,9 @@ type BigQueryConfig struct {
 }
 
 func (cfg *BigQueryConfig) NewClient() (*bigquery.Client, error) {
-	return bigquery.NewClient(context.Background(), cfg.ProjectID, option.WithCredentialsFile(cfg.CredentialsFilePath))
+	opts := []option.ClientOption{}
+	if cfg.CredentialsFilePath != "" {
+		opts = append(opts, option.WithCredentialsFile(cfg.CredentialsFilePath))
+	}
+	return bigquery.NewClient(context.Background(), cfg.ProjectID, opts...)
 }
