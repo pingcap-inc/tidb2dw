@@ -91,9 +91,11 @@ func getGCSURIWithCredentials(storagePath string, credentialsFilePath string) (*
 	}
 
 	// append credentials file path to query string
-	values := url.Values{}
-	values.Add("credentials-file", credentialsFilePath)
-	uri.RawQuery = values.Encode()
+	if credentialsFilePath != "" {
+		values := url.Values{}
+		values.Add("credentials-file", credentialsFilePath)
+		uri.RawQuery = values.Encode()
+	}
 	return uri, nil
 }
 

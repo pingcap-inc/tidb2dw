@@ -83,7 +83,6 @@ func NewGCSCmd() *cobra.Command {
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
 
 	cmd.MarkFlagRequired("storage")
-	cmd.MarkFlagRequired("credentials-file-path")
 
 	return cmd
 }
