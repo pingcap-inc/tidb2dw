@@ -129,15 +129,15 @@ func GetBigQueryColumnString(column cloudstorage.TableCol, createTable bool) (st
 		return "", errors.Trace(err)
 	}
 	sb.WriteString(fmt.Sprintf("%s %s", column.Name, colType))
-	if column.Nullable == "false" {
-		sb.WriteString(" NOT NULL")
-	}
 	if createTable {
 		if column.Default != nil {
 			sb.WriteString(fmt.Sprintf(` DEFAULT %s`, getDefaultString(column.Default)))
 		} else if column.Nullable == "true" {
 			sb.WriteString(" DEFAULT NULL")
 		}
+	}
+	if column.Nullable == "false" {
+		sb.WriteString(" NOT NULL")
 	}
 	return sb.String(), nil
 }
