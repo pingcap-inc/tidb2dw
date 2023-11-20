@@ -122,6 +122,7 @@ func getDefaultString(val interface{}) string {
 // "id INT NOT NULL DEFAULT '0'"
 // Refer to:
 // https://dev.mysql.com/doc/refman/8.0/en/data-types.html
+// https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#column_name_and_column_schema
 func GetBigQueryColumnString(column cloudstorage.TableCol, createTable bool) (string, error) {
 	var sb strings.Builder
 	colType, err := GetBigQueryColumnTypeString(column)
@@ -129,15 +130,16 @@ func GetBigQueryColumnString(column cloudstorage.TableCol, createTable bool) (st
 		return "", errors.Trace(err)
 	}
 	sb.WriteString(fmt.Sprintf("%s %s", column.Name, colType))
-	if column.Nullable == "false" {
-		sb.WriteString(" NOT NULL")
-	}
 	if createTable {
 		if column.Default != nil {
 			sb.WriteString(fmt.Sprintf(` DEFAULT %s`, getDefaultString(column.Default)))
 		} else if column.Nullable == "true" {
 			sb.WriteString(" DEFAULT NULL")
 		}
+	}
+	// DEFAULT must be defined before NOT NULL
+	if column.Nullable == "false" {
+		sb.WriteString(" NOT NULL")
 	}
 	return sb.String(), nil
 }
