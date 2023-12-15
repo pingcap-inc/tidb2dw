@@ -19,6 +19,7 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/br/pkg/storage"
+	"github.com/pingcap/tidb/dumpling/export"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"github.com/thediveo/enumflag"
 	"go.uber.org/zap"
@@ -53,6 +54,14 @@ const (
 	StageSnapshotDumped    Stage = "snapshot-dumped"
 	StageSnapshotLoaded    Stage = "snapshot-loaded"
 )
+
+var CsvOutputDialectMap = map[string]export.CSVDialect{
+	"":          export.CSVDialectDefault,
+	"default":   export.CSVDialectDefault,
+	"bigquery":  export.CSVDialectBigQuery,
+	"snowflake": export.CSVDialectSnowflake,
+	"redshift":  export.CSVDialectRedshift,
+}
 
 func checkStage(storage storage.ExternalStorage) (Stage, error) {
 	stage := StageInit
@@ -162,6 +171,7 @@ func Export(
 	cdcPort int,
 	cdcFlushInterval time.Duration,
 	cdcFileSize int,
+	csvOutputDialect string,
 	mode RunMode,
 ) (
 	stage Stage,
@@ -203,7 +213,7 @@ func Export(
 		fallthrough
 	case StageChangefeedCreated:
 		if mode != RunModeIncrementalOnly && mode != RunModeCloud {
-			if err := dumpling.RunDump(tidbConfig, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), tables, onSnapshotDumpProgress); err != nil {
+			if err := dumpling.RunDump(tidbConfig, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), tables, CsvOutputDialectMap[csvOutputDialect], onSnapshotDumpProgress); err != nil {
 				return "", errors.Trace(err)
 			}
 		}
@@ -225,11 +235,12 @@ func Replicate(
 	cdcFileSize int,
 	snapConnectorMap map[string]coreinterfaces.Connector,
 	increConnectorMap map[string]coreinterfaces.Connector,
+	csvOutputDialect string,
 	mode RunMode,
 ) error {
 	metrics.TableNumGauge.Add(float64(len(tables)))
 	stage, err := Export(tidbConfig, tables, storageURI, snapshotURI, incrementURI,
-		snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, mode)
+		snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, csvOutputDialect, mode)
 	if err != nil {
 		return errors.Trace(err)
 	}

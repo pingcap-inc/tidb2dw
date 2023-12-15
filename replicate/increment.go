@@ -1,6 +1,7 @@
 package replicate
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -336,14 +337,14 @@ func (sess *IncrementReplicateSession) handleNewFiles(dmlFileMap map[cloudstorag
 		sess.logger.Info("no new files found since last round")
 		return nil
 	}
-	slices.SortStableFunc(keys, func(x, y cloudstorage.DmlPathKey) bool {
-		if x.TableVersion != y.TableVersion {
-			return x.TableVersion < y.TableVersion
+	slices.SortStableFunc(keys, func(x, y cloudstorage.DmlPathKey) int {
+		if r := cmp.Compare(x.TableVersion, y.TableVersion); r != 0 {
+			return r
 		}
-		if x.PartitionNum != y.PartitionNum {
-			return x.PartitionNum < y.PartitionNum
+		if r := cmp.Compare(x.PartitionNum, y.PartitionNum); r != 0 {
+			return r
 		}
-		return x.Date < y.Date
+		return cmp.Compare(x.Date, y.Date)
 	})
 	sess.logger.Info("new files found since last round", zap.Any("keys", keys))
 

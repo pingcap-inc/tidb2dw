@@ -56,7 +56,6 @@ func (c *CDCConnector) CreateChangefeed() error {
 		OutputColumnID: putil.AddressOf(true),
 	}
 	replicateCfg.Sink.DateSeparator = putil.AddressOf(config.DateSeparatorDay.String())
-	replicateCfg.EnableOldValue = false
 	replicateCfg.Filter = &apiv2.FilterConfig{Rules: c.tables}
 	cfCfg := &ChangefeedConfig{
 		SinkURI:       c.SinkURI.String(),

@@ -25,6 +25,7 @@ func NewGCSCmd() *cobra.Command {
 		cdcFileSize         int
 		logFile             string
 		logLevel            string
+		csvOutputDialect    string
 		mode                RunMode
 	)
 
@@ -49,7 +50,7 @@ func NewGCSCmd() *cobra.Command {
 
 		_, err = Export(
 			&tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI, snapshotConcurrency,
-			cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, mode)
+			cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, csvOutputDialect, mode)
 
 		return err
 	}
@@ -75,6 +76,7 @@ func NewGCSCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&tables, "table", "t", []string{}, "tables full qualified name, e.g. -t <db1>.<table1> -t <db2>.<table2>")
 	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
 	cmd.Flags().StringVarP(&storagePath, "storage", "s", "", "storage path: gs://<bucket>/<path>")
+	cmd.Flags().StringVar(&csvOutputDialect, "csv-output-dialect", "", "csv output dialect: default, redshift, snowflake, bigquery")
 	cmd.Flags().StringVar(&cdcHost, "cdc.host", "127.0.0.1", "TiCDC server host")
 	cmd.Flags().IntVar(&cdcPort, "cdc.port", 8300, "TiCDC server port")
 	cmd.Flags().DurationVar(&cdcFlushInterval, "cdc.flush-interval", 60*time.Second, "")
