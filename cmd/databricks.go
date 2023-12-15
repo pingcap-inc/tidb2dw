@@ -107,7 +107,8 @@ func NewDatabricksCmd() *cobra.Command {
 
 		return Replicate(&tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI,
 			snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, snapConnectorMap,
-			increConnectorMap, mode)
+			increConnectorMap, "default", mode, // // FIXME: to be confirmed whether to use default dialect
+		)
 	}
 
 	cmd := &cobra.Command{

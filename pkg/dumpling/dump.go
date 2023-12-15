@@ -21,6 +21,7 @@ func buildDumperConfig(
 	storageURI *url.URL,
 	snapshotTSO string,
 	tableNames []string,
+	csvOutputDialect export.CSVDialect,
 ) (*export.Config, error) {
 	conf := export.DefaultConfig()
 	conf.Logger = log.L()
@@ -35,6 +36,7 @@ func buildDumperConfig(
 	conf.CsvDelimiter = "\""
 	conf.EscapeBackslash = false
 	conf.TransactionalConsistency = true
+	conf.CsvOutputDialect = csvOutputDialect
 	// pass any positive integer to `Rows` enable concurrent dumping
 	conf.Rows = 1
 	conf.OutputDirPath = storageURI.String()
@@ -85,9 +87,10 @@ func RunDump(
 	storageURI *url.URL,
 	snapshotTSO string,
 	tableNames []string,
+	csvOutputDialect export.CSVDialect,
 	onSnapshotDumpProgress func(dumpedRows, totalRows int64),
 ) error {
-	dumpConfig, err := buildDumperConfig(tidbConfig, concurrency, storageURI, snapshotTSO, tableNames)
+	dumpConfig, err := buildDumperConfig(tidbConfig, concurrency, storageURI, snapshotTSO, tableNames, csvOutputDialect)
 	if err != nil {
 		return errors.Trace(err)
 	}

@@ -109,7 +109,8 @@ func NewRedshiftCmd() *cobra.Command {
 
 		return Replicate(&tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI,
 			snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize,
-			snapConnectorMap, increConnectorMap, mode)
+			snapConnectorMap, increConnectorMap, "redshift", mode,
+		)
 	}
 
 	cmd := &cobra.Command{
