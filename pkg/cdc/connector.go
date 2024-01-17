@@ -18,14 +18,18 @@ import (
 )
 
 type CDCConnector struct {
-	cdcServer     string
-	tables        []string
-	startTSO      uint64
-	sinkURIConfig *SinkURIConfig
-	SinkURI       *url.URL
+	cdcServer            string
+	tables               []string
+	startTSO             uint64
+	sinkURIConfig        *SinkURIConfig
+	SinkURI              *url.URL
+	binaryEncodingMethod string
 }
 
-func NewCDCConnector(cdcHost string, cdcPort int, tables []string, startTSO uint64, storageUri *url.URL, flushInterval time.Duration, fileSize int) (*CDCConnector, error) {
+func NewCDCConnector(
+	cdcHost string, cdcPort int, tables []string, startTSO uint64, storageUri *url.URL,
+	flushInterval time.Duration, fileSize int, binaryEncodingMethod string,
+) (*CDCConnector, error) {
 	sinkURIConfig := &SinkURIConfig{
 		storageUri:    storageUri,
 		flushInterval: flushInterval,
@@ -37,11 +41,12 @@ func NewCDCConnector(cdcHost string, cdcPort int, tables []string, startTSO uint
 		return nil, errors.Trace(err)
 	}
 	return &CDCConnector{
-		cdcServer:     fmt.Sprintf("http://%s:%d", cdcHost, cdcPort),
-		tables:        tables,
-		startTSO:      startTSO,
-		sinkURIConfig: sinkURIConfig,
-		SinkURI:       sinkURI,
+		cdcServer:            fmt.Sprintf("http://%s:%d", cdcHost, cdcPort),
+		tables:               tables,
+		startTSO:             startTSO,
+		sinkURIConfig:        sinkURIConfig,
+		SinkURI:              sinkURI,
+		binaryEncodingMethod: binaryEncodingMethod,
 	}, nil
 }
 
@@ -49,7 +54,7 @@ func (c *CDCConnector) CreateChangefeed() error {
 	client := &http.Client{}
 	replicateCfg := apiv2.GetDefaultReplicaConfig()
 	replicateCfg.Sink.CSVConfig.IncludeCommitTs = true
-	replicateCfg.Sink.CSVConfig.BinaryEncodingMethod = config.BinaryEncodingHex
+	replicateCfg.Sink.CSVConfig.BinaryEncodingMethod = c.binaryEncodingMethod
 	replicateCfg.Sink.CloudStorageConfig = &apiv2.CloudStorageConfig{
 		FlushInterval:  putil.AddressOf(c.sinkURIConfig.flushInterval.String()),
 		FileSize:       putil.AddressOf(c.sinkURIConfig.fileSize),
