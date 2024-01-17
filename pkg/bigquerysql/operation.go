@@ -37,7 +37,7 @@ func loadGCSFileToBigQuery(ctx context.Context, client *bigquery.Client, dataset
 	gcsRef.NullMarker = "\\N"
 
 	loader := client.Dataset(datasetID).Table(tableID).LoaderFrom(gcsRef)
-	loader.WriteDisposition = bigquery.WriteEmpty
+	loader.WriteDisposition = bigquery.WriteAppend
 
 	job, err := loader.Run(ctx)
 	if err != nil {
