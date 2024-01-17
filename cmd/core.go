@@ -20,6 +20,7 @@ import (
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tidb/dumpling/export"
+	tiflow_config "github.com/pingcap/tiflow/pkg/config"
 	putil "github.com/pingcap/tiflow/pkg/util"
 	"github.com/thediveo/enumflag"
 	"go.uber.org/zap"
@@ -55,12 +56,20 @@ const (
 	StageSnapshotLoaded    Stage = "snapshot-loaded"
 )
 
-var CsvOutputDialectMap = map[string]export.CSVDialect{
+var DumplingCsvOutputDialectMap = map[string]export.CSVDialect{
 	"":          export.CSVDialectDefault,
 	"default":   export.CSVDialectDefault,
 	"bigquery":  export.CSVDialectBigQuery,
 	"snowflake": export.CSVDialectSnowflake,
 	"redshift":  export.CSVDialectRedshift,
+}
+
+var CdcCsvBinaryEncodingMethodMap = map[string]string{
+	"":          tiflow_config.BinaryEncodingHex,
+	"default":   tiflow_config.BinaryEncodingHex,
+	"bigquery":  tiflow_config.BinaryEncodingBase64,
+	"snowflake": tiflow_config.BinaryEncodingHex,
+	"redshift":  tiflow_config.BinaryEncodingHex,
 }
 
 func checkStage(storage storage.ExternalStorage) (Stage, error) {
@@ -202,7 +211,10 @@ func Export(
 	switch stage {
 	case StageInit:
 		if mode != RunModeSnapshotOnly && mode != RunModeCloud {
-			cdcConnector, err := cdc.NewCDCConnector(cdcHost, cdcPort, tables, startTSO, incrementURI, cdcFlushInterval, cdcFileSize)
+			cdcConnector, err := cdc.NewCDCConnector(
+				cdcHost, cdcPort, tables, startTSO, incrementURI, cdcFlushInterval, cdcFileSize,
+				CdcCsvBinaryEncodingMethodMap[csvOutputDialect],
+			)
 			if err != nil {
 				return "", errors.Trace(err)
 			}
@@ -213,7 +225,10 @@ func Export(
 		fallthrough
 	case StageChangefeedCreated:
 		if mode != RunModeIncrementalOnly && mode != RunModeCloud {
-			if err := dumpling.RunDump(tidbConfig, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), tables, CsvOutputDialectMap[csvOutputDialect], onSnapshotDumpProgress); err != nil {
+			if err := dumpling.RunDump(
+				tidbConfig, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), tables,
+				DumplingCsvOutputDialectMap[csvOutputDialect], onSnapshotDumpProgress,
+			); err != nil {
 				return "", errors.Trace(err)
 			}
 		}
