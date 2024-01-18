@@ -35,6 +35,7 @@ func loadGCSFileToBigQuery(ctx context.Context, client *bigquery.Client, dataset
 	gcsRef := bigquery.NewGCSReference(gcsFilePath)
 	gcsRef.SourceFormat = bigquery.CSV
 	gcsRef.NullMarker = "\\N"
+	gcsRef.AllowQuotedNewlines = true
 
 	loader := client.Dataset(datasetID).Table(tableID).LoaderFrom(gcsRef)
 	loader.WriteDisposition = bigquery.WriteAppend
