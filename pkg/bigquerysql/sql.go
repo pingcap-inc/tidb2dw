@@ -2,8 +2,9 @@ package bigquerysql
 
 import (
 	"fmt"
-	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"strings"
+
+	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
@@ -15,23 +16,23 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, datasetID, tableID, ext
 	for _, col := range tableDef.Columns {
 		if col.IsPK == "true" {
 			pkColumn = append(pkColumn, col.Name)
-			onStat = append(onStat, fmt.Sprintf(`T.%s = S.%s`, col.Name, col.Name))
+			onStat = append(onStat, fmt.Sprintf("T.%s = S.%s", col.Name, col.Name))
 		}
 	}
 
 	updateStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
-		updateStat = append(updateStat, fmt.Sprintf(`%s = S.%s`, col.Name, col.Name))
+		updateStat = append(updateStat, fmt.Sprintf("`%s` = S.%s", col.Name, col.Name))
 	}
 
 	insertStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
-		insertStat = append(insertStat, col.Name)
+		insertStat = append(insertStat, fmt.Sprintf("`%s`", col.Name))
 	}
 
 	valuesStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
-		valuesStat = append(valuesStat, fmt.Sprintf(`S.%s`, col.Name))
+		valuesStat = append(valuesStat, fmt.Sprintf("S.%s", col.Name))
 	}
 
 	mergeSQL := fmt.Sprintf(
@@ -81,7 +82,7 @@ func GenCreateSchema(columns []cloudstorage.TableCol, pkColumns []string, datase
 	sqlRows := make([]string, 0, len(columnRows)+1)
 	sqlRows = append(sqlRows, columnRows...)
 	if len(pkColumns) > 0 {
-		sqlRows = append(sqlRows, fmt.Sprintf("PRIMARY KEY (%s) NOT ENFORCED", strings.Join(pkColumns, ", ")))
+		sqlRows = append(sqlRows, fmt.Sprintf("PRIMARY KEY (`%s`) NOT ENFORCED", strings.Join(pkColumns, ", ")))
 	}
 	// Add idents
 	for i := 0; i < len(sqlRows); i++ {
