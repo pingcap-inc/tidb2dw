@@ -2,7 +2,6 @@ package bigquerysql
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
@@ -22,13 +21,6 @@ func GetColumnModifyString(diff *tidbsql.ColumnDiff) (string, error) {
 		}
 		// https://cloud.google.com/bigquery/docs/reference/standard-sql/conversion_rules
 		strs = append(strs, fmt.Sprintf("`%s` SET DATA TYPE %s", diff.After.Name, colType))
-	}
-	if diff.Before.Default != diff.After.Default {
-		if diff.After.Default == nil {
-			strs = append(strs, fmt.Sprintf("`%s` DROP DEFAULT", diff.After.Name))
-		} else {
-			strs = append(strs, fmt.Sprintf("`%s` SET DEFAULT %s", diff.After.Name, getDefaultString(diff.After.Default)))
-		}
 	}
 	if diff.Before.Nullable != diff.After.Nullable {
 		if diff.After.Nullable == "true" {
@@ -80,12 +72,7 @@ func GenDDLViaColumnsDiff(datasetID, tableID string, prevColumns []cloudstorage.
 			ddl += colStr + ";"
 			ddls = append(ddls, ddl)
 			if item.After.Default != nil {
-				ddls = append(
-					ddls,
-					fmt.Sprintf("ALTER TABLE `%s` ALTER COLUMN `%s` SET DEFAULT %s;", tableFullName, item.After.Name, getDefaultString(item.After.Default)),
-					fmt.Sprintf("UPDATE `%s` SET `%s` = %s WHERE TRUE;", tableFullName, item.After.Name, getDefaultString(item.After.Default)),
-				)
-
+				return nil, errors.New("BigQuery currently does not support add column with default value")
 			} else if item.After.Nullable == "true" {
 				ddls = append(ddls, fmt.Sprintf("ALTER TABLE `%s` ALTER COLUMN `%s` SET DEFAULT NULL;", tableFullName, item.After.Name))
 			}
@@ -110,14 +97,6 @@ func GenDDLViaColumnsDiff(datasetID, tableID string, prevColumns []cloudstorage.
 	return ddls, nil
 }
 
-func getDefaultString(val interface{}) string {
-	_, err := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
-	if err != nil {
-		return fmt.Sprintf("'%v'", val) // FIXME: escape
-	}
-	return fmt.Sprintf("%v", val)
-}
-
 // GetBigQueryColumnString returns a string describing the column in BigQuery, e.g.
 // "id INT NOT NULL DEFAULT '0'"
 // Refer to:
@@ -131,9 +110,7 @@ func GetBigQueryColumnString(column cloudstorage.TableCol, createTable bool) (st
 	}
 	sb.WriteString(fmt.Sprintf("`%s` %s", column.Name, colType))
 	if createTable {
-		if column.Default != nil {
-			sb.WriteString(fmt.Sprintf(` DEFAULT %s`, getDefaultString(column.Default)))
-		} else if column.Nullable == "true" {
+		if column.Nullable == "true" {
 			sb.WriteString(" DEFAULT NULL")
 		}
 	}

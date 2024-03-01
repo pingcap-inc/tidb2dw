@@ -24,7 +24,7 @@ To replicate snapshot and incremental data of a TiDB Table to BigQuery:
 
 All DDL which will change the schema of table are supported (except index related), including:
 
-- Add column
+- Add column without default value
 - Drop column
 - Rename column
 - Drop table
@@ -34,3 +34,4 @@ All DDL which will change the schema of table are supported (except index relate
 >
 > 1. BigQuery has some limitations on modifying table schemas, like BigQuery does not support add a REQUIRED column to an existing table schema, refer to [BigQuery Docs](https://cloud.google.com/bigquery/docs/managing-table-schemas), in some cases, its better to recreate the table.
 > 2. The type mapping from TiDB to BigQuery is defined [here](https://github.com/pingcap-inc/tidb2dw/blob/main/pkg/bigquerysql/types.go).
+> 3. tidb2dw will not sync column's default value to BigQuery, when you add a new column with default value, it will throw an error, you'd better to recreate the table in BigQuery and start a new replication task.
