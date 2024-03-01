@@ -114,7 +114,7 @@ func GetColumnDiff(prev []cloudstorage.TableCol, curr []cloudstorage.TableCol) (
 
 func GetTiDBTableColumn(db *sql.DB, sourceDatabase, sourceTable string) ([]cloudstorage.TableCol, error) {
 	columnQuery := fmt.Sprintf(`SELECT COLUMN_NAME, COLUMN_DEFAULT, IS_NULLABLE, DATA_TYPE, 
-CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION, COLUMN_TYPE
+CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION, COLUMN_TYPE, EXTRA
 FROM information_schema.columns
 WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) // FIXME: Escape
 	rows, err := db.Query(columnQuery)
@@ -135,6 +135,7 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 			NumScale      *int
 			DateTimePrec  *int
 			ColumnType    string
+			Extra         *string
 		}
 		err = rows.Scan(
 			&column.ColumnName,
@@ -146,6 +147,7 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 			&column.NumScale,
 			&column.DateTimePrec,
 			&column.ColumnType,
+			&column.Extra,
 		)
 		if err != nil {
 			return nil, errors.Trace(err)
@@ -181,6 +183,11 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 			Precision: precision,
 			Scale:     scale,
 			Nullable:  nullable,
+		}
+		if column.Extra != nil {
+			if strings.Contains(*column.Extra, "GENERATED") {
+				continue
+			}
 		}
 		tableColumns = append(tableColumns, tableCol)
 	}
