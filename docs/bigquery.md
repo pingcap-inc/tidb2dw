@@ -24,7 +24,7 @@ To replicate snapshot and incremental data of a TiDB Table to BigQuery:
 
 All DDL which will change the schema of table are supported (except index related), including:
 
-- Add column
+- Add column without default value
 - Drop column
 - Rename column
 - Drop table
