@@ -109,7 +109,7 @@ func NewSnowflakeCmd() *cobra.Command {
 
 		return Replicate(&tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI,
 			snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize,
-			snapConnectorMap, increConnectorMap, "snowflake", mode,
+			snapConnectorMap, increConnectorMap, "snowflake", true, mode,
 		)
 	}
 

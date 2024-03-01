@@ -251,6 +251,7 @@ func Replicate(
 	snapConnectorMap map[string]coreinterfaces.Connector,
 	increConnectorMap map[string]coreinterfaces.Connector,
 	csvOutputDialect string,
+	parrallelLoad bool,
 	mode RunMode,
 ) error {
 	metrics.TableNumGauge.Add(float64(len(tables)))
@@ -268,7 +269,7 @@ func Replicate(
 			ctx := context.Background()
 			if mode != RunModeIncrementalOnly && stage != StageSnapshotLoaded {
 				apiservice.GlobalInstance.APIInfo.SetTableStage(table, apiservice.TableStageLoadingSnapshot)
-				if err = replicate.StartReplicateSnapshot(ctx, snapConnectorMap[table], table, tidbConfig, snapshotURI); err != nil {
+				if err = replicate.StartReplicateSnapshot(ctx, snapConnectorMap[table], table, tidbConfig, snapshotURI, parrallelLoad); err != nil {
 					apiservice.GlobalInstance.APIInfo.SetTableFatalError(table, err)
 					metrics.AddCounter(metrics.ErrorCounter, 1, table)
 					return
