@@ -185,7 +185,7 @@ WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) /
 			Nullable:  nullable,
 		}
 		if column.Extra != nil {
-			if strings.Contains(*column.Extra, "GENERATED") {
+			if strings.Contains(*column.Extra, "VIRTUAL GENERATED") {
 				continue
 			}
 		}
