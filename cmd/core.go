@@ -72,25 +72,16 @@ var CdcCsvBinaryEncodingMethodMap = map[string]string{
 	"redshift":  tiflow_config.BinaryEncodingHex,
 }
 
-func checkStage(storage storage.ExternalStorage) (Stage, error) {
-	stage := StageInit
-	ctx := context.Background()
-	if exist, err := storage.FileExists(ctx, "increment/metadata"); err != nil || !exist {
-		return stage, errors.Wrap(err, "Failed to check increment metadata")
-	} else {
-		stage = StageChangefeedCreated
-	}
-	if exist, err := storage.FileExists(ctx, "snapshot/metadata"); err != nil || !exist {
-		return stage, errors.Wrap(err, "Failed to check snapshot metadata")
-	} else {
-		stage = StageSnapshotDumped
-	}
-	if exist, err := storage.FileExists(ctx, "snapshot/loadinfo"); err != nil || !exist {
-		return stage, errors.Wrap(err, "Failed to check snapshot loadinfo")
-	} else {
-		stage = StageSnapshotLoaded
-	}
-	return stage, nil
+func isChangeFeedCreated(ctx context.Context, storage storage.ExternalStorage) (bool, error) {
+	return storage.FileExists(ctx, "increment/metadata")
+}
+
+func isDumplingWalkerCreated(ctx context.Context, storage storage.ExternalStorage) (bool, error) {
+	return storage.FileExists(ctx, "snapshot/metadata")
+}
+
+func isSnapshotLoaded(ctx context.Context, storage storage.ExternalStorage, tableName string) (bool, error) {
+	return storage.FileExists(ctx, fmt.Sprintf("snapshot/%s.loadinfo", tableName))
 }
 
 func getGCSURIWithCredentials(storagePath string, credentialsFilePath string) (*url.URL, error) {
@@ -170,6 +161,7 @@ func resolveAWSCredential(storagePath string) (*credentials.Value, error) {
 }
 
 func Export(
+	ctx context.Context,
 	tidbConfig *tidbsql.TiDBConfig,
 	tables []string,
 	storageURI *url.URL,
@@ -182,59 +174,57 @@ func Export(
 	cdcFileSize int,
 	csvOutputDialect string,
 	mode RunMode,
-) (
-	stage Stage,
-	err error) {
-	ctx := context.Background()
+) error {
 	storage, err := putil.GetExternalStorageFromURI(ctx, storageURI.String())
 	if err != nil {
-		return "", errors.Trace(err)
+		return errors.Trace(err)
 	}
-	stage, err = checkStage(storage)
-	if err != nil {
-		return "", errors.Trace(err)
-	}
-	log.Info("Start Export", zap.String("stage", string(stage)), zap.String("mode", RunModeIds[mode][0]))
 
 	startTSO := uint64(0)
 	if mode == RunModeFull {
 		startTSO, err = tidbsql.GetCurrentTSO(tidbConfig)
 		if err != nil {
-			return "", errors.Annotate(err, "Failed to get current TSO")
+			return errors.Annotate(err, "Failed to get current TSO")
 		}
 	}
 
-	onSnapshotDumpProgress := func(dumpedRows, totalRows int64) {
-		log.Info("Snapshot dump progress", zap.Int64("dumpedRows", dumpedRows), zap.Int64("estimatedTotalRows", totalRows))
-	}
-
-	switch stage {
-	case StageInit:
-		if mode != RunModeSnapshotOnly && mode != RunModeCloud {
+	if mode != RunModeSnapshotOnly && mode != RunModeCloud {
+		created, err := isChangeFeedCreated(ctx, storage)
+		if err != nil {
+			return errors.Trace(err)
+		}
+		if !created {
 			cdcConnector, err := cdc.NewCDCConnector(
 				cdcHost, cdcPort, tables, startTSO, incrementURI, cdcFlushInterval, cdcFileSize,
 				CdcCsvBinaryEncodingMethodMap[csvOutputDialect],
 			)
 			if err != nil {
-				return "", errors.Trace(err)
+				return errors.Trace(err)
 			}
 			if err = cdcConnector.CreateChangefeed(); err != nil {
-				return "", errors.Trace(err)
-			}
-		}
-		fallthrough
-	case StageChangefeedCreated:
-		if mode != RunModeIncrementalOnly && mode != RunModeCloud {
-			if err := dumpling.RunDump(
-				tidbConfig, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), tables,
-				DumplingCsvOutputDialectMap[csvOutputDialect], onSnapshotDumpProgress,
-			); err != nil {
-				return "", errors.Trace(err)
+				return errors.Trace(err)
 			}
 		}
 	}
 
-	return stage, nil
+	if mode != RunModeIncrementalOnly && mode != RunModeCloud {
+		created, err := isDumplingWalkerCreated(ctx, storage)
+		if err != nil {
+			return errors.Trace(err)
+		}
+		if !created {
+			onSnapshotDumpProgress := func(dumpedRows, totalRows int64) {
+				log.Info("Snapshot dump progress", zap.Int64("dumpedRows", dumpedRows), zap.Int64("estimatedTotalRows", totalRows))
+			}
+			if err := dumpling.RunDump(
+				tidbConfig, snapshotConcurrency, snapshotURI, fmt.Sprint(startTSO), tables,
+				DumplingCsvOutputDialectMap[csvOutputDialect], onSnapshotDumpProgress,
+			); err != nil {
+				return errors.Trace(err)
+			}
+		}
+	}
+	return nil
 }
 
 func Replicate(
@@ -254,11 +244,20 @@ func Replicate(
 	parrallelLoad bool,
 	mode RunMode,
 ) error {
+	ctx := context.Background()
 	metrics.TableNumGauge.Add(float64(len(tables)))
-	stage, err := Export(tidbConfig, tables, storageURI, snapshotURI, incrementURI,
-		snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, csvOutputDialect, mode)
+	if err := Export(ctx, tidbConfig, tables, storageURI, snapshotURI, incrementURI,
+		snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, csvOutputDialect, mode); err != nil {
+		return errors.Trace(err)
+	}
+
+	storage, err := putil.GetExternalStorageFromURI(ctx, storageURI.String())
 	if err != nil {
 		return errors.Trace(err)
+	}
+	onError := func(table string, err error) {
+		apiservice.GlobalInstance.APIInfo.SetTableFatalError(table, err)
+		metrics.AddCounter(metrics.ErrorCounter, 1, table)
 	}
 
 	var wg sync.WaitGroup
@@ -266,20 +265,24 @@ func Replicate(
 		wg.Add(1)
 		go func(table string) {
 			defer wg.Done()
-			ctx := context.Background()
-			if mode != RunModeIncrementalOnly && stage != StageSnapshotLoaded {
-				apiservice.GlobalInstance.APIInfo.SetTableStage(table, apiservice.TableStageLoadingSnapshot)
-				if err = replicate.StartReplicateSnapshot(ctx, snapConnectorMap[table], table, tidbConfig, snapshotURI, parrallelLoad); err != nil {
-					apiservice.GlobalInstance.APIInfo.SetTableFatalError(table, err)
-					metrics.AddCounter(metrics.ErrorCounter, 1, table)
+			if mode != RunModeIncrementalOnly {
+				loaded, err := isSnapshotLoaded(ctx, storage, table)
+				if err != nil {
+					onError(table, err)
 					return
+				}
+				if !loaded {
+					apiservice.GlobalInstance.APIInfo.SetTableStage(table, apiservice.TableStageLoadingSnapshot)
+					if err := replicate.StartReplicateSnapshot(ctx, snapConnectorMap[table], table, tidbConfig, snapshotURI, parrallelLoad); err != nil {
+						onError(table, err)
+						return
+					}
 				}
 			}
 			if mode != RunModeSnapshotOnly {
 				apiservice.GlobalInstance.APIInfo.SetTableStage(table, apiservice.TableStageLoadingIncremental)
-				if err = replicate.StartReplicateIncrement(ctx, increConnectorMap[table], table, incrementURI, cdcFlushInterval/5); err != nil {
-					apiservice.GlobalInstance.APIInfo.SetTableFatalError(table, err)
-					metrics.AddCounter(metrics.ErrorCounter, 1, table)
+				if err := replicate.StartReplicateIncrement(ctx, increConnectorMap[table], table, incrementURI, cdcFlushInterval/5); err != nil {
+					onError(table, err)
 					return
 				}
 			}

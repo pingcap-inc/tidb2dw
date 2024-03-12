@@ -159,7 +159,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 	// Write load info to workspace to record the status of load,
 	// loadinfo exists means the data has been all loaded into data warehouse.
 	loadinfo := fmt.Sprintf("Copy to data warehouse start time: %s\nCopy to data warehouse end time: %s\n", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
-	if err := sess.externalStorage.WriteFile(sess.ctx, "loadinfo", []byte(loadinfo)); err != nil {
+	if err := sess.externalStorage.WriteFile(sess.ctx, fmt.Sprintf("snapshot/%s.%s.loadinfo", sess.SourceDatabase, sess.SourceTable), []byte(loadinfo)); err != nil {
 		sess.logger.Error("Failed to upload loadinfo", zap.Error(err))
 	}
 	sess.logger.Info("Successfully upload loadinfo", zap.String("loadinfo", loadinfo))

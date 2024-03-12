@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -64,10 +65,8 @@ func NewS3Cmd() *cobra.Command {
 			return errors.Trace(err)
 		}
 
-		_, err = Export(&tidbConfigFromCli, tables, storageURI, snapshotURI,
-			incrementURI, snapshotConcurrency, cdcHost, cdcPort,
-			cdcFlushInterval, cdcFileSize, csvOutputDialect, mode)
-		return err
+		return Export(context.Background(), &tidbConfigFromCli, tables, storageURI, snapshotURI,
+			incrementURI, snapshotConcurrency, cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, csvOutputDialect, mode)
 	}
 
 	cmd := &cobra.Command{

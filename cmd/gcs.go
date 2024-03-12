@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"time"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
@@ -48,11 +49,8 @@ func NewGCSCmd() *cobra.Command {
 			return errors.Trace(err)
 		}
 
-		_, err = Export(
-			&tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI, snapshotConcurrency,
+		return Export(context.Background(), &tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI, snapshotConcurrency,
 			cdcHost, cdcPort, cdcFlushInterval, cdcFileSize, csvOutputDialect, mode)
-
-		return err
 	}
 
 	cmd := &cobra.Command{
