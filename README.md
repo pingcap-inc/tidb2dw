@@ -20,16 +20,16 @@ You can also export data to cloud object storage only.
 
 ```bash
 # Linux AMD64:
-wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.3/tidb2dw-v0.0.3-linux-amd64
+wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.4/tidb2dw-v0.0.4-linux-amd64
 
 # Linux ARM64:
-wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.3/tidb2dw-v0.0.3-linux-arm64
+wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.4/tidb2dw-v0.0.4-linux-arm64
 
 # MacOS AMD64:
-wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.3/tidb2dw-v0.0.3-darwin-amd64
+wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.4/tidb2dw-v0.0.4-darwin-amd64
 
 # MacOS ARM64:
-wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.3/tidb2dw-v0.0.3-darwin-arm64
+wget https://github.com/pingcap-inc/tidb2dw/releases/download/v0.0.4/tidb2dw-v0.0.4-darwin-arm64
 ```
 
 ## Build from source
