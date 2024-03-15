@@ -151,6 +151,7 @@ func (sess *SnapshotReplicateSession) Run() error {
 	} else {
 		if err := sess.DataWarehousePool.LoadSnapshot(sess.SourceTable, fmt.Sprintf("%s.%s.*", sess.SourceDatabase, sess.SourceTable)); err != nil {
 			sess.logger.Error("Failed to load snapshot data into data warehouse", zap.Error(err))
+			return errors.Trace(err)
 		}
 	}
 	endTime := time.Now()
