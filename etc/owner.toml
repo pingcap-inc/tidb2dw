@@ -1,0 +1,20 @@
+
+## Server log level, "debug", "info", "warn", "error" are supportted.
+# log-level = "info"
+
+# host = "127.0.0.1"
+# port = 20891
+## Owner lease duration, in seconds.
+# lease-duration = 10
+## Owner lease renew interval, in seconds.
+# lease-renew-interval = 5
+
+[metadb]
+## metadb information
+# host = "127.0.0.1"
+# port = 3306
+# user = "tidb2dw"
+# password = "tidb2dw"
+# db = "tidb2dw"
+# max-open-conns = 2
+# max-idle-conns = 1
