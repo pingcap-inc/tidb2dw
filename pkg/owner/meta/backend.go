@@ -15,8 +15,8 @@ type Backend interface {
 	// GetOwner returns the active owner of the tidb2dw service.
 	GetOwner() (string, error)
 
-	// TryCompaignOwner tries to campaign the owner of the tidb2dw service.
-	TryCompaignOwner(who string, leaseDurSec int) (bool, error)
+	// TryCampaignOwner tries to campaign the owner of the tidb2dw service.
+	TryCampaignOwner(who string, leaseDurSec int) (bool, error)
 
 	// RenewOwnerLease renews the lease of the owner of the tidb2dw service.
 	RenewOwnerLease(who string, leaseDurSec int) (bool, error)
@@ -99,8 +99,8 @@ func (b *RdsBackend) GetOwner() (string, error) {
 	return who, nil
 }
 
-// TryCompaignOwner tries to campaign the owner of the tidb2dw service.
-func (b *RdsBackend) TryCompaignOwner(who string, leaseDurSec int) (bool, error) {
+// TryCampaignOwner tries to campaign the owner of the tidb2dw service.
+func (b *RdsBackend) TryCampaignOwner(who string, leaseDurSec int) (bool, error) {
 	res, err := b.db.Exec("UPDATE owner SET who = ?, lease_expire = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE id = 1 AND lease_expire < NOW()", who, leaseDurSec)
 	if err != nil {
 		return false, err

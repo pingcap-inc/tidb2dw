@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Compaign struct {
+type Campaign struct {
 	cfg *config.OwnerConfig
 
 	backend meta.Backend
@@ -19,15 +19,15 @@ type Compaign struct {
 	isOwner atomic.Bool
 }
 
-func NewCompaign(cfg *config.OwnerConfig, backend meta.Backend) *Compaign {
-	return &Compaign{
+func NewCampaign(cfg *config.OwnerConfig, backend meta.Backend) *Campaign {
+	return &Campaign{
 		cfg:     cfg,
 		backend: backend,
 		isOwner: atomic.Bool{},
 	}
 }
 
-func (c *Compaign) Start(eg *errgroup.Group, ctx context.Context) {
+func (c *Campaign) Start(eg *errgroup.Group, ctx context.Context) {
 	eg.Go(func() error {
 		serverId := fmt.Sprintf("%s:%d", c.cfg.Host, c.cfg.Port)
 
@@ -48,7 +48,7 @@ func (c *Compaign) Start(eg *errgroup.Group, ctx context.Context) {
 					}
 				} else {
 					// Try to campaign owner
-					success, err := c.backend.TryCompaignOwner(serverId, c.cfg.LeaseDuration)
+					success, err := c.backend.TryCampaignOwner(serverId, c.cfg.LeaseDuration)
 					if err != nil {
 						// log error
 						continue
@@ -64,6 +64,6 @@ func (c *Compaign) Start(eg *errgroup.Group, ctx context.Context) {
 	})
 }
 
-func (c *Compaign) IsOwner() bool {
+func (c *Campaign) IsOwner() bool {
 	return c.isOwner.Load()
 }

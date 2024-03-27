@@ -17,7 +17,7 @@ type Server struct {
 
 	// backend
 	backend  meta.Backend
-	compaign *Compaign
+	campaign *Campaign
 
 	// errgroup and context
 	eg     *errgroup.Group
@@ -31,7 +31,7 @@ func NewServer(cfg *config.OwnerConfig) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	compaign := NewCompaign(cfg, backend)
+	campaign := NewCampaign(cfg, backend)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	eg, ctx := errgroup.WithContext(ctx)
@@ -39,14 +39,14 @@ func NewServer(cfg *config.OwnerConfig) (*Server, error) {
 		cfg:        cfg,
 		grpcServer: grpcServer,
 		backend:    backend,
-		compaign:   compaign,
+		campaign:   campaign,
 		eg:         eg,
 		ctx:        ctx,
 		cancel:     cancel,
 	}, nil
 }
 
-// Prepare bootstraps the backend and starts the owner compaign.
+// Prepare bootstraps the backend and starts the owner campaign.
 func (s *Server) Prepare() error {
 	// Initialize the backend meta schema.
 	if err := s.backend.Bootstrap(); err != nil {
@@ -54,7 +54,7 @@ func (s *Server) Prepare() error {
 	}
 
 	// Start to campaign the owner.
-	s.compaign.Start(s.eg, s.ctx)
+	s.campaign.Start(s.eg, s.ctx)
 
 	// Todo:
 	// Register the owner service to the gRPC server.
