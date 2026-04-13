@@ -18,8 +18,13 @@ type Checkpoint struct {
 	LastDataFile        string `json:"last_data_file"`
 }
 
-func checkpointPath(schema, table string) string {
-	return path.Join("iceberg-checkpoints", url.PathEscape(schema), url.PathEscape(table)+".json")
+func checkpointPath(sourceID, schema, table string) string {
+	return path.Join(
+		"iceberg-checkpoints",
+		url.PathEscape(sourceID),
+		url.PathEscape(schema),
+		url.PathEscape(table)+".json",
+	)
 }
 
 func SaveCheckpoint(ext storage.ExternalStorage, checkpoint Checkpoint) error {
@@ -28,11 +33,15 @@ func SaveCheckpoint(ext storage.ExternalStorage, checkpoint Checkpoint) error {
 		return err
 	}
 
-	return ext.WriteFile(context.Background(), checkpointPath(checkpoint.Schema, checkpoint.Table), data)
+	return ext.WriteFile(
+		context.Background(),
+		checkpointPath(checkpoint.SourceID, checkpoint.Schema, checkpoint.Table),
+		data,
+	)
 }
 
-func LoadCheckpoint(ext storage.ExternalStorage, schema, table string) (Checkpoint, bool, error) {
-	filePath := checkpointPath(schema, table)
+func LoadCheckpoint(ext storage.ExternalStorage, sourceID, schema, table string) (Checkpoint, bool, error) {
+	filePath := checkpointPath(sourceID, schema, table)
 	exists, err := ext.FileExists(context.Background(), filePath)
 	if err != nil {
 		return Checkpoint{}, false, err

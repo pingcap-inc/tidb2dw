@@ -2,7 +2,9 @@ package icebergconsumer
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -20,13 +22,14 @@ type Config struct {
 }
 
 func NewConfig(sourceURI string, pollInterval time.Duration) (*Config, error) {
-	if sourceURI == "" {
+	trimmedSourceURI := strings.TrimSpace(sourceURI)
+	if trimmedSourceURI == "" {
 		return nil, errors.New("iceberg source uri is required")
 	}
 
-	parsedSourceURI, err := url.Parse(sourceURI)
-	if err != nil {
-		return nil, err
+	parsedSourceURI, err := url.Parse(trimmedSourceURI)
+	if err != nil || parsedSourceURI.Scheme == "" {
+		return nil, fmt.Errorf("invalid iceberg source uri: %q", sourceURI)
 	}
 
 	if pollInterval <= 0 {
