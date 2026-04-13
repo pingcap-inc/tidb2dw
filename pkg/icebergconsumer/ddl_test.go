@@ -73,7 +73,6 @@ func TestBuildTableDefinitionConvertsOriginalTableCol(t *testing.T) {
 				ID:   11,
 				Name: "status",
 				OriginalTableCol: &sinkcloudstorage.TableCol{
-					ID:        "11",
 					Name:      "status",
 					Tp:        "VARCHAR",
 					Default:   "active",
@@ -124,7 +123,7 @@ func TestBuildTableDefinitionRejectsNilOriginalTableCol(t *testing.T) {
 	require.ErrorContains(t, err, "OriginalTableCol")
 }
 
-func TestBuildDDLDefinitionsCreateTablePreservesEnumElems(t *testing.T) {
+func TestBuildDDLDefinitionsCreateTableKeepsPlainEnumType(t *testing.T) {
 	curr := &sinkiceberg.TableVersion{
 		SchemaName:      "test",
 		TableName:       "users",
@@ -146,8 +145,9 @@ func TestBuildDDLDefinitionsCreateTablePreservesEnumElems(t *testing.T) {
 	defs, err := BuildDDLDefinitions(nil, curr)
 	require.NoError(t, err)
 	require.Len(t, defs, 1)
-	require.Equal(t, "ENUM('open','closed')", defs[0].Columns[0].Tp)
-	require.Contains(t, defs[0].Query, "`status` ENUM('open','closed')")
+	require.Equal(t, "13", defs[0].Columns[0].ID)
+	require.Equal(t, "ENUM", defs[0].Columns[0].Tp)
+	require.Contains(t, defs[0].Query, "`status` ENUM")
 }
 
 func TestTypeDefinitionPreservesScaleOnlyTemporalTypes(t *testing.T) {

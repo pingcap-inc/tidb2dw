@@ -25,9 +25,9 @@ func BuildTableDefinition(version *sinkiceberg.TableVersion) (cloudstorage.Table
 			return cloudstorage.TableDefinition{}, fmt.Errorf("column %q (%d) has nil OriginalTableCol", column.Name, column.ID)
 		}
 		columns = append(columns, cloudstorage.TableCol{
-			ID:        column.OriginalTableCol.ID,
+			ID:        strconv.Itoa(column.ID),
 			Name:      column.OriginalTableCol.Name,
-			Tp:        originalColumnType(column.OriginalTableCol.Tp, column.OriginalTableCol.Elems),
+			Tp:        column.OriginalTableCol.Tp,
 			Default:   column.OriginalTableCol.Default,
 			Precision: column.OriginalTableCol.Precision,
 			Scale:     column.OriginalTableCol.Scale,
@@ -189,18 +189,6 @@ func typeDefinition(column cloudstorage.TableCol) string {
 		return fmt.Sprintf("%s(%s)", column.Tp, column.Precision)
 	}
 	return fmt.Sprintf("%s(%s,%s)", column.Tp, column.Precision, column.Scale)
-}
-
-func originalColumnType(tp string, elems []string) string {
-	if len(elems) == 0 {
-		return tp
-	}
-
-	quotedElems := make([]string, 0, len(elems))
-	for _, elem := range elems {
-		quotedElems = append(quotedElems, defaultValueString(elem))
-	}
-	return fmt.Sprintf("%s(%s)", tp, strings.Join(quotedElems, ","))
 }
 
 func defaultValueString(value interface{}) string {
