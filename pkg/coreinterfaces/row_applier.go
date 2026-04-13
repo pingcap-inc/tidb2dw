@@ -1,6 +1,6 @@
 package coreinterfaces
 
-import "github.com/pingcap/tiflow/pkg/sink/cloudstorage"
+import "github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 
 type RowChange struct {
 	Op         string

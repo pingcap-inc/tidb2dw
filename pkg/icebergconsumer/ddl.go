@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 	sinkiceberg "github.com/pingcap/ticdc/pkg/sink/iceberg"
 	timodel "github.com/pingcap/tidb/pkg/meta/model"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
 
 const tableDefinitionVersion = 1
@@ -58,7 +58,7 @@ func BuildDDLDefinitions(prev, curr *sinkiceberg.TableVersion) ([]cloudstorage.T
 
 	if prev == nil {
 		createDef := currDef
-		createDef.Type = timodel.ActionCreateTable
+		createDef.Type = byte(timodel.ActionCreateTable)
 		createDef.Query = buildCreateTableQuery(currDef)
 		return []cloudstorage.TableDefinition{createDef}, nil
 	}
@@ -144,7 +144,7 @@ func BuildDDLDefinitions(prev, curr *sinkiceberg.TableVersion) ([]cloudstorage.T
 
 func ddlStep(base cloudstorage.TableDefinition, action timodel.ActionType, query string) cloudstorage.TableDefinition {
 	step := base
-	step.Type = action
+	step.Type = byte(action)
 	step.Query = query
 	return step
 }

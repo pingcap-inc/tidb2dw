@@ -24,7 +24,7 @@ This feature is not about making `tidb2dw` produce Iceberg. It is about making `
 - Support the four existing warehouse targets in Iceberg mode.
 - Preserve the current CSV-based pipeline while introducing a new row-oriented pipeline for Iceberg.
 - Reuse TiCDC Iceberg reader logic directly instead of reimplementing Iceberg metadata and Parquet decoding.
-- Migrate existing `tiflow` imports to `ticdc` where the `ticdc` package layout provides a compatible replacement.
+- Migrate existing legacy storage-consumer imports to `ticdc` where the `ticdc` package layout provides a compatible replacement.
 
 ## Non-Goals
 
@@ -224,7 +224,7 @@ The feature should add `github.com/pingcap/ticdc` as a direct dependency and use
 replace github.com/pingcap/ticdc => ~/go/src/github.com/pingcap/ticdc/.git/wtm/feat/storage-sink-iceberg
 ```
 
-Where compatible paths exist, migrate current `tiflow` imports to `ticdc`, especially:
+Where compatible paths exist, migrate current legacy imports to `ticdc`, especially:
 
 - `pkg/sink/cloudstorage`
 - `pkg/config`
@@ -306,7 +306,7 @@ Compatibility tests:
 
 ## Risks
 
-- The new `ticdc` dependency may introduce module conflicts or package-path incompatibilities with the old `tiflow` dependency.
+- The new `ticdc` dependency may introduce module conflicts or package-path incompatibilities with the old legacy dependency chain.
 - BigQuery remains dependent on GCS-backed writable staging, so source and staging locations must stay separate.
 - Warehouse-specific row apply can become slow if implemented as per-row SQL instead of bulk apply.
 - Schema evolution semantics must stay aligned with TiCDC Iceberg reader behavior, or replay can drift from source truth.

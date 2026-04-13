@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
 
 func WriteIncrementFile(

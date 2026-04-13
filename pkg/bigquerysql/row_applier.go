@@ -1,12 +1,15 @@
 package bigquerysql
 
 import (
+	"context"
 	"errors"
+	"net/url"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/rowstage"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
+	putil "github.com/pingcap/ticdc/pkg/util"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
 
 type BigQueryRowApplier struct {
@@ -16,6 +19,48 @@ type BigQueryRowApplier struct {
 	createTableFn   func(cloudstorage.TableDefinition) error
 	loadIncrementFn func(cloudstorage.TableDefinition, string) error
 	closeFn         func()
+}
+
+func NewBigQueryRowApplier(
+	bqConfig *BigQueryConfig,
+	incrementTableID, datasetID, tableID string,
+	storageURI *url.URL,
+) (*BigQueryRowApplier, error) {
+	connector, err := NewBigQueryConnector(bqConfig, incrementTableID, datasetID, tableID, storageURI)
+	if err != nil {
+		return nil, err
+	}
+
+	extStorage, err := putil.GetExternalStorageWithDefaultTimeout(context.Background(), storageURI.String())
+	if err != nil {
+		connector.Close()
+		return nil, err
+	}
+
+	return &BigQueryRowApplier{
+		storage:      extStorage,
+		initSchemaFn: connector.InitSchema,
+		execDDLFn:    connector.ExecDDL,
+		createTableFn: func(tableDef cloudstorage.TableDefinition) error {
+			primaryKeys := make([]string, 0, len(tableDef.Columns))
+			for _, column := range tableDef.Columns {
+				if column.IsPK == "true" {
+					primaryKeys = append(primaryKeys, column.Name)
+				}
+			}
+			createTableSQL, err := GenCreateSchema(tableDef.Columns, primaryKeys, connector.datasetID, connector.tableID)
+			if err != nil {
+				return err
+			}
+			if err := runQuery(connector.ctx, connector.bqClient, createTableSQL); err != nil {
+				return err
+			}
+			connector.columns = tableDef.Columns
+			return nil
+		},
+		loadIncrementFn: connector.LoadIncrement,
+		closeFn:         connector.Close,
+	}, nil
 }
 
 func (a *BigQueryRowApplier) CreateTableFromDefinition(tableDef cloudstorage.TableDefinition) error {

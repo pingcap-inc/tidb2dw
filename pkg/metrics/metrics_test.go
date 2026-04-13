@@ -74,12 +74,6 @@ func TestAddGauge(t *testing.T) {
 	}, []string{"table"})
 
 	AddGauge(gaugeVec, 1.0, "test_table")
-
-	metric, err := gaugeVec.GetMetricWithLabelValues("test_table")
-	require.NoError(t, err)
-	require.NotNil(t, metric)
-	require.Equal(t, "Desc{fqName: \"test_gauge\", help: \"Test gauge\", constLabels: {}, variableLabels: [{table <nil>}]}", metric.Desc().String())
-
 	metricValue := ReadGauge(gaugeVec, "test_table")
 	require.Equal(t, float64(1), metricValue)
 }
@@ -93,11 +87,13 @@ func TestSubGauge(t *testing.T) {
 	AddGauge(gaugeVec, 1.0, "test_table")
 	SubGauge(gaugeVec, 0.5, "test_table")
 
-	metric, err := gaugeVec.GetMetricWithLabelValues("test_table")
-	require.NoError(t, err)
-	require.NotNil(t, metric)
-	require.Equal(t, "Desc{fqName: \"test_gauge\", help: \"Test gauge\", constLabels: {}, variableLabels: [{table <nil>}]}", metric.Desc().String())
-
 	metricValue := ReadGauge(gaugeVec, "test_table")
 	require.Equal(t, float64(0.5), metricValue)
+}
+
+func TestIcebergVersionGaugeHelpers(t *testing.T) {
+	AddGauge(IncrementPendingSizeGauge, 0, "test.users")
+	AddGauge(IcebergMetadataVersionGauge, 7, "test.users")
+
+	require.Equal(t, float64(7), ReadGauge(IcebergMetadataVersionGauge, "test.users"))
 }

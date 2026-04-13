@@ -8,7 +8,7 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 	"gitlab.com/tymonx/go-formatter/formatter"
 	"go.uber.org/zap"
 )
@@ -115,7 +115,7 @@ func GenCreateExternalTableSQL(tableName string, tableColumns []cloudstorage.Tab
 
 	return fmt.Sprintf(`CREATE EXTERNAL TABLE %s (
     %s
-	) USING CSV 
+	) USING CSV
 		LOCATION '%s' WITH (
 	    CREDENTIAL %s
 	)`,

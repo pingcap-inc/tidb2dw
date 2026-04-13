@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pingcap-inc/tidb2dw/pkg/icebergconsumer"
 	"github.com/spf13/cobra"
 )
 
@@ -48,7 +49,8 @@ func validateSourceOptions(opts sourceOptions) error {
 	case "", SourceFormatCSV:
 		return nil
 	case SourceFormatIceberg:
-		return fmt.Errorf("source-format=iceberg is not implemented yet")
+		_, err := icebergconsumer.NewConfig(opts.icebergSourceURI, opts.icebergPollInterval)
+		return err
 	default:
 		return fmt.Errorf("unsupported source-format %q", opts.format)
 	}

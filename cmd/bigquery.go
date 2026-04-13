@@ -11,7 +11,7 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tiflow/pkg/logutil"
+	logutil "github.com/pingcap/ticdc/pkg/logger"
 	"github.com/spf13/cobra"
 	"github.com/thediveo/enumflag"
 	"go.uber.org/zap"
@@ -49,6 +49,29 @@ func NewBigQueryCmd() *cobra.Command {
 		storageURI, err := getGCSURIWithCredentials(storagePath, bigqueryConfigFromCli.CredentialsFilePath)
 		if err != nil {
 			return errors.Trace(err)
+		}
+		if sourceOpts.format == SourceFormatIceberg {
+			rowApplierMap := make(map[string]coreinterfaces.RowApplier)
+			for _, tableFQN := range tables {
+				_, sourceTable := utils.SplitTableFQN(tableFQN)
+				rowApplier, err := bigquerysql.NewBigQueryRowApplier(
+					&bigqueryConfigFromCli,
+					fmt.Sprintf("iceberg_external_%s", sourceTable),
+					bigqueryConfigFromCli.DatasetID,
+					sourceTable,
+					storageURI,
+				)
+				if err != nil {
+					return errors.Trace(err)
+				}
+				rowApplierMap[tableFQN] = rowApplier
+			}
+			defer func() {
+				for _, applier := range rowApplierMap {
+					applier.Close()
+				}
+			}()
+			return ReplicateIceberg(tables, storageURI, sourceOpts, rowApplierMap, mode)
 		}
 
 		snapshotURI, incrementURI, err := genSnapshotAndIncrementURIs(storageURI)

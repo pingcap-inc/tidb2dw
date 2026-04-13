@@ -7,7 +7,7 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 
 	"github.com/pingcap/errors"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 )
 
 func GenMergeInto(tableDef cloudstorage.TableDefinition, datasetID, tableID, externalTableID string) string {

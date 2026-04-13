@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/pingcap/errors"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 )
 
 // TiDB2SnowflakeTypeMap is a map from TiDB type to Snowflake type.

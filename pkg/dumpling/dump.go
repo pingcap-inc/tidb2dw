@@ -10,8 +10,8 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	putil "github.com/pingcap/ticdc/pkg/util"
 	"github.com/pingcap/tidb/dumpling/export"
-	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
 )
 
@@ -57,7 +57,7 @@ func buildDumperConfig(
 	}
 	conf.Tables = tables
 
-	externalStorage, err := putil.GetExternalStorageFromURI(context.Background(), storageURI.String())
+	externalStorage, err := putil.GetExternalStorageWithDefaultTimeout(context.Background(), storageURI.String())
 	if err != nil {
 		return nil, errors.Trace(err)
 	}

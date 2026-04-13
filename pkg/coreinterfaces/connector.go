@@ -3,7 +3,7 @@ package coreinterfaces
 import (
 	"database/sql"
 
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 )
 
 /// Connector is the interface for Data Warehouse connector

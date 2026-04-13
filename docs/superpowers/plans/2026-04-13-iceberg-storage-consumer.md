@@ -1352,7 +1352,7 @@ Expected: PASS
 Run: `go test ./... -count=1`
 Expected: PASS
 
-Run: `rg -n 'github.com/pingcap/tiflow' .`
+Run: repo grep for direct legacy module import paths
 Expected: no matches
 
 - [ ] **Step 5: Commit**

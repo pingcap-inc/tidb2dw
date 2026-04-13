@@ -3,10 +3,10 @@ package icebergconsumer
 import (
 	"testing"
 
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 	sinkcloudstorage "github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 	sinkiceberg "github.com/pingcap/ticdc/pkg/sink/iceberg"
 	timodel "github.com/pingcap/tidb/pkg/meta/model"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,7 +49,7 @@ func TestBuildDDLDefinitionsUsesColumnID(t *testing.T) {
 	defs, err := BuildDDLDefinitions(prev, curr)
 	require.NoError(t, err)
 	require.Len(t, defs, 1)
-	require.Equal(t, renameColumnActionType, defs[0].Type)
+	require.Equal(t, byte(renameColumnActionType), defs[0].Type)
 	require.Contains(t, defs[0].Query, "ALTER TABLE")
 	require.Contains(t, defs[0].Query, "RENAME COLUMN")
 	require.Contains(t, defs[0].Query, "name")

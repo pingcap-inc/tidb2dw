@@ -7,8 +7,8 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 	timodel "github.com/pingcap/tidb/pkg/meta/model"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"go.uber.org/zap"
 )
 
@@ -35,23 +35,23 @@ func GetColumnModifyString(diff *tidbsql.ColumnDiff) (string, error) {
 func GenDDLViaColumnsDiff(datasetID, tableID string, prevColumns []cloudstorage.TableCol, curTableDef cloudstorage.TableDefinition) ([]string, error) {
 	tableFullName := fmt.Sprintf("%s.%s", datasetID, tableID)
 
-	if curTableDef.Type == timodel.ActionTruncateTable {
+	if curTableDef.Type == byte(timodel.ActionTruncateTable) {
 		return []string{fmt.Sprintf("TRUNCATE TABLE `%s`", tableFullName)}, nil
 	}
-	if curTableDef.Type == timodel.ActionDropTable {
+	if curTableDef.Type == byte(timodel.ActionDropTable) {
 		return []string{fmt.Sprintf("DROP TABLE `%s`", tableFullName)}, nil
 	}
-	if curTableDef.Type == timodel.ActionCreateTable {
+	if curTableDef.Type == byte(timodel.ActionCreateTable) {
 		return nil, errors.New("Received create table ddl, which should not happen") // FIXME: drop table and create table
 	}
-	if curTableDef.Type == timodel.ActionRenameTables {
+	if curTableDef.Type == byte(timodel.ActionRenameTables) {
 		return nil, errors.New("Received rename table ddl, new change data can not be capture by TiCDC any more." +
 			"If you want to rename table, please start a new task to capture the new table") // FIXME: rename table to new table and rename back
 	}
-	if curTableDef.Type == timodel.ActionDropSchema {
+	if curTableDef.Type == byte(timodel.ActionDropSchema) {
 		return nil, errors.New("Received drop schema ddl, which does not support") // FIXME: drop schema and create schema
 	}
-	if curTableDef.Type == timodel.ActionCreateSchema {
+	if curTableDef.Type == byte(timodel.ActionCreateSchema) {
 		return nil, errors.New("Received create schema ddl, which should not happen") // FIXME: drop schema and create schema
 	}
 

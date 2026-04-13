@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 	"github.com/stretchr/testify/require"
 )
 

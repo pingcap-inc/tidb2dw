@@ -13,7 +13,7 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 	"go.uber.org/zap"
 )
 

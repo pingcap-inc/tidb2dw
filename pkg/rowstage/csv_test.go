@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
-	putil "github.com/pingcap/tiflow/pkg/util"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
+	putil "github.com/pingcap/ticdc/pkg/util"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,7 +16,7 @@ func TestWriteIncrementFileEmptyRows(t *testing.T) {
 	storageURI, err := url.Parse("file://" + t.TempDir())
 	require.NoError(t, err)
 
-	extStorage, err := putil.GetExternalStorageFromURI(ctx, storageURI.String())
+	extStorage, err := putil.GetExternalStorageWithDefaultTimeout(ctx, storageURI.String())
 	require.NoError(t, err)
 
 	_, err = WriteIncrementFile(extStorage, "test.users", cloudstorage.TableDefinition{
@@ -35,7 +35,7 @@ func TestWriteIncrementFile(t *testing.T) {
 	storageURI, err := url.Parse("file://" + t.TempDir())
 	require.NoError(t, err)
 
-	extStorage, err := putil.GetExternalStorageFromURI(ctx, storageURI.String())
+	extStorage, err := putil.GetExternalStorageWithDefaultTimeout(ctx, storageURI.String())
 	require.NoError(t, err)
 
 	id := "1"

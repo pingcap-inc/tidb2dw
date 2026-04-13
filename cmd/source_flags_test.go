@@ -15,12 +15,20 @@ func TestDefaultSourceOptions(t *testing.T) {
 	require.Equal(t, 5*time.Second, opts.icebergPollInterval)
 }
 
-func TestValidateSourceOptionsRejectsIceberg(t *testing.T) {
+func TestValidateSourceOptionsRejectsIcebergWithoutSourceURI(t *testing.T) {
 	opts := defaultSourceOptions()
 	opts.format = SourceFormatIceberg
 
 	err := validateSourceOptions(opts)
-	require.ErrorContains(t, err, "source-format=iceberg is not implemented")
+	require.ErrorContains(t, err, "iceberg source uri is required")
+}
+
+func TestValidateSourceOptionsAcceptsIceberg(t *testing.T) {
+	opts := defaultSourceOptions()
+	opts.format = SourceFormatIceberg
+	opts.icebergSourceURI = "file:///tmp/warehouse?warehouse=file:///tmp/warehouse"
+
+	require.NoError(t, validateSourceOptions(opts))
 }
 
 func TestWarehouseCommandsRegisterSourceFlags(t *testing.T) {
@@ -38,7 +46,7 @@ func TestWarehouseCommandsRegisterSourceFlags(t *testing.T) {
 	}
 }
 
-func TestWarehouseCommandsRejectIcebergSourceFormat(t *testing.T) {
+func TestWarehouseCommandsRejectIcebergWithoutSourceURI(t *testing.T) {
 	commands := []*cobra.Command{
 		NewSnowflakeCmd(),
 		NewRedshiftCmd(),
@@ -51,6 +59,24 @@ func TestWarehouseCommandsRejectIcebergSourceFormat(t *testing.T) {
 		require.NoError(t, err, cmd.Name())
 		require.NotNil(t, cmd.PreRunE, cmd.Name())
 		err = cmd.PreRunE(cmd, nil)
-		require.ErrorContains(t, err, "source-format=iceberg is not implemented", cmd.Name())
+		require.ErrorContains(t, err, "iceberg source uri is required", cmd.Name())
+	}
+}
+
+func TestWarehouseCommandsAcceptIcebergSourceFormat(t *testing.T) {
+	commands := []*cobra.Command{
+		NewSnowflakeCmd(),
+		NewRedshiftCmd(),
+		NewBigQueryCmd(),
+		NewDatabricksCmd(),
+	}
+
+	for _, cmd := range commands {
+		err := cmd.Flags().Set("source-format", string(SourceFormatIceberg))
+		require.NoError(t, err, cmd.Name())
+		err = cmd.Flags().Set("iceberg.source-uri", "file:///tmp/warehouse?warehouse=file:///tmp/warehouse")
+		require.NoError(t, err, cmd.Name())
+		require.NotNil(t, cmd.PreRunE, cmd.Name())
+		require.NoError(t, cmd.PreRunE(cmd, nil), cmd.Name())
 	}
 }

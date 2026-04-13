@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"time"
 
-	apiv2 "github.com/pingcap/tiflow/cdc/api/v2"
+	apiv2 "github.com/pingcap/ticdc/api/v2"
 )
 
 type ChangefeedConfig struct {

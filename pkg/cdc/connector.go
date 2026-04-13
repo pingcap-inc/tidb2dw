@@ -11,9 +11,9 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	apiv2 "github.com/pingcap/tiflow/cdc/api/v2"
-	"github.com/pingcap/tiflow/pkg/config"
-	putil "github.com/pingcap/tiflow/pkg/util"
+	apiv2 "github.com/pingcap/ticdc/api/v2"
+	"github.com/pingcap/ticdc/pkg/config"
+	putil "github.com/pingcap/ticdc/pkg/util"
 	"go.uber.org/zap"
 )
 

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	putil "github.com/pingcap/tiflow/pkg/util"
+	putil "github.com/pingcap/ticdc/pkg/util"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,7 +15,7 @@ func TestCheckpointRoundTrip(t *testing.T) {
 	storageURI, err := url.Parse("file://" + t.TempDir())
 	require.NoError(t, err)
 
-	extStorage, err := putil.GetExternalStorageFromURI(ctx, storageURI.String())
+	extStorage, err := putil.GetExternalStorageWithDefaultTimeout(ctx, storageURI.String())
 	require.NoError(t, err)
 
 	expected := Checkpoint{
@@ -41,7 +41,7 @@ func TestCheckpointSourceIsolation(t *testing.T) {
 	storageURI, err := url.Parse("file://" + t.TempDir())
 	require.NoError(t, err)
 
-	extStorage, err := putil.GetExternalStorageFromURI(ctx, storageURI.String())
+	extStorage, err := putil.GetExternalStorageWithDefaultTimeout(ctx, storageURI.String())
 	require.NoError(t, err)
 
 	first := Checkpoint{
@@ -80,7 +80,7 @@ func TestLoadCheckpointMissing(t *testing.T) {
 	storageURI, err := url.Parse("file://" + t.TempDir())
 	require.NoError(t, err)
 
-	extStorage, err := putil.GetExternalStorageFromURI(ctx, storageURI.String())
+	extStorage, err := putil.GetExternalStorageWithDefaultTimeout(ctx, storageURI.String())
 	require.NoError(t, err)
 
 	checkpoint, ok, err := LoadCheckpoint(extStorage, "missing-source", "missing-schema", "missing-table")

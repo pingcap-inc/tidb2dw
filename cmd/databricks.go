@@ -12,7 +12,7 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tiflow/pkg/logutil"
+	logutil "github.com/pingcap/ticdc/pkg/logger"
 	"github.com/spf13/cobra"
 	"github.com/thediveo/enumflag"
 	"go.uber.org/zap"
@@ -67,6 +67,26 @@ func NewDatabricksCmd() *cobra.Command {
 		storageURI, err := getS3URIWithCredentials(storagePath, credValue)
 		if err != nil {
 			return errors.Trace(err)
+		}
+		if sourceOpts.format == SourceFormatIceberg {
+			rowApplierMap := make(map[string]coreinterfaces.RowApplier)
+			for _, tableFQN := range tables {
+				rowApplier, err := databrickssql.NewDatabricksRowApplier(
+					&databricksConfigFromCli,
+					credential,
+					storageURI,
+				)
+				if err != nil {
+					return errors.Trace(err)
+				}
+				rowApplierMap[tableFQN] = rowApplier
+			}
+			defer func() {
+				for _, applier := range rowApplierMap {
+					applier.Close()
+				}
+			}()
+			return ReplicateIceberg(tables, storageURI, sourceOpts, rowApplierMap, mode)
 		}
 
 		snapshotURI, incrementURI, err := genSnapshotAndIncrementURIs(storageURI)

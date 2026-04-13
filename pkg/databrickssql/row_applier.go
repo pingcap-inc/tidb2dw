@@ -1,12 +1,15 @@
 package databrickssql
 
 import (
+	"context"
 	"errors"
+	"net/url"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/rowstage"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
+	putil "github.com/pingcap/ticdc/pkg/util"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
 
 type DatabricksRowApplier struct {
@@ -16,6 +19,46 @@ type DatabricksRowApplier struct {
 	createTableFn   func(cloudstorage.TableDefinition) error
 	loadIncrementFn func(cloudstorage.TableDefinition, string) error
 	closeFn         func()
+}
+
+func NewDatabricksRowApplier(
+	dbConfig *DataBricksConfig,
+	credential string,
+	storageURI *url.URL,
+) (*DatabricksRowApplier, error) {
+	connector, err := NewDatabricksConnector(dbConfig, credential, storageURI)
+	if err != nil {
+		return nil, err
+	}
+
+	extStorage, err := putil.GetExternalStorageWithDefaultTimeout(context.Background(), storageURI.String())
+	if err != nil {
+		connector.Close()
+		return nil, err
+	}
+
+	return &DatabricksRowApplier{
+		storage:      extStorage,
+		initSchemaFn: connector.InitSchema,
+		execDDLFn:    connector.ExecDDL,
+		createTableFn: func(tableDef cloudstorage.TableDefinition) error {
+			dropTableSQL := GenDropTableSQL(tableDef.Table)
+			if _, err := connector.db.Exec(dropTableSQL); err != nil {
+				return err
+			}
+			createTableSQL, err := GenCreateTableSQL(tableDef.Table, tableDef.Columns)
+			if err != nil {
+				return err
+			}
+			if _, err := connector.db.Exec(createTableSQL); err != nil {
+				return err
+			}
+			connector.columns = tableDef.Columns
+			return nil
+		},
+		loadIncrementFn: connector.LoadIncrement,
+		closeFn:         connector.Close,
+	}, nil
 }
 
 func (a *DatabricksRowApplier) CreateTableFromDefinition(tableDef cloudstorage.TableDefinition) error {

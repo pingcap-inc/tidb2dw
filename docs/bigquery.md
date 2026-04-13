@@ -20,6 +20,23 @@ To replicate snapshot and incremental data of a TiDB Table to BigQuery:
 # Use --help for details.
 ```
 
+## Replicate From TiCDC Iceberg Storage Sink
+
+To consume an existing TiCDC Iceberg storage sink and apply it to BigQuery:
+
+```shell
+./tidb2dw bigquery \
+    --source-format iceberg \
+    --iceberg.source-uri '<ticdc_iceberg_sink_uri>' \
+    --storage gs://my-staging-bucket/prefix \
+    --table <database_name>.<table_name> \
+    --credentials-file-path <google_credentials_json_file_path> \
+    --bq.project-id <bigquery.project_id> \
+    --bq.dataset-id <bigquery.dataset_id>
+```
+
+`--iceberg.source-uri` must be the exact TiCDC Iceberg sink URI, including any catalog or warehouse query parameters. In Iceberg mode, `--storage` must still be a writable GCS workspace because `tidb2dw` uses it for staged files and checkpoints before merging into BigQuery.
+
 ## Supported DDL Operations
 
 All DDL which will change the schema of table are supported (except index related), including:
@@ -45,7 +62,11 @@ All DDL which will change the schema of table are supported (except index relate
   - BigQuery
   - Cloud Storage (GCS) Bucket
 
-tidb2dw uses the Google Cloud Platform (GCP) service account to authenticate with Google Cloud services. The service account must have the necessary permissions to access the BigQuery and Cloud Storage (GCS) Bucket. It will first use dumpling & ticdc to upload the snapshot and incremental data to the GCS bucket, then use the BigQuery API to load the data into BigQuery.
+tidb2dw uses the Google Cloud Platform (GCP) service account to authenticate with Google Cloud services. The service account must have the necessary permissions to access the BigQuery and Cloud Storage (GCS) Bucket.
+
+In the default CSV source mode, `tidb2dw` uses Dumpling and TiCDC to upload snapshot and incremental data to the GCS bucket, then loads that data into BigQuery.
+
+In Iceberg source mode, `tidb2dw` reads from an existing TiCDC Iceberg storage sink via `--iceberg.source-uri` and uses the GCS bucket only as its writable staging and checkpoint workspace.
 
 ### Create a Service Account
 
@@ -119,10 +140,17 @@ After you have created the service account and granted the necessary permissions
     --bq.dataset-id <bigquery.dataset_id>
 ```
 
-tidb2dw will replicate data from TiDB to BigQuery by following these steps:
+In the default CSV source mode, `tidb2dw` replicates data from TiDB to BigQuery by following these steps:
 
 1. Use dumpling to dump the snapshot data of the specified table into a GCS bucket.
 2. Create a cdc changefeed task to replicate the incremental data of the specified table to the GCS bucket.
 3. Copy the table schema from TiDB to BigQuery.
 4. Create a BigQuery task to load the snapshot data from the GCS bucket into BigQuery.
 5. Cronically load the incremental data from the GCS bucket into BigQuery.
+
+In Iceberg source mode, `tidb2dw` follows these steps:
+
+1. Read TiCDC Iceberg metadata and Parquet data files from `--iceberg.source-uri`.
+2. Create or evolve the BigQuery table schema from Iceberg metadata versions.
+3. Materialize staged row batches into the writable GCS workspace from `--storage`.
+4. Merge the staged data into BigQuery and persist checkpoints in the same workspace.

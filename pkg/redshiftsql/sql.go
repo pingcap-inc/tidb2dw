@@ -11,7 +11,7 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 	"gitlab.com/tymonx/go-formatter/formatter"
 	"go.uber.org/zap"
 )
@@ -91,6 +91,37 @@ func CreateTable(sourceDatabase string, sourceTable string, sourceTiDBConn, redC
 	return err
 }
 
+func GenCreateTableSQL(tableDef cloudstorage.TableDefinition) (string, error) {
+	columnRows := make([]string, 0, len(tableDef.Columns))
+	primaryKeys := make([]string, 0, len(tableDef.Columns))
+	for _, column := range tableDef.Columns {
+		row, err := GetRedshiftColumnString(column)
+		if err != nil {
+			return "", errors.Trace(err)
+		}
+		columnRows = append(columnRows, row)
+		if column.IsPK == "true" {
+			primaryKeys = append(primaryKeys, column.Name)
+		}
+	}
+
+	sqlRows := make([]string, 0, len(columnRows)+1)
+	sqlRows = append(sqlRows, columnRows...)
+	if len(primaryKeys) > 0 {
+		sqlRows = append(sqlRows, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(primaryKeys, ", ")))
+	}
+	for i := 0; i < len(sqlRows); i++ {
+		sqlRows[i] = fmt.Sprintf("    %s", sqlRows[i])
+	}
+
+	sql := []string{}
+	sql = append(sql, fmt.Sprintf(`CREATE TABLE %s (`, tableDef.Table))
+	sql = append(sql, strings.Join(sqlRows, ",\n"))
+	sql = append(sql, ")")
+
+	return strings.Join(sql, "\n"), nil
+}
+
 // CreateIncrementalTable create a temp table to store incremental data
 // Note: We do not use external table here, because redshift external table has a lot of limitations:
 // 1. Does not support NOT NULL or PRIMARY KEY
@@ -143,7 +174,7 @@ func DeleteQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, incurmentalT
 		FROM {incurmentalTableName} WHERE tablename IS NOT NULL
 		QUALIFY row_number() OVER (PARTITION BY {pkStat} ORDER BY committs DESC) = 1
 	) AS S
-	WHERE 
+	WHERE
 		{onStat};
 	`, formatter.Named{
 		"tableName":            tableDef.Table,
@@ -169,12 +200,12 @@ func InsertQuery(db *sql.DB, tableDef cloudstorage.TableDefinition, incurmentalT
 		}
 	}
 	sql, err := formatter.Format(`
-	INSERT INTO {tableName}  
+	INSERT INTO {tableName}
 	SELECT
 		{selectStat}
 	FROM (
 	SELECT
-		flag, 
+		flag,
 		{selectStat}
 		FROM {incurmentalTableName} WHERE tablename IS NOT NULL
 		QUALIFY row_number() OVER (PARTITION BY {pkStat} ORDER BY committs DESC) = 1

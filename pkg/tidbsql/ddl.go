@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
 	"github.com/pingcap/tidb/dumpling/export"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
 
 type columnAction int8
@@ -113,7 +113,7 @@ func GetColumnDiff(prev []cloudstorage.TableCol, curr []cloudstorage.TableCol) (
 }
 
 func GetTiDBTableColumn(db *sql.DB, sourceDatabase, sourceTable string) ([]cloudstorage.TableCol, error) {
-	columnQuery := fmt.Sprintf(`SELECT COLUMN_NAME, COLUMN_DEFAULT, IS_NULLABLE, DATA_TYPE, 
+	columnQuery := fmt.Sprintf(`SELECT COLUMN_NAME, COLUMN_DEFAULT, IS_NULLABLE, DATA_TYPE,
 CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION, COLUMN_TYPE, EXTRA
 FROM information_schema.columns
 WHERE table_schema = "%s" AND table_name = "%s"`, sourceDatabase, sourceTable) // FIXME: Escape

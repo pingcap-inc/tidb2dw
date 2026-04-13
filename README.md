@@ -2,6 +2,15 @@
 
 A tool to replicate data change from TiDB to Data Warehouses in real-time.
 
+## Source Modes
+
+Warehouse commands support two source modes:
+
+- `csv` (default): `tidb2dw` exports snapshot data with Dumpling and reads TiCDC CSV storage-sink output for incremental replication.
+- `iceberg`: `tidb2dw` consumes an existing TiCDC Iceberg storage sink and replays its schema/data changes into the target warehouse.
+
+When `--source-format=iceberg` is enabled, pass the exact TiCDC sink URI with `--iceberg.source-uri`. `--storage` is still required, but in this mode it is only a writable staging and checkpoint workspace for `tidb2dw`.
+
 ## Supported Data Warehouses
 
 - [Snowflake](/docs/snowflake.md)

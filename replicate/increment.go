@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/url"
 	"os/signal"
+	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -16,10 +18,10 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	"github.com/pingcap/ticdc/pkg/config"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
+	putil "github.com/pingcap/ticdc/pkg/util"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tiflow/pkg/config"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
-	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
 )
@@ -34,6 +36,8 @@ type fileIndexRange struct {
 	start uint64
 	end   uint64
 }
+
+var legacyDMLFileNameRE = regexp.MustCompile(`^CDC(?:_[^_]+_)?(\d+)\.csv$`)
 
 type IncrementReplicateSession struct {
 	dwConnector     coreinterfaces.Connector
@@ -60,7 +64,7 @@ func NewIncrementReplicateSession(
 	tableFQN string,
 	logger *zap.Logger,
 ) (*IncrementReplicateSession, error) {
-	externalStorage, err := putil.GetExternalStorageFromURI(ctx, storageURI.String())
+	externalStorage, err := putil.GetExternalStorageWithDefaultTimeout(ctx, storageURI.String())
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -80,11 +84,7 @@ func NewIncrementReplicateSession(
 }
 
 func (sess *IncrementReplicateSession) parseDMLFilePath(path string) error {
-	var dmlkey cloudstorage.DmlPathKey
-	fileIdx, err := dmlkey.ParseDMLFilePath(
-		config.DateSeparatorDay.String(),
-		path,
-	)
+	dmlkey, fileIdx, err := parseLegacyDMLFilePath(path)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -251,7 +251,7 @@ func (sess *IncrementReplicateSession) syncExecDMLEvents(
 	key cloudstorage.DmlPathKey,
 	fileIdx uint64,
 ) error {
-	filePath := key.GenerateDMLFilePath(fileIdx, sess.fileExtension, config.DefaultFileIndexWidth)
+	filePath := generateLegacyDMLFilePath(key, fileIdx, sess.fileExtension, config.DefaultFileIndexWidth)
 	checkpointFileName := strings.TrimSuffix(filePath, sess.fileExtension) + ".checkpoint"
 
 	// check if the file has been loaded into data warehouse
@@ -304,7 +304,7 @@ func (sess *IncrementReplicateSession) syncExecDDLEvents(tableDef cloudstorage.T
 	// Delete all the outdated table definition files.
 	for _, item := range sess.tableDefMap {
 		if item.TableVersion < tableDef.TableVersion {
-			filePath, err := item.GenerateSchemaFilePath()
+			filePath, err := item.GenerateSchemaFilePath(false, 0)
 			if err != nil {
 				return errors.Trace(err)
 			}
@@ -320,12 +320,76 @@ func (sess *IncrementReplicateSession) syncExecDDLEvents(tableDef cloudstorage.T
 	if err != nil {
 		return errors.Trace(err)
 	}
-	filePath, err := tableDef.GenerateSchemaFilePath()
+	filePath, err := tableDef.GenerateSchemaFilePath(false, 0)
 	if err != nil {
 		return errors.Trace(err)
 	}
 	// update the current table definition file.
 	return sess.externalStorage.WriteFile(sess.ctx, filePath, data)
+}
+
+func parseLegacyDMLFilePath(path string) (cloudstorage.DmlPathKey, uint64, error) {
+	parts := strings.Split(path, "/")
+	if len(parts) != 5 && len(parts) != 6 {
+		return cloudstorage.DmlPathKey{}, 0, errors.Errorf("cannot match dml path pattern for %s", path)
+	}
+
+	tableVersion, err := strconv.ParseUint(parts[2], 10, 64)
+	if err != nil {
+		return cloudstorage.DmlPathKey{}, 0, errors.Trace(err)
+	}
+
+	key := cloudstorage.DmlPathKey{
+		SchemaPathKey: cloudstorage.SchemaPathKey{
+			Schema:       parts[0],
+			Table:        parts[1],
+			TableVersion: tableVersion,
+		},
+	}
+
+	fileName := parts[len(parts)-1]
+	switch len(parts) {
+	case 5:
+		key.Date = parts[3]
+	case 6:
+		key.PartitionNum, err = strconv.ParseInt(parts[3], 10, 64)
+		if err != nil {
+			return cloudstorage.DmlPathKey{}, 0, errors.Trace(err)
+		}
+		key.Date = parts[4]
+	}
+
+	matches := legacyDMLFileNameRE.FindStringSubmatch(fileName)
+	if len(matches) != 2 {
+		return cloudstorage.DmlPathKey{}, 0, errors.Errorf("cannot parse dml file name %s", fileName)
+	}
+	fileIdx, err := strconv.ParseUint(matches[1], 10, 64)
+	if err != nil {
+		return cloudstorage.DmlPathKey{}, 0, errors.Trace(err)
+	}
+
+	return key, fileIdx, nil
+}
+
+func generateLegacyDMLFilePath(
+	key cloudstorage.DmlPathKey,
+	fileIdx uint64,
+	extension string,
+	fileIndexWidth int,
+) string {
+	elems := []string{
+		key.Schema,
+		key.Table,
+		fmt.Sprintf("%d", key.TableVersion),
+	}
+	if key.PartitionNum != 0 {
+		elems = append(elems, fmt.Sprintf("%d", key.PartitionNum))
+	}
+	if key.Date != "" {
+		elems = append(elems, key.Date)
+	}
+	elems = append(elems, fmt.Sprintf("CDC%0*d%s", fileIndexWidth, fileIdx, extension))
+	return strings.Join(elems, "/")
 }
 
 func (sess *IncrementReplicateSession) handleNewFiles(dmlFileMap map[cloudstorage.DmlPathKey]fileIndexRange) error {

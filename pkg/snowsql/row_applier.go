@@ -1,12 +1,16 @@
 package snowsql
 
 import (
+	"context"
 	"errors"
+	"net/url"
 
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/rowstage"
+	"github.com/pingcap/ticdc/pkg/sink/cloudstorage"
+	putil "github.com/pingcap/ticdc/pkg/util"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
 
 type SnowflakeRowApplier struct {
@@ -16,6 +20,43 @@ type SnowflakeRowApplier struct {
 	createTableFn   func(cloudstorage.TableDefinition) error
 	loadIncrementFn func(cloudstorage.TableDefinition, string) error
 	closeFn         func()
+}
+
+func NewSnowflakeRowApplier(
+	sfConfig *SnowflakeConfig,
+	stageName string,
+	storageURI *url.URL,
+	credentials *credentials.Value,
+) (*SnowflakeRowApplier, error) {
+	connector, err := NewSnowflakeConnector(sfConfig, stageName, storageURI, credentials)
+	if err != nil {
+		return nil, err
+	}
+
+	extStorage, err := putil.GetExternalStorageWithDefaultTimeout(context.Background(), storageURI.String())
+	if err != nil {
+		connector.Close()
+		return nil, err
+	}
+
+	return &SnowflakeRowApplier{
+		storage:      extStorage,
+		initSchemaFn: connector.InitSchema,
+		execDDLFn:    connector.ExecDDL,
+		createTableFn: func(tableDef cloudstorage.TableDefinition) error {
+			createTableQuery, err := GenCreateSchemaFromDefinition(tableDef)
+			if err != nil {
+				return err
+			}
+			if _, err := connector.db.Exec(createTableQuery); err != nil {
+				return err
+			}
+			connector.columns = tableDef.Columns
+			return nil
+		},
+		loadIncrementFn: connector.LoadIncrement,
+		closeFn:         connector.Close,
+	}, nil
 }
 
 func (a *SnowflakeRowApplier) CreateTableFromDefinition(tableDef cloudstorage.TableDefinition) error {

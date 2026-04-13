@@ -15,8 +15,8 @@ import (
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	putil "github.com/pingcap/ticdc/pkg/util"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	putil "github.com/pingcap/tiflow/pkg/util"
 	"go.uber.org/zap"
 )
 
@@ -70,7 +70,7 @@ func NewSnapshotReplicateSession(
 		sess.TiDBPool = db
 	}
 	{
-		externalStorage, err := putil.GetExternalStorageFromURI(sess.ctx, storageUri.String())
+		externalStorage, err := putil.GetExternalStorageWithDefaultTimeout(sess.ctx, storageUri.String())
 		if err != nil {
 			return nil, errors.Trace(err)
 		}

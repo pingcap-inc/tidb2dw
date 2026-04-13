@@ -12,8 +12,6 @@ require (
 	github.com/pingcap/log v1.1.1-0.20250917021125-19901e015dc9
 	github.com/pingcap/ticdc v0.0.0-00010101000000-000000000000
 	github.com/pingcap/tidb v1.1.0-beta.0.20251121075944-8f2630e53d5d
-	github.com/pingcap/tidb/pkg/parser v0.0.0-20251121075944-8f2630e53d5d
-	github.com/pingcap/tiflow v0.0.0-20260202075306-0ea757eae77a
 	github.com/snowflakedb/gosnowflake v1.7.2
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.11.1
@@ -25,7 +23,6 @@ require (
 )
 
 require (
-	blainsmith.com/go/seahash v1.2.1 // indirect
 	cloud.google.com/go/kms v1.15.8 // indirect
 	filippo.io/edwards25519 v1.1.1 // indirect
 	github.com/AthenZ/athenz v1.10.39 // indirect
@@ -64,7 +61,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.13 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.6 // indirect
 	github.com/bits-and-blooms/bitset v1.14.3 // indirect
-	github.com/blacktear23/go-proxyprotocol v1.0.6 // indirect
 	github.com/bytedance/sonic v1.9.1 // indirect
 	github.com/cakturk/go-netstat v0.0.0-20200220111822-e5b49efee7a5 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
@@ -80,7 +76,6 @@ require (
 	github.com/eapache/go-resiliency v1.4.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
-	github.com/edwingeng/deque v0.0.0-20191220032131-8596380dee17 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
@@ -97,7 +92,6 @@ require (
 	github.com/go-playground/validator/v10 v10.14.0 // indirect
 	github.com/go-resty/resty/v2 v2.11.0 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
-	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/golang/mock v1.6.0 // indirect
@@ -127,8 +121,6 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.0.1 // indirect
 	github.com/jfcg/sixb v1.3.8 // indirect
 	github.com/jfcg/sorty/v2 v2.1.0 // indirect
-	github.com/jinzhu/inflection v1.0.0 // indirect
-	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/joomcode/errorx v1.0.1 // indirect
 	github.com/klauspost/asmfmt v1.3.2 // indirect
@@ -138,7 +130,6 @@ require (
 	github.com/leodido/go-urn v1.2.4 // indirect
 	github.com/linkedin/goavro/v2 v2.14.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
 	github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
@@ -148,29 +139,20 @@ require (
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
-	github.com/pingcap/check v0.0.0-20211026125417-57bd13f7b5f0 // indirect
-	github.com/pingcap/fn v1.0.0 // indirect
 	github.com/pingcap/metering_sdk v0.0.0-20251110022152-dac449ac5389 // indirect
 	github.com/pingcap/tidb-dashboard v0.0.0-20240326110213-9768844ff5d7 // indirect
-	github.com/pingcap/tidb-tools v0.0.0-20231228035519-c4bdf178b3d6 // indirect
+	github.com/pingcap/tidb/pkg/parser v0.0.0-20251121075944-8f2630e53d5d // indirect
+	github.com/pingcap/tiflow v0.0.0-20260202075306-0ea757eae77a // indirect
 	github.com/qri-io/jsonpointer v0.1.1 // indirect
 	github.com/qri-io/jsonschema v0.2.1 // indirect
-	github.com/r3labs/diff v1.1.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/rs/zerolog v1.28.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/segmentio/fasthash v1.0.3 // indirect
-	github.com/segmentio/kafka-go v0.4.41-0.20230526171612-f057b1d369cd // indirect
-	github.com/shopspring/decimal v1.3.0 // indirect
-	github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c // indirect
-	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546 // indirect
-	github.com/siddontang/go v0.0.0-20180604090527-bdc77568d726 // indirect
-	github.com/siddontang/go-log v0.0.0-20180807004314-8d05993dda07 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/afero v1.14.0 // indirect
-	github.com/tiancaiamao/appdash v0.0.0-20181126055449-889f96f722a2 // indirect
 	github.com/tikv/pd v1.1.0-beta.0.20240407022249-7179657d129b // indirect
 	github.com/tinylib/msgp v1.5.0 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
@@ -179,9 +161,6 @@ require (
 	github.com/uber-go/atomic v1.4.0 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	github.com/vbauerster/mpb/v7 v7.5.3 // indirect
-	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
-	github.com/xdg-go/scram v1.1.2 // indirect
-	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/xdg/scram v1.0.5 // indirect
 	github.com/xdg/stringprep v1.0.3 // indirect
 	github.com/xiang90/probing v0.0.0-20221125231312-a49e3df8f510 // indirect
@@ -208,7 +187,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250425173222-7b384671a197 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gorm.io/gorm v1.25.12 // indirect
 	gotest.tools/gotestsum v1.8.2 // indirect
 	k8s.io/api v0.29.11 // indirect
 	k8s.io/apimachinery v0.29.11 // indirect
@@ -219,28 +197,23 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 	sourcegraph.com/sourcegraph/appdash v0.0.0-20190731080439-ebfcffb1b5c0 // indirect
-	sourcegraph.com/sourcegraph/appdash-data v0.0.0-20151005221446-73f23eafcf67 // indirect
 )
 
 require (
 	cloud.google.com/go v0.112.2 // indirect
-	cloud.google.com/go/compute v1.25.1 // indirect
 	cloud.google.com/go/compute/metadata v0.5.0 // indirect
 	cloud.google.com/go/iam v1.1.7 // indirect
 	cloud.google.com/go/storage v1.39.1 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/99designs/keyring v1.2.2 // indirect
-	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.10.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.2 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.0.0 // indirect
-	github.com/Azure/azure-storage-blob-go v0.15.0 // indirect
 	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/DataDog/zstd v1.5.5 // indirect
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/aliyun/alibaba-cloud-sdk-go v1.61.1581 // indirect
-	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40 // indirect
 	github.com/apache/thrift v0.21.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.41.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.4 // indirect
@@ -265,13 +238,11 @@ require (
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
 	github.com/cockroachdb/pebble v1.1.4-0.20250120151818-5dd133a1e6fb // indirect
 	github.com/cockroachdb/redact v1.1.5 // indirect
-	github.com/cockroachdb/sentry-go v0.6.1-cockroachdb.2 // indirect
 	github.com/coocood/bbloom v0.0.0-20190830030839-58deb6228d64 // indirect
 	github.com/coocood/freecache v1.2.1 // indirect
 	github.com/coocood/rtutil v0.0.0-20190304133409-c84515f646f2 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
-	github.com/cznic/mathutil v0.0.0-20181122101859-297441e03548 // indirect
 	github.com/danieljoos/wincred v1.1.2 // indirect
 	github.com/danjacques/gofslock v0.0.0-20240212154529-d899e02bfe22 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -300,7 +271,6 @@ require (
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
 	github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c // indirect
-	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jedib0t/go-pretty/v6 v6.2.2 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
@@ -319,7 +289,6 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/lufia/plan9stats v0.0.0-20230326075908-cb1d2100619a // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -356,7 +325,6 @@ require (
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/spf13/pflag v1.0.7 // indirect
 	github.com/spkg/bom v1.0.0 // indirect
-	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/tiancaiamao/gp v0.0.0-20221230034425-4025bc8a4d4a // indirect
 	github.com/tikv/client-go/v2 v2.0.8-0.20251112113123-1264c1278595 // indirect
 	github.com/tikv/pd/client v0.0.0-20250901035025-22b7ce6d4993 // indirect
@@ -366,7 +334,6 @@ require (
 	github.com/uber/jaeger-client-go v2.30.0+incompatible // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	github.com/wangjohn/quickselect v0.0.0-20161129230411-ed8402a42d5f // indirect
-	github.com/xitongsys/parquet-go v1.6.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.15 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.15 // indirect
@@ -384,7 +351,6 @@ require (
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.36.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
-	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto v0.0.0-20240401170217-c3f982113cda // indirect
 	google.golang.org/grpc v1.67.1 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect

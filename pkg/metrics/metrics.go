@@ -12,13 +12,14 @@ const (
 )
 
 var (
-	TableNumGauge              prometheus.Gauge
-	SnapshotTotalSizeCounter   *prometheus.CounterVec
-	SnapshotLoadedSizeCounter  *prometheus.CounterVec
-	IncrementPendingSizeGauge  *prometheus.GaugeVec
-	IncrementLoadedSizeCounter *prometheus.CounterVec
-	TableVersionsCounter       *prometheus.CounterVec
-	ErrorCounter               *prometheus.CounterVec
+	TableNumGauge               prometheus.Gauge
+	SnapshotTotalSizeCounter    *prometheus.CounterVec
+	SnapshotLoadedSizeCounter   *prometheus.CounterVec
+	IncrementPendingSizeGauge   *prometheus.GaugeVec
+	IncrementLoadedSizeCounter  *prometheus.CounterVec
+	TableVersionsCounter        *prometheus.CounterVec
+	ErrorCounter                *prometheus.CounterVec
+	IcebergMetadataVersionGauge *prometheus.GaugeVec
 )
 
 func init() {
@@ -64,6 +65,12 @@ func init() {
 			Name:      "error_count",
 			Help:      "Total error count during replicating",
 		}, []string{"table"})
+	IcebergMetadataVersionGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Name:      "iceberg_metadata_version",
+			Help:      "last applied iceberg metadata version",
+		}, []string{"table"})
 
 	Register()
 }
@@ -76,6 +83,7 @@ func Register() {
 	prometheus.MustRegister(IncrementLoadedSizeCounter)
 	prometheus.MustRegister(TableVersionsCounter)
 	prometheus.MustRegister(ErrorCounter)
+	prometheus.MustRegister(IcebergMetadataVersionGauge)
 }
 
 // ReadCounter reports the current value of the counter for a specific table.
