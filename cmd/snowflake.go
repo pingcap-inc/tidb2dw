@@ -22,6 +22,7 @@ func NewSnowflakeCmd() *cobra.Command {
 	var (
 		tidbConfigFromCli      tidbsql.TiDBConfig
 		snowflakeConfigFromCli snowsql.SnowflakeConfig
+		sourceOpts             = defaultSourceOptions()
 		tables                 []string
 		snapshotConcurrency    int
 		storagePath            string
@@ -155,6 +156,7 @@ func NewSnowflakeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
 	cmd.Flags().StringVar(&awsAccessKey, "aws.access-key", "", "aws access key")
 	cmd.Flags().StringVar(&awsSecretKey, "aws.secret-key", "", "aws secret key")
+	addSourceFlags(cmd, &sourceOpts)
 
 	cmd.MarkFlagRequired("storage")
 

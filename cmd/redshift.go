@@ -22,6 +22,7 @@ func NewRedshiftCmd() *cobra.Command {
 	var (
 		tidbConfigFromCli     tidbsql.TiDBConfig
 		redshiftConfigFromCli redshiftsql.RedshiftConfig
+		sourceOpts            = defaultSourceOptions()
 		tables                []string
 		snapshotConcurrency   int
 		storagePath           string
@@ -155,6 +156,7 @@ func NewRedshiftCmd() *cobra.Command {
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
 	cmd.Flags().StringVar(&awsAccessKey, "aws.access-key", "", "aws access key")
 	cmd.Flags().StringVar(&awsSecretKey, "aws.secret-key", "", "aws secret key")
+	addSourceFlags(cmd, &sourceOpts)
 
 	cmd.MarkFlagRequired("storage")
 	cmd.MarkFlagRequired("redshift.host")

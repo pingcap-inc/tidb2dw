@@ -80,6 +80,7 @@ require (
 	github.com/eapache/go-resiliency v1.4.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
+	github.com/edwingeng/deque v0.0.0-20191220032131-8596380dee17 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
@@ -126,7 +127,10 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.0.1 // indirect
 	github.com/jfcg/sixb v1.3.8 // indirect
 	github.com/jfcg/sorty/v2 v2.1.0 // indirect
+	github.com/jinzhu/inflection v1.0.0 // indirect
+	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
+	github.com/joomcode/errorx v1.0.1 // indirect
 	github.com/klauspost/asmfmt v1.3.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/ks3sdklib/aws-sdk-go v1.2.9 // indirect
@@ -147,6 +151,7 @@ require (
 	github.com/pingcap/check v0.0.0-20211026125417-57bd13f7b5f0 // indirect
 	github.com/pingcap/fn v1.0.0 // indirect
 	github.com/pingcap/metering_sdk v0.0.0-20251110022152-dac449ac5389 // indirect
+	github.com/pingcap/tidb-dashboard v0.0.0-20240326110213-9768844ff5d7 // indirect
 	github.com/pingcap/tidb-tools v0.0.0-20231228035519-c4bdf178b3d6 // indirect
 	github.com/qri-io/jsonpointer v0.1.1 // indirect
 	github.com/qri-io/jsonschema v0.2.1 // indirect
@@ -203,6 +208,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250425173222-7b384671a197 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
+	gorm.io/gorm v1.25.12 // indirect
 	gotest.tools/gotestsum v1.8.2 // indirect
 	k8s.io/api v0.29.11 // indirect
 	k8s.io/apimachinery v0.29.11 // indirect

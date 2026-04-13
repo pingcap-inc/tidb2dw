@@ -21,6 +21,7 @@ func NewBigQueryCmd() *cobra.Command {
 	var (
 		tidbConfigFromCli     tidbsql.TiDBConfig
 		bigqueryConfigFromCli bigquerysql.BigQueryConfig
+		sourceOpts            = defaultSourceOptions()
 		tables                []string
 		snapshotConcurrency   int
 		storagePath           string
@@ -135,6 +136,7 @@ func NewBigQueryCmd() *cobra.Command {
 	cmd.Flags().IntVar(&cdcFileSize, "cdc.file-size", 64*1024*1024, "")
 	cmd.Flags().StringVar(&logFile, "log.file", "", "log file path")
 	cmd.Flags().StringVar(&logLevel, "log.level", "info", "log level")
+	addSourceFlags(cmd, &sourceOpts)
 
 	cmd.MarkFlagRequired("storage")
 	cmd.MarkFlagRequired("bq.project-id")
