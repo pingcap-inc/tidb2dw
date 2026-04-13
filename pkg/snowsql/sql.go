@@ -78,8 +78,27 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	if err != nil {
 		return "", errors.Trace(err)
 	}
-	columnRows := make([]string, 0, len(tableColumns))
-	for _, column := range tableColumns {
+	snowflakePKColumns, err := tidbsql.GetTiDBTablePKColumns(sourceTiDBConn, sourceDatabase, sourceTable)
+	if err != nil {
+		return "", errors.Trace(err)
+	}
+
+	return genCreateSchemaFromColumns(sourceTable, tableColumns, snowflakePKColumns)
+}
+
+func GenCreateSchemaFromDefinition(tableDef cloudstorage.TableDefinition) (string, error) {
+	primaryKeys := make([]string, 0, len(tableDef.Columns))
+	for _, column := range tableDef.Columns {
+		if column.IsPK == "true" {
+			primaryKeys = append(primaryKeys, column.Name)
+		}
+	}
+	return genCreateSchemaFromColumns(tableDef.Table, tableDef.Columns, primaryKeys)
+}
+
+func genCreateSchemaFromColumns(tableName string, columns []cloudstorage.TableCol, primaryKeys []string) (string, error) {
+	columnRows := make([]string, 0, len(columns))
+	for _, column := range columns {
 		row, err := GetSnowflakeColumnString(column)
 		if err != nil {
 			return "", errors.Trace(err)
@@ -87,25 +106,18 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 		columnRows = append(columnRows, row)
 	}
 
-	snowflakePKColumns, err := tidbsql.GetTiDBTablePKColumns(sourceTiDBConn, sourceDatabase, sourceTable)
-	if err != nil {
-		return "", errors.Trace(err)
-	}
-
 	// TODO: Support unique key
-
 	sqlRows := make([]string, 0, len(columnRows)+1)
 	sqlRows = append(sqlRows, columnRows...)
-	if len(snowflakePKColumns) > 0 {
-		sqlRows = append(sqlRows, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(snowflakePKColumns, ", ")))
+	if len(primaryKeys) > 0 {
+		sqlRows = append(sqlRows, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(primaryKeys, ", ")))
 	}
-	// Add idents
 	for i := 0; i < len(sqlRows); i++ {
 		sqlRows[i] = fmt.Sprintf("    %s", sqlRows[i])
 	}
 
 	sql := []string{}
-	sql = append(sql, fmt.Sprintf(`CREATE OR REPLACE TABLE %s (`, sourceTable)) // TODO: Escape
+	sql = append(sql, fmt.Sprintf(`CREATE OR REPLACE TABLE %s (`, tableName)) // TODO: Escape
 	sql = append(sql, strings.Join(sqlRows, ",\n"))
 	sql = append(sql, ")")
 
