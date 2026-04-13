@@ -12,6 +12,7 @@ import (
 )
 
 const tableDefinitionVersion = 1
+const actionRenameColumn timodel.ActionType = 78
 
 func BuildTableDefinition(version *sinkiceberg.TableVersion) (cloudstorage.TableDefinition, error) {
 	if version == nil {
@@ -26,7 +27,7 @@ func BuildTableDefinition(version *sinkiceberg.TableVersion) (cloudstorage.Table
 		columns = append(columns, cloudstorage.TableCol{
 			ID:        column.OriginalTableCol.ID,
 			Name:      column.OriginalTableCol.Name,
-			Tp:        column.OriginalTableCol.Tp,
+			Tp:        originalColumnType(column.OriginalTableCol.Tp, column.OriginalTableCol.Elems),
 			Default:   column.OriginalTableCol.Default,
 			Precision: column.OriginalTableCol.Precision,
 			Scale:     column.OriginalTableCol.Scale,
@@ -101,7 +102,7 @@ func BuildDDLDefinitions(prev, curr *sinkiceberg.TableVersion) ([]cloudstorage.T
 		case tidbsql.RENAME_COLUMN:
 			steps = append(steps, ddlStep(
 				currDef,
-				timodel.ActionModifyColumn,
+				actionRenameColumn,
 				fmt.Sprintf(
 					"ALTER TABLE %s RENAME COLUMN `%s` TO `%s`",
 					qualifiedTableName(currDef),
@@ -178,13 +179,28 @@ func columnDefinition(column cloudstorage.TableCol) string {
 }
 
 func typeDefinition(column cloudstorage.TableCol) string {
-	if column.Precision == "" {
+	if column.Precision == "" && column.Scale == "" {
 		return column.Tp
+	}
+	if column.Precision == "" {
+		return fmt.Sprintf("%s(%s)", column.Tp, column.Scale)
 	}
 	if column.Scale == "" {
 		return fmt.Sprintf("%s(%s)", column.Tp, column.Precision)
 	}
 	return fmt.Sprintf("%s(%s,%s)", column.Tp, column.Precision, column.Scale)
+}
+
+func originalColumnType(tp string, elems []string) string {
+	if len(elems) == 0 {
+		return tp
+	}
+
+	quotedElems := make([]string, 0, len(elems))
+	for _, elem := range elems {
+		quotedElems = append(quotedElems, defaultValueString(elem))
+	}
+	return fmt.Sprintf("%s(%s)", tp, strings.Join(quotedElems, ","))
 }
 
 func defaultValueString(value interface{}) string {
