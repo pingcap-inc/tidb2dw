@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -19,6 +20,10 @@ func WriteIncrementFile(
 	tableDef cloudstorage.TableDefinition,
 	rows []coreinterfaces.RowChange,
 ) (string, error) {
+	if len(rows) == 0 {
+		return "", errors.New("cannot stage empty row batch")
+	}
+
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
 
