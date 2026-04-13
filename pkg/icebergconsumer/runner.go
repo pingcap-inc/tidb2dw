@@ -29,16 +29,18 @@ func (f *FakeSource) ListTables() ([]VersionedTable, error) {
 }
 
 type Runner struct {
-	source   Source
-	appliers map[string]coreinterfaces.RowApplier
-	mode     Mode
+	source                Source
+	appliers              map[string]coreinterfaces.RowApplier
+	mode                  Mode
+	lastProcessedVersions map[string]int
 }
 
 func NewRunner(source Source, appliers map[string]coreinterfaces.RowApplier, mode Mode) *Runner {
 	return &Runner{
-		source:   source,
-		appliers: appliers,
-		mode:     mode,
+		source:                source,
+		appliers:              appliers,
+		mode:                  mode,
+		lastProcessedVersions: make(map[string]int),
 	}
 }
 
@@ -49,15 +51,20 @@ func (r *Runner) RunOnce() error {
 	}
 
 	for _, table := range tables {
-		applier, ok := r.appliers[tableKey(table.TableDef)]
+		key := tableKey(table.TableDef)
+		applier, ok := r.appliers[key]
 		if !ok {
 			continue
 		}
 
 		if r.mode == ModeIncrementalOnly {
+			if lastVersion, seen := r.lastProcessedVersions[key]; seen && lastVersion >= table.LatestVersion {
+				continue
+			}
 			if err := applier.CreateTableFromDefinition(table.TableDef); err != nil {
 				return err
 			}
+			r.lastProcessedVersions[key] = table.LatestVersion
 		}
 	}
 

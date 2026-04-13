@@ -61,3 +61,35 @@ func TestRunIncrementalOnlyCreatesTableWithoutBackfill(t *testing.T) {
 	require.Equal(t, tableDef, applier.createdTables[0])
 	require.Zero(t, applier.appliedRows)
 }
+
+func TestRunIncrementalOnlySkipsTableCreationForUnchangedVersion(t *testing.T) {
+	tableDef := cloudstorage.TableDefinition{
+		Schema: "test_schema",
+		Table:  "test_table",
+	}
+	applier := &fakeRowApplier{}
+	runner := NewRunner(
+		&FakeSource{
+			Tables: []VersionedTable{
+				{
+					TableDef:      tableDef,
+					LatestVersion: 7,
+				},
+			},
+		},
+		map[string]coreinterfaces.RowApplier{
+			"test_schema.test_table": applier,
+		},
+		ModeIncrementalOnly,
+	)
+
+	err := runner.RunOnce()
+	require.NoError(t, err)
+
+	err = runner.RunOnce()
+	require.NoError(t, err)
+
+	require.Len(t, applier.createdTables, 1)
+	require.Equal(t, tableDef, applier.createdTables[0])
+	require.Zero(t, applier.appliedRows)
+}
