@@ -18,6 +18,7 @@ ROOT_PATH := $(shell pwd)
 BUILD_OUTPUT := $(ROOT_PATH)/bin/tidb2dw
 
 REPO    := github.com/pingcap-inc/tidb2dw
+LINKNAME_FLAG := $(shell go tool link -h 2>&1 | grep -q -- '-checklinkname' && echo -checklinkname=0)
 
 _COMMIT := $(shell git describe --no-match --always --dirty)
 _GITREF := $(shell git rev-parse --abbrev-ref HEAD)
@@ -25,6 +26,7 @@ COMMIT  := $(if $(COMMIT),$(COMMIT),$(_COMMIT))
 GITREF  := $(if $(GITREF),$(GITREF),$(_GITREF))
 
 LDFLAGS := -w -s
+LDFLAGS += $(LINKNAME_FLAG)
 LDFLAGS += -X "$(REPO)/version.GitHash=$(COMMIT)"
 LDFLAGS += -X "$(REPO)/version.GitRef=$(GITREF)"
 LDFLAGS += $(EXTRA_LDFLAGS)
@@ -43,7 +45,11 @@ build:
 fmt:
 	go fmt ./...
 
-.PHONY: tiny
+.PHONY: test
+test:
+	CGO_ENABLED=$(CGO_ENABLED) go test -ldflags '$(LDFLAGS)' ./...
+
+.PHONY: tidy
 tidy:
 	go mod tidy
 
