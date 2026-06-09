@@ -26,6 +26,13 @@ go.work
 # build binary
 bin
 
+# generated local artifacts
+artifacts/
+testdata/generated/
+
+# OS metadata
+.DS_Store
+
 # IDE files
 .idea
 .vscode/

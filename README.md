@@ -39,6 +39,12 @@ git clone https://github.com/pingcap-inc/tidb2dw.git
 cd tidb2dw && make build
 ```
 
+## Real Snowflake/S3 e2e validation
+
+PIN-14 release evidence for real Snowflake/S3 runs must use the secure
+environment contract and wrapper in [docs/pin14-e2e-runbook.md](docs/pin14-e2e-runbook.md).
+Run `PIN14_E2E_MODE=validate scripts/pin14-e2e.sh` before any external run.
+
 ## Known limitations
 
 1. Only support TiDB v7.1.0 or later, and TiDB v7.3.0 or later is required to support DDL.

@@ -46,8 +46,20 @@ fmt:
 	go fmt ./...
 
 .PHONY: test
-test:
+test: pin14-e2e-scan-test
 	CGO_ENABLED=$(CGO_ENABLED) go test -ldflags '$(LDFLAGS)' ./...
+
+.PHONY: pin14-e2e-scan-test
+pin14-e2e-scan-test:
+	scripts/pin14-e2e-scan-test.sh
+
+.PHONY: pin14-e2e-validate
+pin14-e2e-validate:
+	PIN14_E2E_MODE=validate scripts/pin14-e2e.sh
+
+.PHONY: pin14-e2e-run
+pin14-e2e-run: build
+	PIN14_E2E_MODE=run scripts/pin14-e2e.sh
 
 .PHONY: tidy
 tidy:

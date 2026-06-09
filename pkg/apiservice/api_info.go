@@ -2,6 +2,7 @@ package apiservice
 
 import (
 	"net/http"
+	"regexp"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -62,8 +63,8 @@ func NewAPIInfo() *APIInfo {
 	}
 }
 
-func (s *APIInfo) registerRouter(router *gin.Engine) {
-	router.GET("/info", func(c *gin.Context) {
+func (s *APIInfo) registerRouter(router *gin.Engine, auth gin.HandlerFunc) {
+	router.GET("/info", auth, func(c *gin.Context) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
@@ -91,7 +92,7 @@ func (s *APIInfo) SetTableFatalError(table string, err error) {
 		return
 	}
 	s.r.TablesInfo[table].Status = TableStatusFatalError
-	s.r.TablesInfo[table].ErrorMessage = err.Error()
+	s.r.TablesInfo[table].ErrorMessage = Redact(err.Error())
 }
 
 func (s *APIInfo) SetTableStage(table string, stage TableStage) {
@@ -125,5 +126,19 @@ func (s *APIInfo) SetServiceStatusFatalError(err error) {
 	}
 
 	s.r.Status = ServiceStatusFatalError
-	s.r.ErrorMessage = err.Error()
+	s.r.ErrorMessage = Redact(err.Error())
+}
+
+var secretRedactors = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)([A-Za-z0-9_.-]*(access-key|secret-access-key|session-token|password|pass|token))=([^&\s]+)`),
+	regexp.MustCompile(`(?i)(AWS_KEY_ID|AWS_SECRET_KEY|AWS_TOKEN)\s*=\s*'[^']*'`),
+	regexp.MustCompile(`(?i)(s3://[^?\s]+)\?[^ \t\r\n]+`),
+}
+
+func Redact(value string) string {
+	redacted := value
+	for _, re := range secretRedactors {
+		redacted = re.ReplaceAllString(redacted, `$1=<redacted>`)
+	}
+	return redacted
 }

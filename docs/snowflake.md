@@ -5,18 +5,18 @@
 To replicate snapshot and incremental data of a TiDB Table to Snowflake:
 
 ```shell
-export AWS_ACCESS_KEY_ID=<ACCESS_KEY>
-export AWS_SECRET_ACCESS_KEY=<SECRET_KEY>
-export AWS_SESSION_TOKEN=<SESSION_TOKEN>  # Optional
+export AWS_ACCESS_KEY_ID=<from-secret-store>
+export AWS_SECRET_ACCESS_KEY=<from-secret-store>
+export AWS_SESSION_TOKEN=<from-secret-store>  # Optional
+export TIDB2DW_SNOWFLAKE_ACCOUNT_ID=<organization-account>
+export TIDB2DW_SNOWFLAKE_USER=<from-secret-store>
+export TIDB2DW_SNOWFLAKE_PASSWORD=<from-secret-store>
+export TIDB2DW_SNOWFLAKE_DATABASE=<database>
+export TIDB2DW_SNOWFLAKE_SCHEMA=<schema>
 
 ./tidb2dw snowflake \
-    --storage s3://my-demo-bucket/prefix \
-    --table <database_name>.<table_name> \
-    --snowflake.account-id <organization>-<account> \
-    --snowflake.user <username> \
-    --snowflake.pass <password> \
-    --snowflake.database <database> \
-    --snowflake.schema <schema> \
+    --storage 's3://<bucket>/<prefix>' \
+    --table <database_name>.<table_name>
 
 # Note that you may also need to specify these parameters:
 #   --cdc.host x.x.x.x
@@ -25,6 +25,10 @@ export AWS_SESSION_TOKEN=<SESSION_TOKEN>  # Optional
 #   --tidb.pass <pass>
 # Use --help for details.
 ```
+
+For real PIN-14 Snowflake/S3 release evidence, use the config names, wrapper,
+and sanitization rules in [PIN-14 Snowflake/S3 E2E Runbook](pin14-e2e-runbook.md).
+Do not commit or attach secret values, presigned URLs, or raw DSNs.
 
 ## Supported DDL Operations
 

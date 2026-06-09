@@ -13,8 +13,9 @@ import (
 )
 
 type APIService struct {
-	APIInfo *APIInfo
-	router  *gin.Engine
+	APIInfo   *APIInfo
+	router    *gin.Engine
+	authToken string
 }
 
 func New() *APIService {
@@ -24,21 +25,41 @@ func New() *APIService {
 	r.Use(gin.Recovery())
 
 	apiInfo := NewAPIInfo()
-	apiInfo.registerRouter(r)
-
-	RegisterMetric(r)
-
-	return &APIService{
+	service := &APIService{
 		APIInfo: apiInfo,
 		router:  r,
 	}
+	apiInfo.registerRouter(r, service.requireAuth())
+
+	RegisterMetric(r, service.requireAuth())
+
+	return service
+}
+
+func (service *APIService) SetAuthToken(token string) {
+	service.authToken = token
 }
 
 // RegisterMetric registers the metric handler.
-func RegisterMetric(router *gin.Engine) {
-	router.GET("/metrics", func(c *gin.Context) {
+func RegisterMetric(router *gin.Engine, auth gin.HandlerFunc) {
+	router.GET("/metrics", auth, func(c *gin.Context) {
 		promhttp.Handler().ServeHTTP(c.Writer, c.Request)
 	})
+}
+
+func (service *APIService) requireAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := service.authToken
+		if token == "" {
+			c.Next()
+			return
+		}
+		if c.GetHeader("X-API-Token") == token || c.GetHeader("Authorization") == "Bearer "+token {
+			c.Next()
+			return
+		}
+		c.AbortWithStatus(401)
+	}
 }
 
 func (service *APIService) Serve(l net.Listener) {

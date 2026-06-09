@@ -72,26 +72,28 @@ func NewS3Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "s3",
 		Short: "Export snapshot and incremental data from TiDB to S3",
-		Run: func(_ *cobra.Command, _ []string) {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			if err := run(); err != nil {
-				log.Error("Fatal error running gcs exporter", zap.Error(err))
+				log.Error("Fatal error running s3 exporter", zap.Error(err))
+				return err
 			}
+			return nil
 		},
 	}
 
 	cmd.PersistentFlags().BoolP("help", "", false, "help for this command")
 	cmd.Flags().Var(enumflag.New(&mode, "mode", RunModeIds, enumflag.EnumCaseInsensitive), "mode", "replication mode: full, snapshot-only, incremental-only, cloud")
-	cmd.Flags().StringVarP(&tidbConfigFromCli.Host, "tidb.host", "h", "127.0.0.1", "TiDB host")
-	cmd.Flags().IntVarP(&tidbConfigFromCli.Port, "tidb.port", "P", 4000, "TiDB port")
-	cmd.Flags().StringVarP(&tidbConfigFromCli.User, "tidb.user", "u", "root", "TiDB user")
-	cmd.Flags().StringVarP(&tidbConfigFromCli.Pass, "tidb.pass", "p", "", "TiDB password")
-	cmd.Flags().StringVar(&tidbConfigFromCli.SSLCA, "tidb.ssl-ca", "", "TiDB SSL CA")
+	cmd.Flags().StringVarP(&tidbConfigFromCli.Host, "tidb.host", "h", envString("TIDB2DW_TIDB_HOST", "127.0.0.1"), "TiDB host")
+	cmd.Flags().IntVarP(&tidbConfigFromCli.Port, "tidb.port", "P", envInt("TIDB2DW_TIDB_PORT", 4000), "TiDB port")
+	cmd.Flags().StringVarP(&tidbConfigFromCli.User, "tidb.user", "u", envString("TIDB2DW_TIDB_USER", "root"), "TiDB user")
+	cmd.Flags().StringVarP(&tidbConfigFromCli.Pass, "tidb.pass", "p", envString("TIDB2DW_TIDB_PASSWORD", ""), "TiDB password")
+	cmd.Flags().StringVar(&tidbConfigFromCli.SSLCA, "tidb.ssl-ca", envString("TIDB2DW_TIDB_SSL_CA", ""), "TiDB SSL CA")
 	cmd.Flags().StringArrayVarP(&tables, "table", "t", []string{}, "tables full qualified name, e.g. -t <db1>.<table1> -t <db2>.<table2>")
 	cmd.Flags().IntVar(&snapshotConcurrency, "snapshot-concurrency", 8, "the number of concurrent snapshot workers")
 	cmd.Flags().StringVarP(&storagePath, "storage", "s", "", "storage path: s3://<bucket>/<path> or gcs://<bucket>/<path>")
 	cmd.Flags().StringVar(&csvOutputDialect, "csv-output-dialect", "", "csv output dialect: default, redshift, snowflake, bigquery")
-	cmd.Flags().StringVar(&cdcHost, "cdc.host", "127.0.0.1", "TiCDC server host")
-	cmd.Flags().IntVar(&cdcPort, "cdc.port", 8300, "TiCDC server port")
+	cmd.Flags().StringVar(&cdcHost, "cdc.host", envString("TIDB2DW_CDC_HOST", "127.0.0.1"), "TiCDC server host")
+	cmd.Flags().IntVar(&cdcPort, "cdc.port", envInt("TIDB2DW_CDC_PORT", 8300), "TiCDC server port")
 	cmd.Flags().DurationVar(&cdcFlushInterval, "cdc.flush-interval", 60*time.Second, "")
 	cmd.Flags().IntVar(&cdcFileSize, "cdc.file-size", 64*1024*1024, "")
 	cmd.Flags().StringVar(&timezone, "tz", "System", "specify time zone of storage consumer")

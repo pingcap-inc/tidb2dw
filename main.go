@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/pingcap-inc/tidb2dw/cmd"
 	"github.com/pingcap-inc/tidb2dw/version"
@@ -16,6 +17,7 @@ func init() {
 		Short:              "A service to replicate data changes from TiDB to Data Warehouse in real-time",
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
+		SilenceErrors:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return cmd.Help()
@@ -44,9 +46,16 @@ func init() {
 		// exporters
 		cmd.NewS3Cmd(),
 		cmd.NewGCSCmd(),
+
+		// test fixtures
+		cmd.NewFixtureGenCmd(),
+		cmd.NewPIN14E2ECmd(),
 	)
 }
 
 func main() {
-	rootCmd.Execute()
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

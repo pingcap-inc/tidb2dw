@@ -6,9 +6,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	timodel "github.com/pingcap/tidb/pkg/parser/model"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"go.uber.org/zap"
 )
@@ -21,27 +21,24 @@ type SnowflakeConnector struct {
 
 	stageName string
 
-	s3Credentials *credentials.Value
-
 	columns []cloudstorage.TableCol
 }
 
-func NewSnowflakeConnector(sfConfig *SnowflakeConfig, stageName string, storageURI *url.URL, credentials *credentials.Value) (*SnowflakeConnector, error) {
+func NewSnowflakeConnector(sfConfig *SnowflakeConfig, stageName string, storageURI *url.URL) (*SnowflakeConnector, error) {
 	db, err := sfConfig.OpenDB()
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
 	// create stage
 	stageUrl := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
-	if err := CreateExternalStage(db, stageName, stageUrl, credentials); err != nil {
+	if err := CreateExternalStage(db, stageName, stageUrl, sfConfig.StorageIntegration); err != nil {
 		return nil, errors.Annotate(err, "Failed to create stage")
 	}
 
 	return &SnowflakeConnector{
-		db:            db,
-		stageName:     stageName,
-		s3Credentials: credentials,
-		columns:       nil,
+		db:        db,
+		stageName: stageName,
+		columns:   nil,
 	}, nil
 }
 
@@ -58,7 +55,7 @@ func (sc *SnowflakeConnector) InitSchema(columns []cloudstorage.TableCol) error 
 }
 
 func (sc *SnowflakeConnector) ExecDDL(tableDef cloudstorage.TableDefinition) error {
-	if len(sc.columns) == 0 {
+	if len(sc.columns) == 0 && tableDef.Type != timodel.ActionCreateTable && tableDef.Type != timodel.ActionCreateSchema && tableDef.Type != timodel.ActionDropTable && tableDef.Type != timodel.ActionDropSchema {
 		return errors.New("Columns not initialized. Maybe you execute a DDL before all DMLs, which is not supported now.")
 	}
 	ddls, err := GenDDLViaColumnsDiff(sc.columns, tableDef)
