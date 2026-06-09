@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -118,15 +119,23 @@ func getS3URIWithCredentials(storagePath string, cred *credentials.Value) (*url.
 		return nil, errors.New("Not a s3 storage")
 	}
 
-	// append credentials to query string
-	values := url.Values{}
-	values.Add("access-key", cred.AccessKeyID)
-	values.Add("secret-access-key", cred.SecretAccessKey)
-	if cred.SessionToken != "" {
-		values.Add("session-token", cred.SessionToken)
+	if cred != nil {
+		configureAWSCredentialEnv(cred)
 	}
-	uri.RawQuery = values.Encode()
+	uri.RawQuery = ""
 	return uri, nil
+}
+
+func configureAWSCredentialEnv(cred *credentials.Value) {
+	if cred.AccessKeyID != "" {
+		_ = os.Setenv("AWS_ACCESS_KEY_ID", cred.AccessKeyID)
+	}
+	if cred.SecretAccessKey != "" {
+		_ = os.Setenv("AWS_SECRET_ACCESS_KEY", cred.SecretAccessKey)
+	}
+	if cred.SessionToken != "" {
+		_ = os.Setenv("AWS_SESSION_TOKEN", cred.SessionToken)
+	}
 }
 
 func genSnapshotAndIncrementURIs(storageURI *url.URL) (*url.URL, *url.URL, error) {
@@ -145,6 +154,15 @@ func genSnapshotAndIncrementURIs(storageURI *url.URL) (*url.URL, *url.URL, error
 		return nil, nil, errors.Annotate(err, "Failed to join workspace path")
 	}
 	return &snapshotURI, &incrementURI, nil
+}
+
+func parsePlanURI(raw string) (*url.URL, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return nil, errors.Annotate(err, "Failed to parse runtime plan URI")
+	}
+	parsed.RawQuery = ""
+	return parsed, nil
 }
 
 func resolveAWSCredential(storagePath string) (*credentials.Value, error) {
@@ -233,6 +251,7 @@ func Replicate(
 	storageURI *url.URL,
 	snapshotURI *url.URL,
 	incrementURI *url.URL,
+	checkpointURI *url.URL,
 	snapshotConcurrency int,
 	cdcHost string,
 	cdcPort int,
@@ -281,7 +300,7 @@ func Replicate(
 			}
 			if mode != RunModeSnapshotOnly {
 				apiservice.GlobalInstance.APIInfo.SetTableStage(table, apiservice.TableStageLoadingIncremental)
-				if err := replicate.StartReplicateIncrement(ctx, increConnectorMap[table], table, incrementURI, cdcFlushInterval/5); err != nil {
+				if err := replicate.StartReplicateIncrement(ctx, increConnectorMap[table], table, incrementURI, checkpointURI, cdcFlushInterval/5); err != nil {
 					onError(table, err)
 					return
 				}
@@ -300,6 +319,13 @@ func runWithServer(startServer bool, addr string, body func()) {
 		return
 	}
 
+	apiToken := os.Getenv("TIDB2DW_API_TOKEN")
+	if !isLocalAPIAddress(addr) && apiToken == "" {
+		log.Fatal("Refusing to expose API on a non-local address without TIDB2DW_API_TOKEN", zap.String("address", addr))
+		return
+	}
+	apiservice.GlobalInstance.SetAuthToken(apiToken)
+
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatal("Start API service failed", zap.Error(err))
@@ -313,4 +339,16 @@ func runWithServer(startServer bool, addr string, body func()) {
 	}()
 
 	apiservice.GlobalInstance.Serve(l)
+}
+
+func isLocalAPIAddress(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

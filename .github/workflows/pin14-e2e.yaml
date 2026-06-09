@@ -1,0 +1,99 @@
+---
+name: PIN-14 Snowflake/S3 E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: External e2e mode
+        required: true
+        type: choice
+        default: validate
+        options:
+          - skip
+          - validate
+          - run
+      env-label:
+        description: Non-secret environment label for evidence naming
+        required: true
+        default: ci-sf-s3
+      tenant-id:
+        description: Non-secret tenant identity for scoped resources
+        required: true
+        default: tenant-a
+      task-id:
+        description: Non-secret task identity for scoped resources
+        required: true
+        default: task-1
+      tables:
+        description: Comma-separated database.table list
+        required: true
+      scenarios:
+        description: Comma-separated scenario IDs
+        required: true
+      cleanup-mode:
+        description: Cleanup behavior after run
+        required: true
+        type: choice
+        default: always
+        options:
+          - always
+          - on-success
+          - never
+
+jobs:
+  pin14-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v3
+
+      - name: Set up Go 1.21
+        if: ${{ inputs.mode == 'run' }}
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.21.x
+
+      - name: Build tidb2dw
+        if: ${{ inputs.mode == 'run' }}
+        run: make build
+
+      - name: Validate or run PIN-14 e2e
+        env:
+          PIN14_E2E_MODE: ${{ inputs.mode }}
+          PIN14_ENV_LABEL: ${{ inputs.env-label }}
+          PIN14_TENANT_ID: ${{ inputs.tenant-id }}
+          PIN14_TASK_ID: ${{ inputs.task-id }}
+          PIN14_TABLES: ${{ inputs.tables }}
+          PIN14_SCENARIOS: ${{ inputs.scenarios }}
+          PIN14_CLEANUP_MODE: ${{ inputs.cleanup-mode }}
+          PIN14_SNOWFLAKE_ACCOUNT_ID: ${{ secrets.PIN14_SNOWFLAKE_ACCOUNT_ID }}
+          PIN14_SNOWFLAKE_USER: ${{ secrets.PIN14_SNOWFLAKE_USER }}
+          PIN14_SNOWFLAKE_PASSWORD: ${{ secrets.PIN14_SNOWFLAKE_PASSWORD }}
+          PIN14_SNOWFLAKE_DATABASE: ${{ secrets.PIN14_SNOWFLAKE_DATABASE }}
+          PIN14_SNOWFLAKE_SCHEMA: ${{ secrets.PIN14_SNOWFLAKE_SCHEMA }}
+          PIN14_SNOWFLAKE_WAREHOUSE: ${{ secrets.PIN14_SNOWFLAKE_WAREHOUSE }}
+          PIN14_SNOWFLAKE_STORAGE_INTEGRATION: ${{ secrets.PIN14_SNOWFLAKE_STORAGE_INTEGRATION }}
+          PIN14_S3_STORAGE_URI: ${{ secrets.PIN14_S3_STORAGE_URI }}
+          PIN14_AWS_REGION: ${{ secrets.PIN14_AWS_REGION }}
+          PIN14_STAGING_PREFIX: ${{ secrets.PIN14_STAGING_PREFIX }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PIN14_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PIN14_AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.PIN14_AWS_SESSION_TOKEN }}
+          AWS_REGION: ${{ secrets.PIN14_AWS_REGION }}
+          PIN14_TIDB_HOST: ${{ secrets.PIN14_TIDB_HOST }}
+          PIN14_TIDB_PORT: ${{ secrets.PIN14_TIDB_PORT }}
+          PIN14_TIDB_USER: ${{ secrets.PIN14_TIDB_USER }}
+          PIN14_TIDB_PASSWORD: ${{ secrets.PIN14_TIDB_PASSWORD }}
+          PIN14_TIDB_SSL_CA: ${{ secrets.PIN14_TIDB_SSL_CA }}
+          PIN14_CDC_HOST: ${{ secrets.PIN14_CDC_HOST }}
+          PIN14_CDC_PORT: ${{ secrets.PIN14_CDC_PORT }}
+        run: scripts/pin14-e2e.sh
+
+      - name: Upload sanitized PIN-14 artifacts
+        if: ${{ success() && inputs.mode == 'run' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pin14-e2e-${{ inputs.env-label }}-${{ inputs.tenant-id }}-${{ inputs.task-id }}-${{ github.run_id }}
+          path: artifacts/pin14-e2e/
+          if-no-files-found: ignore

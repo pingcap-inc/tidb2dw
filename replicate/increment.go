@@ -38,6 +38,7 @@ type fileIndexRange struct {
 type IncrementReplicateSession struct {
 	dwConnector     coreinterfaces.Connector
 	externalStorage storage.ExternalStorage
+	checkpointStore storage.ExternalStorage
 	ctx             context.Context
 	// tableDMLIdxMap maintains a map of <dmlPathKey, max file index>
 	tableDMLIdxMap map[cloudstorage.DmlPathKey]uint64
@@ -49,6 +50,7 @@ type IncrementReplicateSession struct {
 	sourceDatabase string
 	sourceTable    string
 	tableFQN       string
+	taskScoped     bool
 	logger         *zap.Logger
 }
 
@@ -57,6 +59,7 @@ func NewIncrementReplicateSession(
 	dwConnector coreinterfaces.Connector,
 	fileExtension string,
 	storageURI *url.URL,
+	checkpointURI *url.URL,
 	tableFQN string,
 	logger *zap.Logger,
 ) (*IncrementReplicateSession, error) {
@@ -64,10 +67,20 @@ func NewIncrementReplicateSession(
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	checkpointStore := externalStorage
+	taskScoped := false
+	if checkpointURI != nil {
+		checkpointStore, err = putil.GetExternalStorageFromURI(ctx, checkpointURI.String())
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
+		taskScoped = true
+	}
 	sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
 	return &IncrementReplicateSession{
 		dwConnector:     dwConnector,
 		externalStorage: externalStorage,
+		checkpointStore: checkpointStore,
 		ctx:             ctx,
 		tableDMLIdxMap:  make(map[cloudstorage.DmlPathKey]uint64),
 		tableDefMap:     make(map[uint64]*cloudstorage.TableDefinition),
@@ -75,6 +88,7 @@ func NewIncrementReplicateSession(
 		sourceDatabase:  sourceDatabase,
 		sourceTable:     sourceTable,
 		tableFQN:        tableFQN,
+		taskScoped:      taskScoped,
 		logger:          logger,
 	}, nil
 }
@@ -238,12 +252,23 @@ func (sess *IncrementReplicateSession) getTableDef(tableVersion uint64) cloudsto
 }
 
 func (sess *IncrementReplicateSession) CheckpointExists(filePath string) bool {
-	checkpointFileName := strings.TrimSuffix(filePath, sess.fileExtension) + ".checkpoint"
-	exist, err := sess.externalStorage.FileExists(sess.ctx, checkpointFileName)
+	exist, err := sess.checkpointStore.FileExists(sess.ctx, sess.dmlCheckpointPath(filePath))
 	if err != nil {
 		return false
 	}
 	return exist
+}
+
+func (sess *IncrementReplicateSession) dmlCheckpointPath(filePath string) string {
+	checkpointFileName := strings.TrimSuffix(filePath, sess.fileExtension) + ".checkpoint"
+	if sess.taskScoped {
+		return "increment/" + checkpointFileName
+	}
+	return checkpointFileName
+}
+
+func (sess *IncrementReplicateSession) ddlCheckpointPath(tableDef cloudstorage.TableDefinition) string {
+	return fmt.Sprintf("ddl/%s/%s/schema_%d.checkpoint", tableDef.Schema, tableDef.Table, tableDef.TableVersion)
 }
 
 func (sess *IncrementReplicateSession) syncExecDMLEvents(
@@ -252,10 +277,10 @@ func (sess *IncrementReplicateSession) syncExecDMLEvents(
 	fileIdx uint64,
 ) error {
 	filePath := key.GenerateDMLFilePath(fileIdx, sess.fileExtension, config.DefaultFileIndexWidth)
-	checkpointFileName := strings.TrimSuffix(filePath, sess.fileExtension) + ".checkpoint"
+	checkpointFileName := sess.dmlCheckpointPath(filePath)
 
 	// check if the file has been loaded into data warehouse
-	exist, err := sess.externalStorage.FileExists(sess.ctx, checkpointFileName)
+	exist, err := sess.checkpointStore.FileExists(sess.ctx, checkpointFileName)
 	if err != nil {
 		return errors.Annotate(err, "failed to check if checkpoint file exists")
 	}
@@ -270,7 +295,7 @@ func (sess *IncrementReplicateSession) syncExecDMLEvents(
 	}
 
 	// upload a checkpoint file to indicate that the file has been loaded into data warehouse
-	if err := sess.externalStorage.WriteFile(sess.ctx, checkpointFileName, []byte{}); err != nil {
+	if err := sess.checkpointStore.WriteFile(sess.ctx, checkpointFileName, []byte{}); err != nil {
 		return errors.Trace(err)
 	}
 
@@ -287,6 +312,23 @@ func (sess *IncrementReplicateSession) syncExecDDLEvents(tableDef cloudstorage.T
 		return errors.Wrap(err, "failed to init schema")
 	}
 
+	ddlCheckpointFileName := sess.ddlCheckpointPath(tableDef)
+	if sess.taskScoped {
+		exist, err := sess.checkpointStore.FileExists(sess.ctx, ddlCheckpointFileName)
+		if err != nil {
+			return errors.Annotate(err, "failed to check if DDL checkpoint file exists")
+		}
+		if exist {
+			if err := sess.dwConnector.InitSchema(tableDef.Columns); err != nil {
+				return errors.Wrap(err, "failed to init schema for checkpointed DDL")
+			}
+			sess.logger.Info("DDL has been loaded into data warehouse, just ignore",
+				zap.String("ddlCheckpoint", ddlCheckpointFileName),
+				zap.Uint64("tableVersion", tableDef.TableVersion))
+			return nil
+		}
+	}
+
 	if err := sess.dwConnector.ExecDDL(tableDef); err != nil {
 		// FIXME: if there is a DDL before all the DMLs, will return error here.
 		return errors.Annotate(err,
@@ -297,6 +339,11 @@ func (sess *IncrementReplicateSession) syncExecDDLEvents(tableDef cloudstorage.T
 				sess.externalStorage.URI(), tableDef.Schema, tableDef.Table, tableDef.TableVersion))
 	}
 	metrics.AddCounter(metrics.TableVersionsCounter, float64(tableDef.TableVersion), fmt.Sprintf("%s/%s", sess.sourceDatabase, sess.sourceTable))
+	if sess.taskScoped {
+		if err := sess.checkpointStore.WriteFile(sess.ctx, ddlCheckpointFileName, []byte{}); err != nil {
+			return errors.Trace(err)
+		}
+	}
 
 	// The following logic is used to handle pause and resume.
 	// Keep the current table definition file with len(query) == 0 and delete all the outdated files.
@@ -394,6 +441,7 @@ func StartReplicateIncrement(
 	dwConnector coreinterfaces.Connector,
 	tableFQN string,
 	storageURI *url.URL,
+	checkpointURI *url.URL,
 	flushInterval time.Duration,
 ) error {
 	fileExtension := CSVFileExtension
@@ -404,7 +452,7 @@ func StartReplicateIncrement(
 	// init metric IncrementPendingSizeGauge
 	metrics.AddGauge(metrics.IncrementPendingSizeGauge, 0, tableFQN)
 	logger := log.L().With(zap.String("table", tableFQN))
-	session, err := NewIncrementReplicateSession(ctx, dwConnector, fileExtension, storageURI, tableFQN, logger)
+	session, err := NewIncrementReplicateSession(ctx, dwConnector, fileExtension, storageURI, checkpointURI, tableFQN, logger)
 	if err != nil {
 		logger.Error("error occurred while creating increment replicate session", zap.Error(err))
 		return errors.Trace(err)

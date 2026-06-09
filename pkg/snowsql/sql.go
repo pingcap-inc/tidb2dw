@@ -8,31 +8,35 @@ import (
 
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"gitlab.com/tymonx/go-formatter/formatter"
 )
 
-func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred *credentials.Value) error {
-	sql, err := formatter.Format(`
-CREATE OR REPLACE STAGE {stageName}
-URL = '{url}'
-CREDENTIALS = (AWS_KEY_ID = '{awsKeyId}' AWS_SECRET_KEY = '{awsSecretKey}' AWS_TOKEN = '{awsToken}')
-FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\' BINARY_FORMAT = 'HEX');
-	`, formatter.Named{
-		"stageName":    utils.EscapeString(stageName),
-		"url":          utils.EscapeString(s3WorkspaceURL),
-		"awsKeyId":     utils.EscapeString(cred.AccessKeyID),
-		"awsSecretKey": utils.EscapeString(cred.SecretAccessKey),
-		"awsToken":     utils.EscapeString(cred.SessionToken),
-	})
+func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL, storageIntegration string) error {
+	sql, err := GenCreateExternalStageSQL(stageName, s3WorkspaceURL, storageIntegration)
 	if err != nil {
 		return err
 	}
 	_, err = db.Exec(sql)
 	return err
+}
+
+func GenCreateExternalStageSQL(stageName, s3WorkspaceURL, storageIntegration string) (string, error) {
+	storageIntegrationClause := ""
+	if storageIntegration != "" {
+		storageIntegrationClause = fmt.Sprintf("\nSTORAGE_INTEGRATION = %s", QuoteIdentifier(storageIntegration))
+	}
+	return formatter.Format(`
+CREATE OR REPLACE STAGE {stageName}
+URL = '{url}'{storageIntegrationClause}
+FILE_FORMAT = (type = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\' BINARY_FORMAT = 'HEX');
+	`, formatter.Named{
+		"stageName":                utils.EscapeString(stageName),
+		"url":                      utils.EscapeString(s3WorkspaceURL),
+		"storageIntegrationClause": storageIntegrationClause,
+	})
 }
 
 func DropStage(db *sql.DB, stageName string) error {
@@ -54,7 +58,7 @@ COPY INTO {targetTable}
 FROM @{stageName}/{filePath}
 FILE_FORMAT = (TYPE = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OPTIONALLY_ENCLOSED_BY='"' ESCAPE='\\' BINARY_FORMAT = 'UTF8');
 `, formatter.Named{
-		"targetTable": utils.EscapeString(targetTable),
+		"targetTable": QuoteIdentifier(targetTable),
 		"stageName":   utils.EscapeString(stageName),
 		"filePath":    utils.EscapeString(filePath),
 	})
@@ -66,9 +70,12 @@ FILE_FORMAT = (TYPE = 'CSV' EMPTY_FIELD_AS_NULL = FALSE NULL_IF=('\\N') FIELD_OP
 }
 
 func GetDefaultString(val interface{}) string {
+	if val == nil {
+		return "NULL"
+	}
 	_, err := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
 	if err != nil {
-		return fmt.Sprintf("'%v'", val) // FIXME: escape
+		return "'" + strings.ReplaceAll(fmt.Sprintf("%v", val), "'", "''") + "'"
 	}
 	return fmt.Sprintf("%v", val)
 }
@@ -97,6 +104,9 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	sqlRows := make([]string, 0, len(columnRows)+1)
 	sqlRows = append(sqlRows, columnRows...)
 	if len(snowflakePKColumns) > 0 {
+		for i := range snowflakePKColumns {
+			snowflakePKColumns[i] = QuoteIdentifier(snowflakePKColumns[i])
+		}
 		sqlRows = append(sqlRows, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(snowflakePKColumns, ", ")))
 	}
 	// Add idents
@@ -105,7 +115,7 @@ func GenCreateSchema(sourceDatabase string, sourceTable string, sourceTiDBConn *
 	}
 
 	sql := []string{}
-	sql = append(sql, fmt.Sprintf(`CREATE OR REPLACE TABLE %s (`, sourceTable)) // TODO: Escape
+	sql = append(sql, fmt.Sprintf(`CREATE OR REPLACE TABLE %s (`, QuoteIdentifier(sourceTable)))
 	sql = append(sql, strings.Join(sqlRows, ",\n"))
 	sql = append(sql, ")")
 
@@ -116,35 +126,38 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 	selectStat := make([]string, 0, len(tableDef.Columns)+1)
 	selectStat = append(selectStat, `$1 AS "METADATA$FLAG"`)
 	for i, col := range tableDef.Columns {
+		colName := QuoteIdentifier(col.Name)
 		if TiDB2SnowflakeTypeMap[strings.ToLower(col.Tp)] == "BINARY" {
-			selectStat = append(selectStat, fmt.Sprintf(`TO_BINARY($%d, 'HEX') AS %s`, i+5, col.Name))
+			selectStat = append(selectStat, fmt.Sprintf(`TO_BINARY($%d, 'HEX') AS %s`, i+5, colName))
 		} else {
-			selectStat = append(selectStat, fmt.Sprintf(`$%d AS %s`, i+5, col.Name))
+			selectStat = append(selectStat, fmt.Sprintf(`$%d AS %s`, i+5, colName))
 		}
 	}
 
 	pkColumn := make([]string, 0)
 	onStat := make([]string, 0)
 	for _, col := range tableDef.Columns {
+		colName := QuoteIdentifier(col.Name)
 		if col.IsPK == "true" {
-			pkColumn = append(pkColumn, col.Name)
-			onStat = append(onStat, fmt.Sprintf(`T.%s = S.%s`, col.Name, col.Name))
+			pkColumn = append(pkColumn, colName)
+			onStat = append(onStat, fmt.Sprintf(`T.%s = S.%s`, colName, colName))
 		}
 	}
 
 	updateStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
-		updateStat = append(updateStat, fmt.Sprintf(`%s = S.%s`, col.Name, col.Name))
+		colName := QuoteIdentifier(col.Name)
+		updateStat = append(updateStat, fmt.Sprintf(`%s = S.%s`, colName, colName))
 	}
 
 	insertStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
-		insertStat = append(insertStat, col.Name)
+		insertStat = append(insertStat, QuoteIdentifier(col.Name))
 	}
 
 	valuesStat := make([]string, 0, len(tableDef.Columns))
 	for _, col := range tableDef.Columns {
-		valuesStat = append(valuesStat, fmt.Sprintf(`S.%s`, col.Name))
+		valuesStat = append(valuesStat, fmt.Sprintf(`S.%s`, QuoteIdentifier(col.Name)))
 	}
 
 	// TODO: Remove QUALIFY row_number() after cdc support merge dml or snowflake support deterministic merge
@@ -163,7 +176,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 		WHEN MATCHED AND S.METADATA$FLAG != 'D' THEN UPDATE SET %s
 		WHEN MATCHED AND S.METADATA$FLAG = 'D' THEN DELETE
 		WHEN NOT MATCHED AND S.METADATA$FLAG != 'D' THEN INSERT (%s) VALUES (%s);`,
-		tableDef.Table,
+		QuoteIdentifier(tableDef.Table),
 		strings.Join(selectStat, ",\n"),
 		stageName,
 		filePath,

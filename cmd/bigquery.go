@@ -93,7 +93,7 @@ func NewBigQueryCmd() *cobra.Command {
 		}()
 
 		return Replicate(
-			&tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI, snapshotConcurrency,
+			&tidbConfigFromCli, tables, storageURI, snapshotURI, incrementURI, nil, snapshotConcurrency,
 			cdcHost, cdcPort, cdcFlushInterval, cdcFileSize,
 			snapConnectorMap, increConnectorMap, "bigquery", false, mode,
 		)
@@ -116,7 +116,7 @@ func NewBigQueryCmd() *cobra.Command {
 
 	cmd.PersistentFlags().BoolP("help", "", false, "help for this command")
 	cmd.Flags().Var(enumflag.New(&mode, "mode", RunModeIds, enumflag.EnumCaseInsensitive), "mode", "replication mode: full, snapshot-only, incremental-only, cloud")
-	cmd.Flags().StringVar(&apiListenHost, "api.host", "0.0.0.0", "API service listen host, only available in --mode=cloud")
+	cmd.Flags().StringVar(&apiListenHost, "api.host", "127.0.0.1", "API service listen host, only available in --mode=cloud")
 	cmd.Flags().IntVar(&apiListenPort, "api.port", 8185, "API service listen port, only available in --mode=cloud")
 	cmd.Flags().StringVarP(&tidbConfigFromCli.Host, "tidb.host", "h", "127.0.0.1", "TiDB host")
 	cmd.Flags().IntVarP(&tidbConfigFromCli.Port, "tidb.port", "P", 4000, "TiDB port")

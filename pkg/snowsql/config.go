@@ -10,12 +10,13 @@ import (
 )
 
 type SnowflakeConfig struct {
-	AccountId string
-	Warehouse string
-	User      string
-	Pass      string
-	Database  string
-	Schema    string
+	AccountId          string
+	Warehouse          string
+	User               string
+	Pass               string
+	Database           string
+	Schema             string
+	StorageIntegration string
 }
 
 func testSnowflakeConnection(sfConfig *gosnowflake.Config) (*sql.DB, error) {
